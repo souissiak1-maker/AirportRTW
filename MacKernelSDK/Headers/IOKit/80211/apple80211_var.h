@@ -476,16 +476,9 @@ struct apple80211_scan_result
 
     u_int16_t             unk3;
     int16_t               asr_ie_len;
-#if !defined(__IO80211_TARGET) || __IO80211_TARGET < __MAC_12_0
     uint32_t              asr_unk3;
     void*                 asr_ie_data;
-#else
-    /* Monterey+ private ABI: IE bytes are embedded in the scan-result
-     * object.  This matches IO80211ReferenceV2SDK/include/Airport/
-     * apple80211_var.h shipped in this project. */
-    uint8_t               asr_ie_data[1024];
-#endif
-} __attribute__((packed));
+};
 
 struct apple80211_network_data
 {

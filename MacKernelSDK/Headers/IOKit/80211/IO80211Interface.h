@@ -49,7 +49,6 @@ class IO80211Workloop;
 class IO80211ScanManager;
 class IO80211PeerManager;
 class IO80211FlowQueueDatabase;
-class IO80211FlowQueue;
 class IO80211InterfaceMonitor;
 class IO80211AssociationJoinSnapshot;
 
@@ -100,20 +99,10 @@ public:
     virtual void setPoweredOnByUser(bool);
     virtual void setEnabledBySystem(bool);
 
-    /* 0.2.54 diagnostic: these are non-virtual methods in the current
-     * Sequoia/Tahoe reversed IO80211Interface header.  Declaring them here
-     * does not change the vtable layout; it only lets us read the framework's
-     * internal user/system power latches after the setters run. */
-    bool poweredOnByUser(void);
-    bool enabledBySystem(void);
-
     virtual bool setLinkState(IO80211LinkState, unsigned int);
     virtual bool setLinkState(IO80211LinkState, int, unsigned int);
     virtual UInt32 outputPacket(mbuf_t, void*);
 
-    /* IO80211Reference 2.3.0's Ventura interface header keeps this virtual slot
-     * unconditionally.  Omitting it shifts all reserved slots and makes
-     * OpenCore reject IO80211Interface subclasses during vtable patching. */
     virtual bool setLinkQualityMetric(int);
     virtual void handleDebugCmd(apple80211_debug_command*);
     OSMetaClassDeclareReservedUnused( IO80211Interface,  0);
@@ -152,3 +141,4 @@ protected:
 #endif /* defined(KERNEL) && defined(__cplusplus) */
 
 #endif /* ! _IO80211INTERFACE_H */
+

@@ -69,9 +69,9 @@ public:
     virtual IOReturn initBSDInterfaceParameters( struct ifnet_init_eparams * params, struct sockaddr_dl ** ll ) = 0;
     virtual IOReturn prepareBSDInterface( ifnet_t interface, IOOptionBits options );
     virtual void finalizeBSDInterface( ifnet_t interface, IOOptionBits options );
-    virtual ifnet_t getBSDInterface() const;
+    virtual ifnet_t getBSDInterface();
     virtual void setBSDName( const char * name );
-    virtual const char * getBSDName() const;
+    virtual const char * getBSDName();
     
     virtual errno_t processBSDCommand( ifnet_t interface, UInt32 cmd, void * data );
     errno_t ioctl_gifmedia( ifnet_t interface, UInt32 sockioc, void * data );
@@ -87,11 +87,11 @@ public:
     virtual IOReturn getSupportedMediaArray( UInt32 *, UInt32 * );
     
     virtual IOReturn getPacketTapInfo( UInt32 *, UInt32 * );
-    virtual IOReturn getUnsentDataByteCount( UInt32 *, UInt32 *, UInt32 ) const;
+    virtual IOReturn getUnsentDataByteCount( UInt32 *, UInt32 *, UInt32 );
     virtual IOReturn getSupportedWakeFlags( UInt32 * flags );
     virtual IOReturn enableNetworkWake( UInt32 flags );
     
-    virtual IOReturn calculateRingSizeForQueue( const IOSkywalkPacketQueue * queue, UInt32 * size ) const;
+    virtual IOReturn calculateRingSizeForQueue( const IOSkywalkPacketQueue * queue, UInt32 * size );
     IOReturn getServiceClassIndex( kern_packet_svc_class_t serviceClass, UInt32 * index );
     virtual UInt32 getMaxTransferUnit();
     virtual UInt32 getMinPacketSize();
