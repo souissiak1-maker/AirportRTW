@@ -38,7 +38,7 @@ The unsigned outputs are placed in `build/releases/Release`:
 
 ## macOS Tahoe
 
-Tahoe support is experimental and uses the Vemtura 13 kext with a restored legacy Wi-Fi stack. Keep a working recovery USB and back up your EFI first.
+Tahoe support is experimental and uses the Ventura 13 kext with a restored legacy Wi-Fi stack. Keep a working recovery USB and back up your EFI first.
 
 1. Copy `AirportRTW.kext` from the Ventura 13 build to `EFI/OC/Kexts`.
 2. Add current, mutually compatible builds of `Lilu.kext`, `AMFIPass.kext`, `IOSkywalkFamily.kext`, and `IO80211FamilyLegacy.kext`. Obtain the restored Apple networking components through [OpenCore Legacy Patcher](https://dortania.github.io/OpenCore-Legacy-Patcher/), not from unofficial kext archives.
