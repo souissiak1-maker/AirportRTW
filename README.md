@@ -15,27 +15,6 @@ Supported cards:
 - RTL8852CE
 - RTL8922AE
 
-## Builds
-
-Build every release kext with:
-
-```sh
-./scripts/build_release_kexts.sh
-```
-
-The unsigned outputs are placed in `build/releases/Release`:
-
-| macOS | Kext folder |
-| --- | --- |
-| High Sierra 10.13 | `High Sierra/AirportRTW.kext` |
-| Mojave 10.14 | `Mojave/AirportRTW.kext` |
-| Catalina 10.15 | `Catalina/AirportRTW.kext` |
-| Big Sur 11 | `Big Sur/AirportRTW.kext` |
-| Monterey 12 | `Monterey/AirportRTW.kext` |
-| Ventura 13 | `Ventura/AirportRTW.kext` |
-| Sonoma 14.0–14.3 | `Sonoma14.0/AirportRTW.kext` |
-| Sonoma 14.4 or newer | `Sonoma14.4/AirportRTW.kext` |
-
 ## macOS Tahoe
 
 Tahoe support is experimental and uses the Ventura 13 kext with a restored legacy Wi-Fi stack. Keep a working recovery USB and back up your EFI first.
