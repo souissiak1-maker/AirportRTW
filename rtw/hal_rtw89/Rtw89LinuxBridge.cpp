@@ -181,6 +181,8 @@ static void completeTransmit(void *opaque, struct sk_buff *skb)
         const uint16_t fc = le16_to_cpu(header->frame_control);
         const bool acked =
             (IEEE80211_SKB_CB(skb)->flags & IEEE80211_TX_STAT_ACK) != 0;
+        if (skb->protocol == cpu_to_be16(ETH_P_PAE) && acked)
+            __sync_fetch_and_add(&context->eapolTxAcked, 1);
         if (skb->pkt_type == 0xD0 && acked)
             __sync_fetch_and_add(&context->dhcpTxAckCount, 1);
         else if (skb->pkt_type == 0xA0 && acked)
@@ -612,18 +614,17 @@ bool rtw89LinuxTransmit(Rtw89LinuxContext *context, const uint8_t *frame,
     skb->priority = tid;
     skb_set_queue_mapping(skb, tidToAccessClass[tid & 7]);
     if (eapol) {
+        // Local experiment: normal control-port descriptors rather than
+        // injected-frame rate overrides. Keep protocol classification so the
+        // core uses its EAPOL queue and excludes HE HTC and aggregation.
         info->flags |= IEEE80211_TX_CTL_REQ_TX_STATUS |
-                       IEEE80211_TX_CTL_USE_MINRATE |
-                       IEEE80211_TX_CTL_INJECTED;
+                       IEEE80211_TX_CTL_USE_MINRATE;
         info->control.flags |= IEEE80211_TX_CTRL_PORT_CTRL_PROTO;
-        info->control.rates[0].idx = 0;
-        info->control.rates[0].count = 1;
-        for (int index = 1; index < IEEE80211_TX_MAX_RATES; ++index)
-            info->control.rates[index].idx = -1;
+        __sync_fetch_and_add(&context->eapolTxSubmitted, 1);
     }
 
     info->control.sta = management ? nullptr : sta;
-    if (qos && (context->txAmpduMask & (1U << tid)))
+    if (!eapol && qos && (context->txAmpduMask & (1U << tid)))
         info->flags |= IEEE80211_TX_CTL_AMPDU;
     struct ieee80211_tx_control control = {};
     control.sta = management ? nullptr : sta;

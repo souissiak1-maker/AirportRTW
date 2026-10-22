@@ -133,6 +133,7 @@ bool RTWCore89::attach(IOPCIDevice *device)
     device->setProperty("RTWHALStage", "interrupt enable");
     transport->enableInterrupts();
     getController()->setProperty("RTW89SoftwareCCMP", kOSBooleanFalse);
+    getController()->setProperty("RTW89EAPOLTxPolicy", "experiment-native-control-port");
     sc.sc_flags |= RTW89_FLAG_ATTACHED;
     IOLog("AirportRTW-RTW89: attach complete\n");
     device->setProperty("RTWHALStage", "HAL attach complete");
@@ -500,6 +501,8 @@ void RTWCore89::watchdog(struct _ifnet *ifp)
                             owner->linuxContext.lastActionRxToken, 32);
     controller->setProperty("RTW89LastActionRxStatus",
                             owner->linuxContext.lastActionRxStatus, 32);
+    controller->setProperty("RTW89EAPOLTxSubmitted", owner->linuxContext.eapolTxSubmitted, 64);
+    controller->setProperty("RTW89EAPOLTxAcked", owner->linuxContext.eapolTxAcked, 64);
     controller->setProperty("RTW89DataTxCount", owner->linuxContext.dataTxCount, 64);
     controller->setProperty("RTW89ProtectedTxCount", owner->linuxContext.protectedTxCount, 64);
     controller->setProperty("RTW89DHCPTxCount", owner->linuxContext.dhcpTxCount, 64);

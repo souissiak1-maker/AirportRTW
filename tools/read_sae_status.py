@@ -61,7 +61,8 @@ for properties in controllers(tree):
     result = {k: v for k, v in properties.items()
               if ((k.startswith("RTWSAE") or k.startswith("RTWLastIncompleteJoin"))
                   and not k.endswith(("Headers", "EarlyRx"))) or
-              k in ("RTW89HECapable", "RTW89HEEnabled", "RTW89NegotiatedPHY", "RTW89StationState")}
+              k in ("RTW89HECapable", "RTW89HEEnabled", "RTW89NegotiatedPHY", "RTW89StationState",
+                       "RTW89EAPOLTxPolicy", "RTW89EAPOLTxSubmitted", "RTW89EAPOLTxAcked")}
     result["headers"] = decode_headers(properties.get("RTWSAERxHeaders", b""),
                                         properties.get("RTWSAERawData", 0))
     result["last_incomplete_headers"] = decode_headers(

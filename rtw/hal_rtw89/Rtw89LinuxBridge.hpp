@@ -91,6 +91,8 @@ struct Rtw89LinuxContext {
     volatile uint64_t rxConnectionSNAPCount;
     volatile uint64_t rxConnectionDHCPCount;
     volatile uint64_t txAddressMismatchCount;
+    volatile uint64_t eapolTxSubmitted;
+    volatile uint64_t eapolTxAcked;
     volatile uint64_t dataTxCount;
     volatile uint64_t protectedTxCount;
     volatile uint64_t dhcpTxCount;
