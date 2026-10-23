@@ -1617,7 +1617,7 @@ ieee80211_get_assoc_req(struct ieee80211com *ic, struct ieee80211_node *ni,
     if (ic->ic_flags & IEEE80211_F_VHTON)
         frm = ieee80211_add_vhtcaps(frm, ic);
     
-    if (ic->ic_flags & IEEE80211_F_HEON)
+    if ((ic->ic_flags & IEEE80211_F_HEON) && ni->ni_he_advertised)
         frm = ieee80211_add_hecaps(frm, ic);
     if (ic->ic_sae_enabled && ni->ni_sae_h2e) {
         *frm++ = 244; *frm++ = 1; *frm++ = 0x20;

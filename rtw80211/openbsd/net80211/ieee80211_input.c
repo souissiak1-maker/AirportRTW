@@ -1922,9 +1922,11 @@ ieee80211_recv_probe_resp(struct ieee80211com *ic, mbuf_t m,
         ieee80211_setup_vhtcaps(ic, ni, vhtcap);
         ieee80211_setup_vhtopmode(ni, vhtopmode);
     }
+    ni->ni_he_advertised = false;
     if (hecap != NULL && heopmode != NULL && hecap[1] > 1 && heopmode[1] > 1 &&
         Net80211HE::validCapabilities(hecap + 3, hecap[1] - 1) &&
         Net80211HE::validOperation(heopmode + 3, heopmode[1] - 1)) {
+        ni->ni_he_advertised = true;
         ieee80211_setup_hecaps(ni, hecap + 3, hecap[1] - 1);
         ieee80211_setup_heop(ni, heopmode + 3, heopmode[1] - 1);
         bool hasMu = heMuEdca && heMuEdca[1] >= 14;

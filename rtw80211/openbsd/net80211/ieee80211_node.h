@@ -422,6 +422,7 @@ struct ieee80211_node {
     uint32_t        ni_vht_spare[8];
     
     /* HE state */
+    bool ni_he_advertised; /* validated HE capability and operation in scan result */
     struct ieee80211_he_cap_elem ni_he_cap_elem;   /* Fixed portion of the HE capabilities element. */
     struct ieee80211_he_mcs_nss_supp ni_he_mcs_nss_supp;   /* The supported NSS/MCS combinations. */
     uint8_t ni_ppe_thres[IEEE80211_HE_PPE_THRES_MAX_LEN]; /* Holds the PPE Thresholds data. */

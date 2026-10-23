@@ -31,14 +31,36 @@ static unsigned hweight8(uint8_t n) { return __builtin_popcount(n); }
 struct ieee80211_he_cap_elem { uint8_t mac_cap_info[6],phy_cap_info[11]; };
 struct ieee80211com {
  ieee80211_he_cap_elem ic_he_cap_elem;
+ unsigned ic_flags;
  uint8_t ic_he_mcs_nss_supp[12],ic_ppe_thres[25];
 };
 '''
 for name in ('ieee80211_he_mcs_nss_size', 'ieee80211_he_ppe_size'):
     fixture += '\nstatic uint8_t ' + function('ieee80211.h', name)
 fixture += '\nuint8_t *' + function('ieee80211_output.c', 'ieee80211_add_hecaps')
+source = (stack / 'ieee80211_output.c').read_text()
+start = source.index('    if ((ic->ic_flags & IEEE80211_F_HEON) && ni->ni_he_advertised)')
+selection = source[start:source.index(';', start) + 1]
+fixture += r'''
+#define IEEE80211_F_HEON 1
+struct ieee80211_node { bool ni_he_advertised; };
+static uint8_t *associationHE(uint8_t *frm,ieee80211com *ic,ieee80211_node *ni) {
+''' + selection + r'''
+ return frm;
+}
+'''
 fixture += r'''
 int main() {
+ for(unsigned enabled=0;enabled<2;++enabled)
+ for(unsigned peerHE=0;peerHE<2;++peerHE) {
+  ieee80211com ic{}; ic.ic_flags=enabled;
+  ieee80211_node node{bool(peerHE)};
+  uint8_t buffer[80];memset(buffer,0xa5,sizeof(buffer));
+  auto end=associationHE(buffer,&ic,&node);
+  if(enabled && peerHE) assert(end==buffer+24 && buffer[1]==22);
+  else assert(end==buffer && buffer[0]==0xa5);
+ }
+
  for(unsigned widths=0; widths<4; ++widths)
  for(unsigned ppe=0; ppe<2; ++ppe) {
   ieee80211com ic{};
