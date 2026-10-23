@@ -996,6 +996,8 @@ bool rtw89LinuxAssociate(Rtw89LinuxContext *context,
     vif->bss_conf.he_bss_color.enabled = peer.caps.he && !(peer.heOperation & (1U << 31));
     vif->bss_conf.htc_trig_based_pkt_ext = peer.caps.he ? peer.heOperation & 7 : 0;
     vif->bss_conf.frame_time_rts_th = peer.caps.he ? (peer.heOperation >> 4) & 0x3ff : 0;
+    // HE association callbacks consume the operating channel request.
+    vif->bss_conf.chanreq.oper = hw->conf.chandef;
     vif->bss_conf.chandef_chan = hw->conf.chandef.chan;
     vif->bss_conf.chandef_width = hw->conf.chandef.width;
 

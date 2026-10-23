@@ -30,6 +30,7 @@ jobs:
           python3 tools/validate_rtw88_backend.py
           python3 tests/rtw_join_order_test.py
           python3 tests/rtw_he_writer_test.py
+          python3 tests/rtw89_channel_request_test.py
           mkdir -p build/tests
           for abi in 150200 260000; do
             xcrun clang++ -std=c++14 -Wall -Wextra -Werror \
