@@ -316,15 +316,15 @@ bool rtw89LinuxAttach(Rtw89PciTransport *transport,
     struct ieee80211_hw *hw = nullptr;
     struct ieee80211_vif *vif = nullptr;
 
-    IOLog("AirportRTW-RTW89: entering rtw89 PCI probe\n");
+    RTW_LOG("AirportRTW-RTW89: entering rtw89 PCI probe\n");
     transport->recordAttachStage("rtw_pci_probe");
     const int probeResult = rtw_pci_probe(transport->linuxDevice(), nullptr);
     transport->recordProbeResult(probeResult);
     if (probeResult != 0) {
-        IOLog("AirportRTW-RTW89: rtw89 PCI probe failed\n");
+        RTW_LOG("AirportRTW-RTW89: rtw89 PCI probe failed\n");
         return false;
     }
-    IOLog("AirportRTW-RTW89: rtw89 PCI probe returned successfully\n");
+    RTW_LOG("AirportRTW-RTW89: rtw89 PCI probe returned successfully\n");
     context->probed = true;
 
     transport->recordAttachStage("Linux hardware/ops/wiphy validation");
@@ -419,17 +419,17 @@ bool rtw89LinuxPowerUp(Rtw89LinuxContext *context)
     if (!hw || !hw->ops || !vif)
         return false;
     if (!context->started) {
-        IOLog("AirportRTW-RTW89: hardware start callback begin\n");
+        RTW_LOG("AirportRTW-RTW89: hardware start callback begin\n");
         WiphyGuard guard(hw);
         if (!hw->ops->start || hw->ops->start(hw) != 0) {
-            IOLog("AirportRTW-RTW89: hardware start callback failed\n");
+            RTW_LOG("AirportRTW-RTW89: hardware start callback failed\n");
             return false;
         }
         context->started = true;
-        IOLog("AirportRTW-RTW89: hardware start callback complete\n");
+        RTW_LOG("AirportRTW-RTW89: hardware start callback complete\n");
     }
     if (!context->interfaceAdded) {
-        IOLog("AirportRTW-RTW89: add-interface callback begin\n");
+        RTW_LOG("AirportRTW-RTW89: add-interface callback begin\n");
         int result;
         {
             WiphyGuard guard(hw);
@@ -437,7 +437,7 @@ bool rtw89LinuxPowerUp(Rtw89LinuxContext *context)
                                             : -EOPNOTSUPP;
         }
         if (result != 0) {
-            IOLog("AirportRTW-RTW89: add-interface callback failed (%d)\n",
+            RTW_LOG("AirportRTW-RTW89: add-interface callback failed (%d)\n",
                   result);
             if (hw->ops->stop) {
                 WiphyGuard guard(hw);
@@ -448,7 +448,7 @@ bool rtw89LinuxPowerUp(Rtw89LinuxContext *context)
         }
         rtw88_register_vif(vif);
         context->interfaceAdded = true;
-        IOLog("AirportRTW-RTW89: add-interface callback complete\n");
+        RTW_LOG("AirportRTW-RTW89: add-interface callback complete\n");
     }
     return true;
 }
@@ -1037,7 +1037,7 @@ bool rtw89LinuxAssociate(Rtw89LinuxContext *context,
         else if (hw->ops->bss_info_changed)
             hw->ops->bss_info_changed(hw, vif, bss,
                                       BSS_CHANGED_ASSOC | BSS_CHANGED_QOS);
-        rtw89_macos_peer_audit(hw, vif, context->peerAudit);
+        RTW_DIAGNOSTIC(rtw89_macos_peer_audit(hw, vif, context->peerAudit));
     }
     return true;
 }

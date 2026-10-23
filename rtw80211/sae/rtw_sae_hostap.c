@@ -136,6 +136,7 @@ int random_get_bytes(void *buf, size_t len)
 
 void rtw_sae_hostap_printf(int level, const char *fmt, ...)
 {
+#if !defined(KERNEL) || RTW_DIAGNOSTICS
 #ifdef KERNEL
     char line[256];
 #endif
@@ -146,13 +147,14 @@ void rtw_sae_hostap_printf(int level, const char *fmt, ...)
     va_start(ap, fmt);
 #ifdef KERNEL
     vsnprintf(line, sizeof(line), fmt, ap);
-    IOLog("[AirportRTW SAE] %s\n", line);
+    RTW_LOG("[AirportRTW SAE] %s\n", line);
 #else
     printf("[AirportRTW SAE] ");
     vprintf(fmt, ap);
     printf("\n");
 #endif
     va_end(ap);
+#endif
 }
 
 /* ------------------------------------------------------------------ */

@@ -20,23 +20,24 @@ extern IOCommandGate *_fCommandGate;
 // Preserve an incomplete join before automatic fallback resets live counters.
 static void retainIncompleteJoin(IOService *controller, ieee80211com *ic, uint32_t auth)
 {
+#if RTW_DIAGNOSTICS
     if (!(ic->ic_flags & IEEE80211_F_RSNON)) return;
-    controller->setProperty("RTWLastIncompleteJoinEarlyRx", ic->ic_join_rx_early,
-                            sizeof(ic->ic_join_rx_early));
-    controller->setProperty("RTWLastIncompleteJoinAuth", auth, 32);
-    controller->setProperty("RTWLastIncompleteJoinStage", ic->ic_sae_stage, 32);
-    controller->setProperty("RTWLastIncompleteJoinError", ic->ic_sae_error, 32);
-    controller->setProperty("RTWLastIncompleteJoinData", ic->ic_sae_rx_data, 32);
-    controller->setProperty("RTWLastIncompleteJoinEAPOL", ic->ic_sae_rx_eapol, 32);
-    controller->setProperty("RTWLastIncompleteJoinEAPOLCalls", ic->ic_sae_eapol_calls, 32);
-    controller->setProperty("RTWLastIncompleteJoinHeaders", ic->ic_sae_rx_headers,
-                            sizeof(ic->ic_sae_rx_headers));
+    RTW_DIAGNOSTIC(controller->setProperty("RTWLastIncompleteJoinEarlyRx", ic->ic_join_rx_early,
+                            sizeof(ic->ic_join_rx_early)));
+    RTW_DIAGNOSTIC(controller->setProperty("RTWLastIncompleteJoinAuth", auth, 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTWLastIncompleteJoinStage", ic->ic_sae_stage, 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTWLastIncompleteJoinError", ic->ic_sae_error, 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTWLastIncompleteJoinData", ic->ic_sae_rx_data, 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTWLastIncompleteJoinEAPOL", ic->ic_sae_rx_eapol, 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTWLastIncompleteJoinEAPOLCalls", ic->ic_sae_eapol_calls, 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTWLastIncompleteJoinHeaders", ic->ic_sae_rx_headers,
+                            sizeof(ic->ic_sae_rx_headers)));
     const auto *node = ic->ic_bss;
-    controller->setProperty("RTWLastIncompleteJoinPHY",
+    RTW_DIAGNOSTIC(controller->setProperty("RTWLastIncompleteJoinPHY",
         ic->ic_state != IEEE80211_S_RUN || !node ? "not associated" :
         (node->ni_flags & IEEE80211_NODE_HE) ? "802.11ax" :
         (node->ni_flags & IEEE80211_NODE_VHT) ? "802.11ac" :
-        (node->ni_flags & IEEE80211_NODE_HT) ? "802.11n" : "legacy");
+        (node->ni_flags & IEEE80211_NODE_HT) ? "802.11n" : "legacy"));
     // Keep each attempt, including retries. Publish a copied collection.
     auto old = OSDynamicCast(OSArray, controller->getProperty("RTWIncompleteJoins"));
     if (old && old->getCount()) {
@@ -68,9 +69,12 @@ static void retainIncompleteJoin(IOService *controller, ieee80211com *ic, uint32
     }
     if (history->getCount() >= 8) history->removeObject(0);
     history->setObject(record);
-    controller->setProperty("RTWIncompleteJoins", history);
+    RTW_DIAGNOSTIC(controller->setProperty("RTWIncompleteJoins", history));
     record->release();
     history->release();
+#else
+    (void)controller; (void)ic; (void)auth;
+#endif
 }
 
 
@@ -267,13 +271,13 @@ IOReturn AirportRTWSkywalkInterface::setWCL_LEAVE_NETWORK(apple80211_leave_netwo
 
 IOReturn AirportRTWSkywalkInterface::beginWCLScan(apple80211ScanRequest *request)
 {
-    instance->setProperty("RTWWCLScanRequestCount", ++wclScanRequestCount, 64);
+    RTW_DIAGNOSTIC(instance->setProperty("RTWWCLScanRequestCount", ++wclScanRequestCount, 64));
     AirportWCL::ScanRequest scan;
     if (!AirportWCL::decodeScan(request, 0x1550, scan)) {
-        instance->setProperty("RTWWCLScanDecodeFailed", kOSBooleanTrue);
+        RTW_DIAGNOSTIC(instance->setProperty("RTWWCLScanDecodeFailed", kOSBooleanTrue));
         return kIOReturnBadArgument;
     }
-    instance->setProperty("RTWWCLScanDecodeFailed", kOSBooleanFalse);
+    RTW_DIAGNOSTIC(instance->setProperty("RTWWCLScanDecodeFailed", kOSBooleanFalse));
     ieee80211com *ic = fHalService->get80211Controller();
     if (!(ic->ic_if.if_flags & IFF_RUNNING))
         return kIOReturnNotReady;
@@ -356,14 +360,14 @@ void AirportRTWSkywalkInterface::finishWCLScan(IOReturn status)
         }
     }
     ic->ic_wcl_scan_requested = false;
-    instance->setProperty("RTWWCLBeaconEventCount", wclBeaconEventCount, 64);
-    instance->setProperty("RTWWCLScanPublishCount", wclScanPublishCount, 64);
-    instance->setProperty("RTWWCLScanInvalidIECount", wclScanInvalidIECount, 64);
-    instance->setProperty("RTWWCLScanInvalidChannelCount", wclScanInvalidChannelCount, 64);
-    instance->setProperty("RTWWCLScanLastPostStatus", uint64_t(wclLastScanPostStatus), 32);
-    instance->setProperty("RTWWCLScanCompletionStatus", uint64_t(status), 32);
+    RTW_DIAGNOSTIC(instance->setProperty("RTWWCLBeaconEventCount", wclBeaconEventCount, 64));
+    RTW_DIAGNOSTIC(instance->setProperty("RTWWCLScanPublishCount", wclScanPublishCount, 64));
+    RTW_DIAGNOSTIC(instance->setProperty("RTWWCLScanInvalidIECount", wclScanInvalidIECount, 64));
+    RTW_DIAGNOSTIC(instance->setProperty("RTWWCLScanInvalidChannelCount", wclScanInvalidChannelCount, 64));
+    RTW_DIAGNOSTIC(instance->setProperty("RTWWCLScanLastPostStatus", uint64_t(wclLastScanPostStatus), 32));
+    RTW_DIAGNOSTIC(instance->setProperty("RTWWCLScanCompletionStatus", uint64_t(status), 32));
     IOReturn posted = instance->postMessage(this, AirportWCL::ScanDone, &status, sizeof(status), true);
-    instance->setProperty("RTWWCLScanDonePostStatus", uint64_t(posted), 32);
+    RTW_DIAGNOSTIC(instance->setProperty("RTWWCLScanDonePostStatus", uint64_t(posted), 32));
 }
 
 void AirportRTWSkywalkInterface::completeWCLScan()
@@ -719,11 +723,11 @@ IOReturn AirportRTWSkywalkInterface::deliverWCLJoinMessage(unsigned message, voi
         case AirportWCL::LqmUpdate:
             property = "RTWWCLLqmPostStatus";
             if (status == kIOReturnSuccess) ++wclLqmPostCount;
-            instance->setProperty("RTWWCLLqmPostCount", wclLqmPostCount, 64);
+            RTW_DIAGNOSTIC(instance->setProperty("RTWWCLLqmPostCount", wclLqmPostCount, 64));
             break;
     }
     if (property) instance->setProperty(property, uint64_t(status), 32);
-    instance->setProperty("RTWWCLJoinPostInGate", instance->getWorkQueue()->inGate());
+    RTW_DIAGNOSTIC(instance->setProperty("RTWWCLJoinPostInGate", instance->getWorkQueue()->inGate()));
     return status;
 }
 

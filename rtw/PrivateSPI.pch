@@ -27,3 +27,5 @@ typedef u_int32_t ifnet_ctl_cmd_t;
 #ifndef __MAC_26_0
 #define __MAC_26_0 260000
 #endif
+
+#include "../include/AirportRTWDiagnostics.h"

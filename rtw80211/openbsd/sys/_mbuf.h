@@ -406,7 +406,7 @@ m_dup_pkt(mbuf_t m0, unsigned int adj, int wait)
 //
 //    len = mbuf_pkthdr_len(m0) + adj;
 //
-//    IOLog("itlwm: m_dup_pkt start, len=%lu\n", len);
+//    RTW_LOG("itlwm: m_dup_pkt start, len=%lu\n", len);
 //
 //    if (len > MAXMCLBYTES) /* XXX */
 //        return (NULL);
@@ -434,7 +434,7 @@ m_dup_pkt(mbuf_t m0, unsigned int adj, int wait)
     return (m);
 
 fail:
-    IOLog("itlwm: m_dup_pkt fail!!!!\n");
+    RTW_LOG("itlwm: m_dup_pkt fail!!!!\n");
     mbuf_freem(m);
     return (NULL);
 }

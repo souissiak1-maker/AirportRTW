@@ -70,13 +70,13 @@ IOService* AirportRTW::probe(IOService *provider, SInt32 *score)
     IOPCIDevice* device = OSDynamicCast(IOPCIDevice, provider);
     if (!device)
         return NULL;
-    IOLog("AirportRTW: probe PCI %04x:%04x\n",
+    RTW_LOG("AirportRTW: probe PCI %04x:%04x\n",
           device->configRead16(kIOPCIConfigVendorID),
           device->configRead16(kIOPCIConfigDeviceID));
     if ((fHalService = createRealtekHal(device))) {
         device->findPCICapability(PCI_CAP_ID_MSIX, &msixCap);
         device->findPCICapability(PCI_CAP_ID_MSI, &msiCap);
-        IOLog("AirportRTW: Realtek probe accepted (MSI=%u MSI-X=%u); "
+        RTW_LOG("AirportRTW: Realtek probe accepted (MSI=%u MSI-X=%u); "
               "transport will configure interrupts\n", msiCap, msixCap);
         return this;
     }

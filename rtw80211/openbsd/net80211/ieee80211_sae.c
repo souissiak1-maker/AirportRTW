@@ -52,7 +52,7 @@ mbuf_t ieee80211_sae_auth(struct ieee80211com *ic, struct ieee80211_node *ni, un
         if (!s->crypto) { explicit_bzero(s, sizeof(*s)); ::free(s); return NULL; }
         ic->ic_sae = s;
         ic->ic_sae_stage = 2;
-        IOLog("AirportRTW SAE: authentication started (group=19 h2e=%u)\n", unsigned(s->h2e));
+        RTW_LOG("AirportRTW SAE: authentication started (group=19 h2e=%u)\n", unsigned(s->h2e));
     }
     uint8_t body[512];
     int length = -1;
@@ -102,14 +102,14 @@ void ieee80211_sae_receive(struct ieee80211com *ic, struct ieee80211_node *ni,
     if (seq == 1 && status == (s->h2e ? 126u : 0u)) {
         if (!s->committed) {
             int error = rtw_sae_rx_commit(s->crypto, body, length);
-            if (error) { ic->ic_sae_error = 0x10000u | unsigned(error); IOLog("AirportRTW SAE: commit rejected (%d)\n", error); return; }
+            if (error) { ic->ic_sae_error = 0x10000u | unsigned(error); RTW_LOG("AirportRTW SAE: commit rejected (%d)\n", error); return; }
             s->committed = true; ic->ic_sae_stage = 3;
         }
         IEEE80211_SEND_MGMT(ic, ni, IEEE80211_FC0_SUBTYPE_AUTH, 2);
     } else if (seq == 2 && status == 0 && s->confirmed) {
         if (length != 34 || rtw_sae_rx_confirm(s->crypto, body, length)) { ic->ic_sae_error = 0x20000; return; }
         ic->ic_sae_stage = 4; ic->ic_sae_error = 0;
-        IOLog("AirportRTW SAE: peer confirmed, starting association\n");
+        RTW_LOG("AirportRTW SAE: peer confirmed, starting association\n");
         rtw_sae_keys(s->crypto, ic->ic_psk, ni->ni_pmkid);
         ic->ic_flags |= IEEE80211_F_PSK;
         ni->ni_flags |= IEEE80211_NODE_PMKID;

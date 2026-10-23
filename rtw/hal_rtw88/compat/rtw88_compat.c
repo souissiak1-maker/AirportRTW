@@ -35,6 +35,7 @@ static void rtw88_log_append(const char *msg)
 
 void rtw88_printk(int level, const char *fmt, ...)
 {
+#if RTW_DIAGNOSTICS
     if (level > rtw88_log_level) return;
 
     static const char * const level_str[] = { "ERR", "WARN", "INFO", "DBG" };
@@ -45,15 +46,18 @@ void rtw88_printk(int level, const char *fmt, ...)
     va_start(ap, fmt);
     vsnprintf(buf, sizeof(buf), fmt, ap);
     va_end(ap);
-    IOLog("[AirportRTW %s] %s", ls, buf);
+    RTW_LOG("[AirportRTW %s] %s", ls, buf);
 
     char ring_msg[512];
     snprintf(ring_msg, sizeof(ring_msg), "[AirportRTW %s] %s", ls, buf);
     rtw88_log_append(ring_msg);
+
+#endif
 }
 
 void rtw88_dev_printk(int level, struct device *dev, const char *fmt, ...)
 {
+#if RTW_DIAGNOSTICS
     if (level > rtw88_log_level) return;
 
     static const char * const level_str[] = { "ERR", "WARN", "INFO", "DBG" };
@@ -65,7 +69,7 @@ void rtw88_dev_printk(int level, struct device *dev, const char *fmt, ...)
     va_start(ap, fmt);
     vsnprintf(buf, sizeof(buf), fmt, ap);
     va_end(ap);
-    IOLog("[AirportRTW %s %s] %s", ls, name, buf);
+    RTW_LOG("[AirportRTW %s %s] %s", ls, name, buf);
 
     char ring_msg[512];
     snprintf(ring_msg, sizeof(ring_msg), "[AirportRTW %s %s] %s", ls, name, buf);
@@ -75,20 +79,24 @@ void rtw88_dev_printk(int level, struct device *dev, const char *fmt, ...)
      * TX skb to HCI" called from the output queue) stalls the IOKit thread
      * for 2 s per error, which both degrades throughput and makes subsequent
      * errors compound by holding locks. */
+
+#endif
 }
 
 void rtw88_hex_dump(const char *prefix, const void *buf, size_t len)
 {
+#if RTW_DIAGNOSTICS
     const u8 *p = (const u8 *)buf;
-    IOLog("[AirportRTW] %s (%zu bytes):\n", prefix, len);
+    RTW_LOG("[AirportRTW] %s (%zu bytes):\n", prefix, len);
     for (size_t i = 0; i < len; i += 16) {
         char line[80];
         int pos = 0;
         pos += snprintf(line + pos, (int)(sizeof(line) - pos), "  %04zx: ", i);
         for (size_t j = i; j < i + 16 && j < len; j++)
             pos += snprintf(line + pos, (int)(sizeof(line) - pos), "%02x ", p[j]);
-        IOLog("%s\n", line);
+        RTW_LOG("%s\n", line);
     }
+#endif
 }
 
 /* ------------------------------------------------------------------ */
@@ -1155,7 +1163,7 @@ void rtw88_debug_dump_tx_state(void)
     u32 rx_hw_wp = (rxbd >> 16) & RTW88_DBG_TRX_BD_IDX_MASK;
     u32 rx_rp    = rxbd & RTW88_DBG_TRX_BD_IDX_MASK;
 
-    IOLog("AirportRTW: TXSTATE BE hw_wp=%u hw_rp=%u sw_wp=%u sw_rp=%u qlen=%u "
+    RTW_LOG("AirportRTW: TXSTATE BE hw_wp=%u hw_rp=%u sw_wp=%u sw_rp=%u qlen=%u "
           "TXDMA_ST=0x%08x PKT_EMPTY=0x%04x BD[rp]:dma0=0x%08x dma1=0x%08x "
           "sz0=%u sz1=%u psb=0x%04x RX_rp=%u RX_hwwp=%u "
           "HISR0=0x%08x HISR3=0x%08x BEDOK_p=%d\n",
@@ -1243,7 +1251,7 @@ void rtw88_force_wifi_only(void)
     if (!g_rtw88_hw || !g_rtw88_hw->priv) return;
     struct rtw_dev *rtwdev = (struct rtw_dev *)g_rtw88_hw->priv;
     if (rtwdev->efuse.btcoex) {
-        IOLog("AirportRTW: forcing wifi_only (was efuse.btcoex=1)\n");
+        RTW_LOG("AirportRTW: forcing wifi_only (was efuse.btcoex=1)\n");
         rtwdev->efuse.btcoex = 0;
     }
 }
@@ -1276,15 +1284,15 @@ void rtw88_connect_hw_setup(struct ieee80211_hw *hw,
     mutex_lock(&rtwdev->mutex);
 
     /* Switch to the AP's channel (uses hw->conf.chandef set by caller). */
-    IOLog("AirportRTW: connect_hw_setup: rtw_set_channel\n");
+    RTW_LOG("AirportRTW: connect_hw_setup: rtw_set_channel\n");
     rtw_set_channel(rtwdev);
-    IOLog("AirportRTW: connect_hw_setup: set_channel done\n");
+    RTW_LOG("AirportRTW: connect_hw_setup: set_channel done\n");
 
     /* Write target BSSID to port-0 hardware register. */
     if (rtwvif) {
         memcpy(rtwvif->bssid, bssid, ETH_ALEN);
         rtw_vif_port_config(rtwdev, rtwvif, PORT_SET_BSSID);
-        IOLog("AirportRTW: connect_hw_setup: BSSID written\n");
+        RTW_LOG("AirportRTW: connect_hw_setup: BSSID written\n");
     }
 
     /*
@@ -1303,9 +1311,9 @@ void rtw88_connect_hw_setup(struct ieee80211_hw *hw,
      * calibration call site.
      */
     rtwdev->need_rfk = true;
-    IOLog("AirportRTW: connect_hw_setup: running RF calibration (IQK/DPK/GAPK)\n");
+    RTW_LOG("AirportRTW: connect_hw_setup: running RF calibration (IQK/DPK/GAPK)\n");
     rtw_chip_prepare_tx(rtwdev);
-    IOLog("AirportRTW: connect_hw_setup: RF calibration done\n");
+    RTW_LOG("AirportRTW: connect_hw_setup: RF calibration done\n");
 
     /*
      * Let the firmware rate-adaptation pick the data rate on both bands.

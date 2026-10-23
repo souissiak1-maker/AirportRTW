@@ -42,7 +42,7 @@ bool RTWNetworkUserClient::initWithTask(task_t owningTask, void *securityID, UIn
 
 bool RTWNetworkUserClient::start(IOService *provider)
 {
-//    IOLog("start\n");
+//    RTW_LOG("start\n");
     if( !super::start( provider ))
         return false;
     fDriver = OSDynamicCast(RTWEthernetController, provider);
@@ -58,7 +58,7 @@ bool RTWNetworkUserClient::start(IOService *provider)
 
 IOReturn RTWNetworkUserClient::clientClose()
 {
-//    IOLog("clientClose\n");
+//    RTW_LOG("clientClose\n");
     if( !isInactive())
         terminate();
     return kIOReturnSuccess;
@@ -66,13 +66,13 @@ IOReturn RTWNetworkUserClient::clientClose()
 
 IOReturn RTWNetworkUserClient::clientDied()
 {
-//    IOLog("clientDied\n");
+//    RTW_LOG("clientDied\n");
     return super::clientDied();
 }
 
 void RTWNetworkUserClient::stop(IOService *provider)
 {
-//    IOLog("stop\n");
+//    RTW_LOG("stop\n");
     super::stop( provider );
 }
 
@@ -80,7 +80,7 @@ IOReturn RTWNetworkUserClient::externalMethod(uint32_t selector, IOExternalMetho
 {
     bool isSet = selector & IOCTL_MASK;
     selector &= ~IOCTL_MASK;
-//    IOLog("externalMethod invoke. selector=0x%X isSet=%d\n", selector, isSet);
+//    RTW_LOG("externalMethod invoke. selector=0x%X isSet=%d\n", selector, isSet);
     if (selector < 0 || selector > IOCTL_ID_MAX) {
         return super::externalMethod(selector, arguments, NULL, this, NULL);
     }

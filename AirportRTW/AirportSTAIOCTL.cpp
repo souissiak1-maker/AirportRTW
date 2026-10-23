@@ -989,7 +989,7 @@ setPOWER(OSObject *object,
 {
     if (!pd)
         return kIOReturnError;
-    IOLog("AirportRTW: setPOWER: num_radios[%d]  power_state(0:%u  1:%u  2:%u  3:%u)\n", pd->num_radios, pd->power_state[0], pd->power_state[1], pd->power_state[2], pd->power_state[3]);
+    RTW_LOG("AirportRTW: setPOWER: num_radios[%d]  power_state(0:%u  1:%u  2:%u  3:%u)\n", pd->num_radios, pd->power_state[0], pd->power_state[1], pd->power_state[2], pd->power_state[3]);
     if (pd->num_radios > 0) {
         bool isRunning = (fHalService->get80211Controller()->ic_ac.ac_if.if_flags & (IFF_UP | IFF_RUNNING)) != 0;
         if (pd->power_state[0] == 0) {
@@ -1318,8 +1318,8 @@ setSCAN_REQ(OSObject *object,
     struct ieee80211com *ic = fHalService->get80211Controller();
     const UInt32 scanDoneDelayMS = 100;
     if (OSDynamicCast(RTWCore, fHalService)) {
-        setProperty("RTW89AppleScanRequestCount", ++rtwScanRequestCount, 64);
-        setProperty("RTW89AppleScanRequestState", (UInt64)ic->ic_state, 8);
+        RTW_DIAGNOSTIC(setProperty("RTW89AppleScanRequestCount", ++rtwScanRequestCount, 64));
+        RTW_DIAGNOSTIC(setProperty("RTW89AppleScanRequestState", (UInt64)ic->ic_state, 8));
     }
 #if 0
     XYLog("%s Type: %u BSS Type: %u PHY Mode: %u Dwell time: %u Rest time: %u Num channels: %u SSID: %s BSSID: %s\n",
@@ -1335,16 +1335,16 @@ setSCAN_REQ(OSObject *object,
 #endif
     if (fScanResultWrapping) {
         if (OSDynamicCast(RTWCore, fHalService))
-            setProperty("RTW89AppleScanRequestResult", (UInt64)22, 32);
+            RTW_DIAGNOSTIC(setProperty("RTW89AppleScanRequestResult", (UInt64)22, 32));
         return 22;
     }
     if (ic->ic_state <= IEEE80211_S_INIT) {
         if (OSDynamicCast(RTWCore, fHalService))
-            setProperty("RTW89AppleScanRequestResult", (UInt64)22, 32);
+            RTW_DIAGNOSTIC(setProperty("RTW89AppleScanRequestResult", (UInt64)22, 32));
         return 22;
     }
     if (OSDynamicCast(RTWCore, fHalService))
-        setProperty("RTW89AppleScanRequestResult", (UInt64)0, 32);
+        RTW_DIAGNOSTIC(setProperty("RTW89AppleScanRequestResult", (UInt64)0, 32));
     if (sd->scan_type == APPLE80211_SCAN_TYPE_FAST || sd->scan_type == APPLE80211_SCAN_TYPE_PASSIVE) {
         if (scanSource) {
             scanSource->setTimeoutMS(scanDoneDelayMS);
@@ -1366,9 +1366,9 @@ setSCAN_REQ_MULTIPLE(OSObject *object, struct apple80211_scan_multiple_data *sd)
     struct ieee80211com *ic = fHalService->get80211Controller();
     const UInt32 scanDoneDelayMS = 100;
     if (OSDynamicCast(RTWCore, fHalService)) {
-        setProperty("RTW89AppleScanMultipleRequestCount",
-                    ++rtwScanRequestCount, 64);
-        setProperty("RTW89AppleScanRequestState", (UInt64)ic->ic_state, 8);
+        RTW_DIAGNOSTIC(setProperty("RTW89AppleScanMultipleRequestCount",
+                    ++rtwScanRequestCount, 64));
+        RTW_DIAGNOSTIC(setProperty("RTW89AppleScanRequestState", (UInt64)ic->ic_state, 8));
     }
 #if 0
     int i;
@@ -1387,16 +1387,16 @@ setSCAN_REQ_MULTIPLE(OSObject *object, struct apple80211_scan_multiple_data *sd)
 #endif
     if (fScanResultWrapping) {
         if (OSDynamicCast(RTWCore, fHalService))
-            setProperty("RTW89AppleScanRequestResult", (UInt64)22, 32);
+            RTW_DIAGNOSTIC(setProperty("RTW89AppleScanRequestResult", (UInt64)22, 32));
         return 22;
     }
     if (ic->ic_state <= IEEE80211_S_INIT) {
         if (OSDynamicCast(RTWCore, fHalService))
-            setProperty("RTW89AppleScanRequestResult", (UInt64)22, 32);
+            RTW_DIAGNOSTIC(setProperty("RTW89AppleScanRequestResult", (UInt64)22, 32));
         return 22;
     }
     if (OSDynamicCast(RTWCore, fHalService))
-        setProperty("RTW89AppleScanRequestResult", (UInt64)0, 32);
+        RTW_DIAGNOSTIC(setProperty("RTW89AppleScanRequestResult", (UInt64)0, 32));
     ieee80211_begin_cache_bgscan(&ic->ic_ac.ac_if);
     if (scanSource) {
         scanSource->setTimeoutMS(scanDoneDelayMS);
@@ -1411,9 +1411,9 @@ getSCAN_RESULT(OSObject *object, struct apple80211_scan_result **sr)
     struct ieee80211com *ic = fHalService->get80211Controller();
     const bool isRtw89 = OSDynamicCast(RTWCore, fHalService) != nullptr;
     if (isRtw89) {
-        setProperty("RTW89AppleScanResultRequestCount",
-                    ++rtwScanResultRequestCount, 64);
-        setProperty("RTW89AppleScanResultNodeCount", (UInt64)ic->ic_nnodes, 32);
+        RTW_DIAGNOSTIC(setProperty("RTW89AppleScanResultRequestCount",
+                    ++rtwScanResultRequestCount, 64));
+        RTW_DIAGNOSTIC(setProperty("RTW89AppleScanResultNodeCount", (UInt64)ic->ic_nnodes, 32));
     }
     
     if (fNextNodeToSend == NULL) {
@@ -1492,33 +1492,33 @@ getSCAN_RESULT(OSObject *object, struct apple80211_scan_result **sr)
         memcpy(&result->asr_ssid, fNextNodeToSend->ni_essid, result->asr_ssid_len);
 
     if (isRtw89) {
-        setProperty("RTW89AppleScanResultSSIDLength",
-                    (UInt64)result->asr_ssid_len, 8);
-        setProperty("RTW89AppleScanResultChannel",
-                    (UInt64)result->asr_channel.channel, 16);
-        setProperty("RTW89AppleScanResultRSSI",
-                    (UInt64)(SInt64)result->asr_rssi, 64);
-        setProperty("RTW89AppleScanResultNoise",
-                    (UInt64)(SInt64)result->asr_noise, 64);
-        setProperty("RTW89AppleScanResultAge",
-                    (UInt64)result->asr_age, 32);
-        setProperty("RTW89AppleScanResultChannelFlags",
-                    (UInt64)result->asr_channel.flags, 32);
-        setProperty("RTW89AppleScanResultIELength",
-                    (UInt64)(UInt16)result->asr_ie_len, 16);
-        setProperty("RTW89AppleScanResultIEType",
+        RTW_DIAGNOSTIC(setProperty("RTW89AppleScanResultSSIDLength",
+                    (UInt64)result->asr_ssid_len, 8));
+        RTW_DIAGNOSTIC(setProperty("RTW89AppleScanResultChannel",
+                    (UInt64)result->asr_channel.channel, 16));
+        RTW_DIAGNOSTIC(setProperty("RTW89AppleScanResultRSSI",
+                    (UInt64)(SInt64)result->asr_rssi, 64));
+        RTW_DIAGNOSTIC(setProperty("RTW89AppleScanResultNoise",
+                    (UInt64)(SInt64)result->asr_noise, 64));
+        RTW_DIAGNOSTIC(setProperty("RTW89AppleScanResultAge",
+                    (UInt64)result->asr_age, 32));
+        RTW_DIAGNOSTIC(setProperty("RTW89AppleScanResultChannelFlags",
+                    (UInt64)result->asr_channel.flags, 32));
+        RTW_DIAGNOSTIC(setProperty("RTW89AppleScanResultIELength",
+                    (UInt64)(UInt16)result->asr_ie_len, 16));
+        RTW_DIAGNOSTIC(setProperty("RTW89AppleScanResultIEType",
                     (UInt64)(result->asr_ie_len > 0
                                  ? reinterpret_cast<const UInt8 *>(
                                        result->asr_ie_data)[0]
-                                 : 0), 8);
-        setProperty("RTW89AppleScanResultCapability",
-                    (UInt64)(UInt16)result->asr_cap, 16);
-        setProperty("RTW89AppleScanResultBeaconInterval",
-                    (UInt64)(UInt16)result->asr_beacon_int, 16);
-        setProperty("RTW89AppleScanResultRateCount",
-                    (UInt64)result->asr_nrates, 8);
-        setProperty("RTW89AppleScanResultRate0",
-                    (UInt64)result->asr_rates[0], 32);
+                                 : 0), 8));
+        RTW_DIAGNOSTIC(setProperty("RTW89AppleScanResultCapability",
+                    (UInt64)(UInt16)result->asr_cap, 16));
+        RTW_DIAGNOSTIC(setProperty("RTW89AppleScanResultBeaconInterval",
+                    (UInt64)(UInt16)result->asr_beacon_int, 16));
+        RTW_DIAGNOSTIC(setProperty("RTW89AppleScanResultRateCount",
+                    (UInt64)result->asr_nrates, 8));
+        RTW_DIAGNOSTIC(setProperty("RTW89AppleScanResultRate0",
+                    (UInt64)result->asr_rates[0], 32));
     }
 
     *sr = result;

@@ -76,11 +76,11 @@ int	ieee80211_debug = 0;
 
 ///compat for undefined symbols
 int _stop(struct kmod_info*, void*) {
-    IOLog("_stop(struct kmod_info*, void*) has been invoked\n");
+    RTW_LOG("_stop(struct kmod_info*, void*) has been invoked\n");
     return 0;
 };
 int _start(struct kmod_info*, void*) {
-    IOLog("_start(struct kmod_info*, void*) has been invoked\n");
+    RTW_LOG("_start(struct kmod_info*, void*) has been invoked\n");
     return 0;
 };
 ///
@@ -219,7 +219,7 @@ ieee80211_channel_init(struct _ifnet *ifp)
 void
 ieee80211_ifattach(struct _ifnet *ifp, IOEthernetController *controller)
 {
-    IOLog("ieee80211_ifattach\n");
+    RTW_LOG("ieee80211_ifattach\n");
     struct ieee80211com *ic = (struct ieee80211com *)ifp;
     
     ifp->controller = controller;

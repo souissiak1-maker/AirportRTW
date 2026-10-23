@@ -12,7 +12,7 @@ if [[ "${SAE_HOST_TEST:-0}" == 1 && "${SAE_HOST_SANITIZE:-0}" == 1 ]]; then
  flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer)
 fi
 if [[ "${SAE_HOST_TEST:-0}" != 1 ]]; then
- flags+=(-arch x86_64 "-mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET:-10.15}"
+ flags+=(-include "$ROOT/include/AirportRTWDiagnostics.h" -arch x86_64 "-mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET:-10.15}"
  -isysroot "${SDKROOT:?SDKROOT is required}" -mkernel -fno-stack-protector -DKERNEL
  -I"$ROOT/MacKernelSDK/Headers" -I"$SAE/compat/kernel_libc")
 fi

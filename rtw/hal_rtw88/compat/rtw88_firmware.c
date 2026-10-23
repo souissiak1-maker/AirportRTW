@@ -71,13 +71,13 @@ static int rtw88_decompress(uint8_t *dest, uint32_t *dest_len,
 
     int err = inflateInit(&zs);
     if (err != Z_OK) {
-        IOLog("AirportRTW: inflateInit error %d\n", err);
+        RTW_LOG("AirportRTW: inflateInit error %d\n", err);
         return err;
     }
 
     err = inflate(&zs, Z_FINISH);
     if (err != Z_STREAM_END) {
-        IOLog("AirportRTW: inflate error %d (avail_in=%u avail_out=%u)\n",
+        RTW_LOG("AirportRTW: inflate error %d (avail_in=%u avail_out=%u)\n",
               err, zs.avail_in, zs.avail_out);
         inflateEnd(&zs);
         return err;
@@ -105,13 +105,13 @@ static struct firmware *load_fw_from_blob(const char *base)
         uint32_t out_len = (uint32_t)alloc;
         uint8_t *buf = (uint8_t *)IOMalloc(alloc);
         if (!buf) {
-            IOLog("AirportRTW: OOM for %s (%zu bytes)\n", base, alloc);
+            RTW_LOG("AirportRTW: OOM for %s (%zu bytes)\n", base, alloc);
             return NULL;
         }
 
         if (rtw88_decompress(buf, &out_len,
                               b->data, (uint32_t)b->compressed_size) != 0) {
-            IOLog("AirportRTW: decompress failed for %s\n", base);
+            RTW_LOG("AirportRTW: decompress failed for %s\n", base);
             IOFree(buf, alloc);
             return NULL;
         }
@@ -124,12 +124,12 @@ static struct firmware *load_fw_from_blob(const char *base)
         fw->data        = buf;
         fw->size        = out_len;   /* actual bytes from total_out */
         fw->_alloc_size = alloc;     /* original IOMalloc size for IOFree */
-        IOLog("AirportRTW: firmware %s loaded from blob (%u bytes)\n",
+        RTW_LOG("AirportRTW: firmware %s loaded from blob (%u bytes)\n",
               base, out_len);
         return fw;
     }
 
-    IOLog("AirportRTW: firmware %s not in embedded blobs\n", base);
+    RTW_LOG("AirportRTW: firmware %s not in embedded blobs\n", base);
     return NULL;
 }
 

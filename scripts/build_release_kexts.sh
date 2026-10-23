@@ -38,4 +38,13 @@ for target in "${TARGETS[@]}"; do
     OBJROOT="$OBJECTS"
 done
 
+if [[ "$CONFIGURATION" == "Release" ]]; then
+  for target in "${TARGETS[@]}"; do
+    executable="$OUTPUT/$CONFIGURATION/${target#AirportRTW-}/AirportRTW.kext/Contents/MacOS/AirportRTW"
+    if [[ -f "$executable" ]]; then
+      xcrun strip -S -x "$executable"
+    fi
+  done
+fi
+
 echo "Kexts are available in $OUTPUT/$CONFIGURATION"

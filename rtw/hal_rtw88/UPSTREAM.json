@@ -1,7 +1,7 @@
 {
   "source": "Local Realtek88LegacyAirport/rtw88-stable archive",
   "comparison_revision": "thegwchr/rtw88-stable d029a677c49266fad86750714eb5612becd134d3",
-  "local_changes": "main.c watchdog/power policy and pci.c teardown differ from comparison revision; copied as supplied; AirportRTW log branding in driver/pci.c",
+  "local_changes": "main.c watchdog/power policy and pci.c teardown differ from comparison revision; copied as supplied; AirportRTW log branding in driver/pci.c; Release logging calls in driver/pci.c compile out through RTW_LOG",
   "firmware_source": "Local Airport_RTW88/firmware; Realtek redistribution notice retained",
   "files": {
     "driver/COPYING": "fb5a425bd3b3cd6071a3a9aff9909a859e7c1158d54d32e07658398cd67eb6a0",
@@ -21,7 +21,7 @@
     "driver/mac80211.c": "c72a38098dddf4f4ae447bb60cd0c2a6842df250714bd58fa8be0aa0471bebcc",
     "driver/main.c": "5c124d43c6251186b9d7edaddac1051057e910010ed8f9e9eee839fc18be8acb",
     "driver/main.h": "f7681400b4762612a5382a762f1200def7312da3c45dc2000bd9d0cac7d709a4",
-    "driver/pci.c": "ef23c60cd616713a3f5f8c95befafe0db4a2c750c5af64e8e43398e26317a86e",
+    "driver/pci.c": "9d812ed82fefb7c71fe40c2d213ee324c303c05dae3fc26509a822e27715ddcf",
     "driver/pci.h": "49129551f28352e1edd567199261893a84f4d451d3fec3af04909085b41c219d",
     "driver/phy.c": "669d76c8acfc9f30418dbd119e777eae4404f6e3bb1198292aab536a3aa9e4ec",
     "driver/phy.h": "55388bdbec3b743553776282b918d2f6ffe06d4ac1d8849cf0ea0e22f19867e4",

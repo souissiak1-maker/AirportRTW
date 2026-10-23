@@ -977,7 +977,7 @@ static void rtw_pci_tx_isr(struct rtw_dev *rtwdev, struct rtw_pci *rtwpci,
 	{
 		u32 queued = skb_queue_len(&ring->queue);
 		if (count > queued) {
-			IOLog("AirportRTW: TXISR DESYNC q%d: count=%u > queued=%u "
+			RTW_LOG("AirportRTW: TXISR DESYNC q%d: count=%u > queued=%u "
 			      "(cur_rp=%u rp=%u wp=%u len=%u), clamping\n",
 			      hw_queue, count, queued,
 			      cur_rp, ring->r.rp, ring->r.wp, ring->r.len);

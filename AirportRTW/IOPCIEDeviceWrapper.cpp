@@ -86,7 +86,7 @@ start(IOService *provider)
     if (!super::start(provider)) {
         return false;
     }
-    IOLog("%s::super start succeed\n", getName());
+    RTW_LOG("%s::super start succeed\n", getName());
     UInt8 builtIn = 0;
     setProperty("built-in", OSData::withBytes(&builtIn, sizeof(builtIn)));
     PMinit();

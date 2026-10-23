@@ -305,15 +305,15 @@ bool rtw88LinuxAttach(Rtw88PciTransport *transport,
     struct ieee80211_hw *hw = nullptr;
     struct ieee80211_vif *vif = nullptr;
 
-    IOLog("AirportRTW: entering PCI probe\n");
+    RTW_LOG("AirportRTW: entering PCI probe\n");
     transport->recordAttachStage("rtw_pci_probe");
     const int probeResult = airportrtw88_probe(transport->linuxDevice());
     transport->recordProbeResult(probeResult);
     if (probeResult != 0) {
-        IOLog("AirportRTW: PCI probe failed\n");
+        RTW_LOG("AirportRTW: PCI probe failed\n");
         return false;
     }
-    IOLog("AirportRTW: PCI probe returned successfully\n");
+    RTW_LOG("AirportRTW: PCI probe returned successfully\n");
     context->probed = true;
 
     transport->recordAttachStage("Linux hardware/ops/wiphy validation");
@@ -416,17 +416,17 @@ bool rtw88LinuxPowerUp(Rtw88LinuxContext *context)
     if (!hw || !hw->ops || !vif)
         return false;
     if (!context->started) {
-        IOLog("AirportRTW: hardware start callback begin\n");
+        RTW_LOG("AirportRTW: hardware start callback begin\n");
         WiphyGuard guard(hw);
         if (!hw->ops->start || hw->ops->start(hw) != 0) {
-            IOLog("AirportRTW: hardware start callback failed\n");
+            RTW_LOG("AirportRTW: hardware start callback failed\n");
             return false;
         }
         context->started = true;
-        IOLog("AirportRTW: hardware start callback complete\n");
+        RTW_LOG("AirportRTW: hardware start callback complete\n");
     }
     if (!context->interfaceAdded) {
-        IOLog("AirportRTW: add-interface callback begin\n");
+        RTW_LOG("AirportRTW: add-interface callback begin\n");
         int result;
         {
             WiphyGuard guard(hw);
@@ -434,7 +434,7 @@ bool rtw88LinuxPowerUp(Rtw88LinuxContext *context)
                                             : -EOPNOTSUPP;
         }
         if (result != 0) {
-            IOLog("AirportRTW: add-interface callback failed (%d)\n",
+            RTW_LOG("AirportRTW: add-interface callback failed (%d)\n",
                   result);
             if (hw->ops->stop) {
                 WiphyGuard guard(hw);
@@ -445,7 +445,7 @@ bool rtw88LinuxPowerUp(Rtw88LinuxContext *context)
         }
         rtw88_register_vif(vif);
         context->interfaceAdded = true;
-        IOLog("AirportRTW: add-interface callback complete\n");
+        RTW_LOG("AirportRTW: add-interface callback complete\n");
     }
     return true;
 }

@@ -35,6 +35,12 @@ else
   OPT=(-O2)
 fi
 
+if [[ "${CONFIGURATION:-Release}" == "Debug" ]]; then
+  RTW_LOG_FLAGS=(-DDEBUG=1)
+else
+  RTW_LOG_FLAGS=()
+fi
+RTW_LOG_FLAGS+=(-include "$ROOT/include/AirportRTWDiagnostics.h")
 objects=()
 compile_c() {
   local src="$1"
@@ -42,7 +48,7 @@ compile_c() {
   local rel="${src#$ROOT/}"
   local obj="$OUT_DIR/${rel//\//_}.o"
   echo "CC  $rel"
-  xcrun clang "$@" "${OPT[@]}" -c "$src" -o "$obj"
+  xcrun clang "${RTW_LOG_FLAGS[@]}" "$@" "${OPT[@]}" -c "$src" -o "$obj"
   objects+=("$obj")
 }
 

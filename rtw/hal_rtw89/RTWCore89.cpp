@@ -46,8 +46,8 @@ bool RTWCore89::attach(IOPCIDevice *device)
 {
     int noHE = 0;
     heDisabled = PE_parse_boot_argn("-nohe", &noHE, sizeof(noHE));
-    IOLog("AirportRTW-RTW89: attach begin\n");
-    device->setProperty("RTWHALStage", "PCI ID match");
+    RTW_LOG("AirportRTW-RTW89: attach begin\n");
+    RTW_DIAGNOSTIC(device->setProperty("RTWHALStage", "PCI ID match"));
     if (!rtw89_match(device))
         return false;
 
@@ -56,12 +56,12 @@ bool RTWCore89::attach(IOPCIDevice *device)
     const char *chipName = "embedded RTL8852A";
 
     pciDevice = device;
-    device->setProperty("RTWHALStage", "PCI transport initialization");
+    RTW_DIAGNOSTIC(device->setProperty("RTWHALStage", "PCI transport initialization"));
     transport = Rtw89PciTransport::withDevice(device, getMainWorkLoop());
     if (!transport)
         goto fail;
 
-    device->setProperty("RTWHALStage", "scan dwell timer");
+    RTW_DIAGNOSTIC(device->setProperty("RTWHALStage", "scan dwell timer"));
     scanDwellTimer = IOTimerEventSource::timerEventSource(
         this, &RTWCore89::scanDwellExpired);
     if (!scanDwellTimer)
@@ -72,7 +72,7 @@ bool RTWCore89::attach(IOPCIDevice *device)
         goto fail;
     }
 
-    device->setProperty("RTWHALStage", "association recovery timer");
+    RTW_DIAGNOSTIC(device->setProperty("RTWHALStage", "association recovery timer"));
     associationRecoveryTimer = IOTimerEventSource::timerEventSource(
         this, &RTWCore89::associationRecoveryExpired);
     if (!associationRecoveryTimer)
@@ -84,13 +84,15 @@ bool RTWCore89::attach(IOPCIDevice *device)
         goto fail;
     }
 
-    device->setProperty("RTWHALStage", "Linux PCI probe/context");
+    RTW_DIAGNOSTIC(device->setProperty("RTWHALStage", "Linux PCI probe/context"));
     if (!rtw89LinuxAttach(transport, &linuxContext))
         goto fail;
-    IOLog("AirportRTW-RTW89: Linux PCI probe complete\n");
+    RTW_LOG("AirportRTW-RTW89: Linux PCI probe complete\n");
     linuxContext.nativeOwner = this;
     linuxContext.receive = receive;
+#if RTW_DIAGNOSTICS
     linuxContext.traceReceive = traceReceive;
+#endif
     linuxContext.txResume = resumeTransmit;
     sc.sc_hw = static_cast<struct ieee80211_hw *>(linuxContext.hardware);
     sc.sc_rtwdev = static_cast<struct rtw89_dev *>(linuxContext.device);
@@ -127,23 +129,23 @@ bool RTWCore89::attach(IOPCIDevice *device)
     strlcpy(sc.sc_country, "00", sizeof(sc.sc_country));
     sc.sc_noise = -95;
 
-    device->setProperty("RTWHALStage", "net80211 attach");
+    RTW_DIAGNOSTIC(device->setProperty("RTWHALStage", "net80211 attach"));
     if (!attachNet80211())
         goto fail_linux;
-    device->setProperty("RTWHALStage", "interrupt enable");
+    RTW_DIAGNOSTIC(device->setProperty("RTWHALStage", "interrupt enable"));
     transport->enableInterrupts();
-    getController()->setProperty("RTW89SoftwareCCMP", kOSBooleanFalse);
-    getController()->setProperty("RTW89EAPOLTxPolicy", "experiment-native-control-port");
+    RTW_DIAGNOSTIC(getController()->setProperty("RTW89SoftwareCCMP", kOSBooleanFalse));
+    RTW_DIAGNOSTIC(getController()->setProperty("RTW89EAPOLTxPolicy", "experiment-native-control-port"));
     sc.sc_flags |= RTW89_FLAG_ATTACHED;
-    IOLog("AirportRTW-RTW89: attach complete\n");
-    device->setProperty("RTWHALStage", "HAL attach complete");
+    RTW_LOG("AirportRTW-RTW89: attach complete\n");
+    RTW_DIAGNOSTIC(device->setProperty("RTWHALStage", "HAL attach complete"));
     return true;
 
 fail_linux:
     transport->disableInterrupts();
     rtw89LinuxDetach(transport, &linuxContext);
 fail:
-    IOLog("AirportRTW-RTW89: attach failed\n");
+    RTW_LOG("AirportRTW-RTW89: attach failed\n");
     if (associationRecoveryTimer) {
         associationRecoveryTimer->cancelTimeout();
         getMainWorkLoop()->removeEventSource(associationRecoveryTimer);
@@ -176,7 +178,7 @@ fail:
 void RTWCore89::detach(IOPCIDevice *device)
 {
     (void)device;
-    IOLog("AirportRTW-RTW89: detach begin\n");
+    RTW_LOG("AirportRTW-RTW89: detach begin\n");
     if (transport)
         transport->disableInterrupts();
     if (scanDwellTimer) {
@@ -204,7 +206,7 @@ void RTWCore89::detach(IOPCIDevice *device)
 IOReturn RTWCore89::enable(IONetworkInterface *interface)
 {
     (void)interface;
-    IOLog("AirportRTW-RTW89: Wi-Fi enable begin\n");
+    RTW_LOG("AirportRTW-RTW89: Wi-Fi enable begin\n");
     if (!(sc.sc_flags & RTW89_FLAG_ATTACHED))
         return kIOReturnNotReady;
     if (sc.sc_flags & RTW89_FLAG_ENABLED)
@@ -220,7 +222,7 @@ IOReturn RTWCore89::enable(IONetworkInterface *interface)
         if (sc.sc_ic.ic_event_handler)
             sc.sc_ic.ic_event_handler(&sc.sc_ic, IEEE80211_EVT_DRIVER_STOPPED, nullptr);
 #endif
-        IOLog("AirportRTW-RTW89: Wi-Fi enable failed during power-up\n");
+        RTW_LOG("AirportRTW-RTW89: Wi-Fi enable failed during power-up\n");
         return kIOReturnIOError;
     }
     sc.sc_flags |= RTW89_FLAG_ENABLED | RTW89_FLAG_FW_RUNNING |
@@ -240,14 +242,14 @@ IOReturn RTWCore89::enable(IONetworkInterface *interface)
 #else
     ieee80211_begin_scan(&sc.sc_ic.ic_if);
 #endif
-    IOLog("AirportRTW-RTW89: Wi-Fi enable complete\n");
+    RTW_LOG("AirportRTW-RTW89: Wi-Fi enable complete\n");
     return kIOReturnSuccess;
 }
 
 IOReturn RTWCore89::disable(IONetworkInterface *interface)
 {
     (void)interface;
-    IOLog("AirportRTW-RTW89: Wi-Fi disable begin\n");
+    RTW_LOG("AirportRTW-RTW89: Wi-Fi disable begin\n");
     if (associationRecoveryTimer)
         associationRecoveryTimer->cancelTimeout();
     associationRecoveryPending = 0;
@@ -267,7 +269,7 @@ IOReturn RTWCore89::disable(IONetworkInterface *interface)
     if (sc.sc_ic.ic_event_handler)
         sc.sc_ic.ic_event_handler(&sc.sc_ic, IEEE80211_EVT_DRIVER_STOPPED, nullptr);
 #endif
-    IOLog("AirportRTW-RTW89: Wi-Fi disable complete\n");
+    RTW_LOG("AirportRTW-RTW89: Wi-Fi disable complete\n");
     return kIOReturnSuccess;
 }
 
@@ -457,241 +459,243 @@ void RTWCore89::watchdog(struct _ifnet *ifp)
             owner->associationRecoveryAttemptActive = 0;
         }
     }
+#if RTW_DIAGNOSTICS
     IOEthernetController *controller = owner->getController();
     if (!controller)
         return;
-    controller->setProperty("RTW89InterruptCount",
-                            owner->transport ? owner->transport->getInterruptCount() : 0, 64);
-    controller->setProperty("RTW89StationState", owner->linuxContext.stationState, 32);
-    controller->setProperty("RTW89ScanChannelCount", owner->scanChannelCount, 64);
-    controller->setProperty("RTW89RawReceiveCount", owner->rawReceiveCount, 64);
-    controller->setProperty("RTW89AcceptedReceiveCount", owner->acceptedReceiveCount, 64);
-    controller->setProperty("RTW89BeaconProbeCount", owner->beaconProbeCount, 64);
-    controller->setProperty("RTW89AuthTxCount", owner->linuxContext.authTxCount, 64);
-    controller->setProperty("RTW89AuthTxAckCount", owner->linuxContext.authTxAckCount, 64);
-    controller->setProperty("RTW89AssocTxCount", owner->linuxContext.assocTxCount, 64);
-    controller->setProperty("RTW89AssocTxAckCount", owner->linuxContext.assocTxAckCount, 64);
-    controller->setProperty("RTW89AuthRxCount", owner->linuxContext.authRxCount, 64);
-    controller->setProperty("RTW89AssocRxCount", owner->linuxContext.assocRxCount, 64);
-    controller->setProperty("RTW89ActionTxCount", owner->linuxContext.actionTxCount, 64);
-    controller->setProperty("RTW89ActionTxAckCount",
-                            owner->linuxContext.actionTxAckCount, 64);
-    controller->setProperty("RTW89ActionRxCount", owner->linuxContext.actionRxCount, 64);
-    controller->setProperty("RTW89LastActionTxCategory",
-                            owner->linuxContext.lastActionTxCategory, 32);
-    controller->setProperty("RTW89LastActionTxCode",
-                            owner->linuxContext.lastActionTxCode, 32);
-    controller->setProperty("RTW89LastActionTxToken",
-                            owner->linuxContext.lastActionTxToken, 32);
-    controller->setProperty("RTW89LastAddbaTxBytes0To7",
-                            owner->linuxContext.lastAddbaTxBytes0To7, 64);
-    controller->setProperty("RTW89LastAddbaTxByte8",
-                            owner->linuxContext.lastAddbaTxByte8, 32);
-    controller->setProperty("RTW89LastAddbaTxParams",
-                            owner->linuxContext.lastAddbaTxParams, 32);
-    controller->setProperty("RTW89LastAddbaTxTimeout",
-                            owner->linuxContext.lastAddbaTxTimeout, 32);
-    controller->setProperty("RTW89LastAddbaTxStartSeqControl",
-                            owner->linuxContext.lastAddbaTxStartSeqControl, 32);
-    controller->setProperty("RTW89LastActionRxCategory",
-                            owner->linuxContext.lastActionRxCategory, 32);
-    controller->setProperty("RTW89LastActionRxCode",
-                            owner->linuxContext.lastActionRxCode, 32);
-    controller->setProperty("RTW89LastActionRxToken",
-                            owner->linuxContext.lastActionRxToken, 32);
-    controller->setProperty("RTW89LastActionRxStatus",
-                            owner->linuxContext.lastActionRxStatus, 32);
-    controller->setProperty("RTW89EAPOLTxSubmitted", owner->linuxContext.eapolTxSubmitted, 64);
-    controller->setProperty("RTW89EAPOLTxAcked", owner->linuxContext.eapolTxAcked, 64);
-    controller->setProperty("RTW89DataTxCount", owner->linuxContext.dataTxCount, 64);
-    controller->setProperty("RTW89ProtectedTxCount", owner->linuxContext.protectedTxCount, 64);
-    controller->setProperty("RTW89DHCPTxCount", owner->linuxContext.dhcpTxCount, 64);
-    controller->setProperty("RTW89DHCPTxAckCount", owner->linuxContext.dhcpTxAckCount, 64);
-    controller->setProperty("RTW89ARPTxCount", owner->linuxContext.arpTxCount, 64);
-    controller->setProperty("RTW89ARPTxAckCount", owner->linuxContext.arpTxAckCount, 64);
-    controller->setProperty("RTW89LastTxCipher", owner->linuxContext.lastTxCipher, 32);
-    controller->setProperty("RTW89LastTxKeyIndex", owner->linuxContext.lastTxKeyIndex, 32);
-    controller->setProperty("RTW89LastTxIvLength", owner->linuxContext.lastTxIvLength, 32);
-    controller->setProperty("RTW89TxDescDataCount",
-                            owner->linuxContext.txDescDataCount, 64);
-    controller->setProperty("RTW89TxDescUseRate",
-                            owner->linuxContext.txDescUseRate, 32);
-    controller->setProperty("RTW89TxDescDisableFallback",
-                            owner->linuxContext.txDescDisableFallback, 32);
-    controller->setProperty("RTW89TxDescHardwareRate",
-                            owner->linuxContext.txDescHardwareRate, 32);
-    controller->setProperty("RTW89TxDescBandwidth",
-                            owner->linuxContext.txDescBandwidth, 32);
-    controller->setProperty("RTW89TxDescAggregationEnabled",
-                            owner->linuxContext.txDescAggregationEnabled, 32);
-    controller->setProperty("RTW89TxDescMacId",
-                            owner->linuxContext.txDescMacId, 32);
-    controller->setProperty("RTW89TxDescQueueSelect",
-                            owner->linuxContext.txDescQueueSelect, 32);
-    controller->setProperty("RTW89TxReportCount",
-                            owner->linuxContext.txReportCount, 64);
-    controller->setProperty("RTW89TxReportStatus",
-                            owner->linuxContext.txReportStatus, 32);
-    controller->setProperty("RTW89TxReportAttempts",
-                            owner->linuxContext.txReportAttempts, 32);
-    controller->setProperty("RTW89TxAvailableSlots",
-                            rtw89LinuxTxAvailableSlots(&owner->linuxContext), 32);
-    controller->setProperty("RTW89OutputQueueLength",
-                            (UInt64)ifq_len(&ifp->if_snd), 32);
-    controller->setProperty("RTW89OutputQueueActive",
-                            (UInt64)ifq_is_oactive(&ifp->if_snd), 8);
-    controller->setProperty("RTW89StartCallCount", owner->startCallCount, 64);
-    controller->setProperty("RTW89TxBackpressureCount",
-                            owner->txBackpressureCount, 64);
-    controller->setProperty("RTW89TxAmpduMask",
-                            owner->linuxContext.txAmpduMask, 16);
-    controller->setProperty("RTW89AmpduTxStartCount",
-                            owner->linuxContext.ampduTxStartCount, 64);
-    controller->setProperty("RTW89AmpduTxStartFailCount",
-                            owner->linuxContext.ampduTxStartFailCount, 64);
-    controller->setProperty("RTW89AmpduTxStopCount",
-                            owner->linuxContext.ampduTxStopCount, 64);
-    controller->setProperty("RTW89AmpduRxStartCount",
-                            owner->linuxContext.ampduRxStartCount, 64);
-    controller->setProperty("RTW89AmpduRxStartFailCount",
-                            owner->linuxContext.ampduRxStartFailCount, 64);
-    controller->setProperty("RTW89AmpduRxStopCount",
-                            owner->linuxContext.ampduRxStopCount, 64);
-    controller->setProperty("RTW89AssocStageMask",
-                            owner->linuxContext.assocStageMask, 32);
-    controller->setProperty("RTW89RAAssocMode",
-                            owner->linuxContext.raAuditU32[1], 32);
-    controller->setProperty("RTW89RAAssocBandwidth",
-                            owner->linuxContext.raAuditU32[2], 32);
-    controller->setProperty("RTW89RAAssocSpatialStreams",
-                            owner->linuxContext.raAuditU32[3] + 1, 32);
-    controller->setProperty("RTW89RAAssocRxNss",
-                            owner->linuxContext.raAuditU32[41], 32);
-    controller->setProperty("RTW89RAAssocTxNss",
-                            owner->linuxContext.raAuditU32[42], 32);
-    controller->setProperty("RTW89RAAssocMask",
-                            owner->linuxContext.raAuditU64[0], 64);
-    controller->setProperty("RTW89RALiveMode",
-                            owner->linuxContext.raAuditU32[43], 32);
-    controller->setProperty("RTW89RALiveMcs",
-                            owner->linuxContext.raAuditU32[44], 32);
-    controller->setProperty("RTW89RALiveBandwidth",
-                            owner->linuxContext.raAuditU32[45], 32);
-    controller->setProperty("RTW89RALiveNss",
-                            owner->linuxContext.raAuditU32[46], 32);
-    controller->setProperty("RTW89RALiveFlags",
-                            owner->linuxContext.raAuditU32[47], 32);
-    controller->setProperty("RTW89RALiveBitrate100Kbps",
-                            owner->linuxContext.raAuditU32[48], 32);
-    controller->setProperty("RTW89RALiveHardwareRate",
-                            owner->linuxContext.raAuditU32[49], 32);
-    controller->setProperty("RTW89LastAssocResponseLength",
-                            owner->lastAssocResponseLength, 32);
-    controller->setProperty("RTW89LastAssocResponseStatus",
-                            owner->lastAssocResponseStatus, 16);
-    controller->setProperty("RTW89LastAssocResponseAid",
-                            owner->lastAssocResponseAid, 16);
-    controller->setProperty("RTW89LastAssocResponseFirstIE",
-                            owner->lastAssocResponseFirstIE, 16);
-    controller->setProperty("RTW89AssocStatus", owner->sc.sc_ic.ic_assoc_status, 16);
-    controller->setProperty("RTW89RxCCMPReplays", owner->sc.sc_ic.ic_stats.is_ccmp_replays, 32);
-    controller->setProperty("RTW89RxCCMPIntegrityFailures", owner->sc.sc_ic.ic_stats.is_ccmp_dec_errs, 32);
-    controller->setProperty("RTW89RxHardwareDecrypted", owner->linuxContext.rxHardwareDecryptedCount, 64);
-    controller->setProperty("RTW89RxProtectedSoftware", owner->linuxContext.rxProtectedSoftwareCount, 64);
-    controller->setProperty("RTW89RxCCMPMICStripped", owner->linuxContext.rxCCMPMICStrippedCount, 64);
-    controller->setProperty("RTW89RxConnectionProtected", owner->linuxContext.rxConnectionProtectedCount, 64);
-    controller->setProperty("RTW89RxConnectionUndecrypted", owner->linuxContext.rxConnectionUndecryptedCount, 64);
-    controller->setProperty("RTW89RxConnectionInvalid", owner->linuxContext.rxConnectionInvalidCount, 64);
-    controller->setProperty("RTW89RxConnectionSNAP", owner->linuxContext.rxConnectionSNAPCount, 64);
-    controller->setProperty("RTW89RxConnectionDHCP", owner->linuxContext.rxConnectionDHCPCount, 64);
-    controller->setProperty("RTW89TxAddressMismatch", owner->linuxContext.txAddressMismatchCount, 64);
-    controller->setProperty("RTW89RxUnauthorized", owner->sc.sc_ic.ic_stats.is_rx_unauth, 32);
-    controller->setProperty("RTW89RxProtectionOff", owner->sc.sc_ic.ic_stats.is_rx_nowep, 32);
-    controller->setProperty("RTW89PortValid", owner->sc.sc_ic.ic_bss && owner->sc.sc_ic.ic_bss->ni_port_valid);
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89InterruptCount",
+                            owner->transport ? owner->transport->getInterruptCount() : 0, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89StationState", owner->linuxContext.stationState, 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89ScanChannelCount", owner->scanChannelCount, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89RawReceiveCount", owner->rawReceiveCount, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89AcceptedReceiveCount", owner->acceptedReceiveCount, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89BeaconProbeCount", owner->beaconProbeCount, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89AuthTxCount", owner->linuxContext.authTxCount, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89AuthTxAckCount", owner->linuxContext.authTxAckCount, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89AssocTxCount", owner->linuxContext.assocTxCount, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89AssocTxAckCount", owner->linuxContext.assocTxAckCount, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89AuthRxCount", owner->linuxContext.authRxCount, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89AssocRxCount", owner->linuxContext.assocRxCount, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89ActionTxCount", owner->linuxContext.actionTxCount, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89ActionTxAckCount",
+                            owner->linuxContext.actionTxAckCount, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89ActionRxCount", owner->linuxContext.actionRxCount, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89LastActionTxCategory",
+                            owner->linuxContext.lastActionTxCategory, 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89LastActionTxCode",
+                            owner->linuxContext.lastActionTxCode, 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89LastActionTxToken",
+                            owner->linuxContext.lastActionTxToken, 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89LastAddbaTxBytes0To7",
+                            owner->linuxContext.lastAddbaTxBytes0To7, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89LastAddbaTxByte8",
+                            owner->linuxContext.lastAddbaTxByte8, 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89LastAddbaTxParams",
+                            owner->linuxContext.lastAddbaTxParams, 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89LastAddbaTxTimeout",
+                            owner->linuxContext.lastAddbaTxTimeout, 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89LastAddbaTxStartSeqControl",
+                            owner->linuxContext.lastAddbaTxStartSeqControl, 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89LastActionRxCategory",
+                            owner->linuxContext.lastActionRxCategory, 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89LastActionRxCode",
+                            owner->linuxContext.lastActionRxCode, 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89LastActionRxToken",
+                            owner->linuxContext.lastActionRxToken, 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89LastActionRxStatus",
+                            owner->linuxContext.lastActionRxStatus, 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89EAPOLTxSubmitted", owner->linuxContext.eapolTxSubmitted, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89EAPOLTxAcked", owner->linuxContext.eapolTxAcked, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89DataTxCount", owner->linuxContext.dataTxCount, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89ProtectedTxCount", owner->linuxContext.protectedTxCount, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89DHCPTxCount", owner->linuxContext.dhcpTxCount, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89DHCPTxAckCount", owner->linuxContext.dhcpTxAckCount, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89ARPTxCount", owner->linuxContext.arpTxCount, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89ARPTxAckCount", owner->linuxContext.arpTxAckCount, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89LastTxCipher", owner->linuxContext.lastTxCipher, 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89LastTxKeyIndex", owner->linuxContext.lastTxKeyIndex, 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89LastTxIvLength", owner->linuxContext.lastTxIvLength, 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89TxDescDataCount",
+                            owner->linuxContext.txDescDataCount, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89TxDescUseRate",
+                            owner->linuxContext.txDescUseRate, 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89TxDescDisableFallback",
+                            owner->linuxContext.txDescDisableFallback, 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89TxDescHardwareRate",
+                            owner->linuxContext.txDescHardwareRate, 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89TxDescBandwidth",
+                            owner->linuxContext.txDescBandwidth, 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89TxDescAggregationEnabled",
+                            owner->linuxContext.txDescAggregationEnabled, 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89TxDescMacId",
+                            owner->linuxContext.txDescMacId, 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89TxDescQueueSelect",
+                            owner->linuxContext.txDescQueueSelect, 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89TxReportCount",
+                            owner->linuxContext.txReportCount, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89TxReportStatus",
+                            owner->linuxContext.txReportStatus, 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89TxReportAttempts",
+                            owner->linuxContext.txReportAttempts, 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89TxAvailableSlots",
+                            rtw89LinuxTxAvailableSlots(&owner->linuxContext), 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89OutputQueueLength",
+                            (UInt64)ifq_len(&ifp->if_snd), 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89OutputQueueActive",
+                            (UInt64)ifq_is_oactive(&ifp->if_snd), 8));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89StartCallCount", owner->startCallCount, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89TxBackpressureCount",
+                            owner->txBackpressureCount, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89TxAmpduMask",
+                            owner->linuxContext.txAmpduMask, 16));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89AmpduTxStartCount",
+                            owner->linuxContext.ampduTxStartCount, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89AmpduTxStartFailCount",
+                            owner->linuxContext.ampduTxStartFailCount, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89AmpduTxStopCount",
+                            owner->linuxContext.ampduTxStopCount, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89AmpduRxStartCount",
+                            owner->linuxContext.ampduRxStartCount, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89AmpduRxStartFailCount",
+                            owner->linuxContext.ampduRxStartFailCount, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89AmpduRxStopCount",
+                            owner->linuxContext.ampduRxStopCount, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89AssocStageMask",
+                            owner->linuxContext.assocStageMask, 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89RAAssocMode",
+                            owner->linuxContext.raAuditU32[1], 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89RAAssocBandwidth",
+                            owner->linuxContext.raAuditU32[2], 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89RAAssocSpatialStreams",
+                            owner->linuxContext.raAuditU32[3] + 1, 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89RAAssocRxNss",
+                            owner->linuxContext.raAuditU32[41], 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89RAAssocTxNss",
+                            owner->linuxContext.raAuditU32[42], 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89RAAssocMask",
+                            owner->linuxContext.raAuditU64[0], 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89RALiveMode",
+                            owner->linuxContext.raAuditU32[43], 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89RALiveMcs",
+                            owner->linuxContext.raAuditU32[44], 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89RALiveBandwidth",
+                            owner->linuxContext.raAuditU32[45], 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89RALiveNss",
+                            owner->linuxContext.raAuditU32[46], 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89RALiveFlags",
+                            owner->linuxContext.raAuditU32[47], 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89RALiveBitrate100Kbps",
+                            owner->linuxContext.raAuditU32[48], 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89RALiveHardwareRate",
+                            owner->linuxContext.raAuditU32[49], 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89LastAssocResponseLength",
+                            owner->lastAssocResponseLength, 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89LastAssocResponseStatus",
+                            owner->lastAssocResponseStatus, 16));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89LastAssocResponseAid",
+                            owner->lastAssocResponseAid, 16));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89LastAssocResponseFirstIE",
+                            owner->lastAssocResponseFirstIE, 16));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89AssocStatus", owner->sc.sc_ic.ic_assoc_status, 16));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89RxCCMPReplays", owner->sc.sc_ic.ic_stats.is_ccmp_replays, 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89RxCCMPIntegrityFailures", owner->sc.sc_ic.ic_stats.is_ccmp_dec_errs, 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89RxHardwareDecrypted", owner->linuxContext.rxHardwareDecryptedCount, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89RxProtectedSoftware", owner->linuxContext.rxProtectedSoftwareCount, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89RxCCMPMICStripped", owner->linuxContext.rxCCMPMICStrippedCount, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89RxConnectionProtected", owner->linuxContext.rxConnectionProtectedCount, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89RxConnectionUndecrypted", owner->linuxContext.rxConnectionUndecryptedCount, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89RxConnectionInvalid", owner->linuxContext.rxConnectionInvalidCount, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89RxConnectionSNAP", owner->linuxContext.rxConnectionSNAPCount, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89RxConnectionDHCP", owner->linuxContext.rxConnectionDHCPCount, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89TxAddressMismatch", owner->linuxContext.txAddressMismatchCount, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89RxUnauthorized", owner->sc.sc_ic.ic_stats.is_rx_unauth, 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89RxProtectionOff", owner->sc.sc_ic.ic_stats.is_rx_nowep, 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89PortValid", owner->sc.sc_ic.ic_bss && owner->sc.sc_ic.ic_bss->ni_port_valid));
 #ifdef AIRPORT_WCL
     uint64_t decryptedData = 0;
     for (unsigned ac = 0; ac < 4; ++ac)
         decryptedData += owner->sc.sc_ic.ic_wcl_rx_packets[ac];
-    controller->setProperty("RTW89RxDataAfterDecrypt", decryptedData, 64);
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89RxDataAfterDecrypt", decryptedData, 64));
 #endif
-    controller->setProperty("RTW89RxDecryptFailures", owner->sc.sc_ic.ic_stats.is_rx_wepfail, 32);
-    controller->setProperty("RTW89RxUnencrypted", owner->sc.sc_ic.ic_stats.is_rx_unencrypted, 32);
-    controller->setProperty("RTW89RxDecapFailures", owner->sc.sc_ic.ic_stats.is_rx_decap, 32);
-    controller->setProperty("RTW89RxMgmtDiscard",
-                            owner->sc.sc_ic.ic_stats.is_rx_mgtdiscard, 32);
-    controller->setProperty("RTW89RxElementTooSmall",
-                            owner->sc.sc_ic.ic_stats.is_rx_elem_toosmall, 32);
-    controller->setProperty("RTW89RxAssocNoRate",
-                            owner->sc.sc_ic.ic_stats.is_rx_assoc_norate, 32);
-    controller->setProperty("RTW89RxDuplicate",
-                            owner->sc.sc_ic.ic_stats.is_rx_dup, 32);
-    controller->setProperty("RTW89RxWrongDirection",
-                            owner->sc.sc_ic.ic_stats.is_rx_wrongdir, 32);
-    controller->setProperty("RTW89RxTooShort",
-                            owner->sc.sc_ic.ic_stats.is_rx_tooshort, 32);
-    controller->setProperty("RTW89RxBadVersion",
-                            owner->sc.sc_ic.ic_stats.is_rx_badversion, 32);
-    controller->setProperty("RTW89LastAssocResponseFC1",
-                            owner->lastAssocResponseFC1, 8);
-    controller->setProperty("RTW89LastAssocResponseSequence",
-                            owner->lastAssocResponseSequence, 16);
-    controller->setProperty("RTW89AssocStateBeforeInput",
-                            owner->assocStateBeforeInput, 8);
-    controller->setProperty("RTW89AssocStateAfterInput",
-                            owner->assocStateAfterInput, 8);
-    controller->setProperty("RTW89AssocStatusAfterInput",
-                            owner->assocStatusAfterInput, 16);
-    controller->setProperty("RTW89Net80211NodeCount",
-                            (UInt64)owner->sc.sc_ic.ic_nnodes, 32);
-    controller->setProperty("RTW89AssociationRunWatchdogTicks",
-                            owner->associationRunWatchdogTicks, 32);
-    controller->setProperty("RTW89AssociationRecoveryPending",
-                            owner->associationRecoveryPending, 8);
-    controller->setProperty("RTW89AssociationRecoveryAttempted",
-                            owner->associationRecoveryAttempted, 8);
-    controller->setProperty("RTW89AssociationRecoveryTriggerCount",
-                            owner->associationRecoveryTriggerCount, 64);
-    controller->setProperty("RTW89AssociationRecoveryAttemptCount",
-                            owner->associationRecoveryAttemptCount, 64);
-    controller->setProperty("RTW89AssociationRecoverySuccessCount",
-                            owner->associationRecoverySuccessCount, 64);
-    controller->setProperty("RTW89HECapable", owner->sc.sc_ic.ic_hecaps != 0);
-    controller->setProperty("RTW89HEEnabled", (owner->sc.sc_ic.ic_flags & IEEE80211_F_HEON) != 0);
-    controller->setProperty("RTWJoinEarlyRx", owner->sc.sc_ic.ic_join_rx_early,
-                            sizeof(owner->sc.sc_ic.ic_join_rx_early));
-    controller->setProperty("RTWSAERxHeaders", owner->sc.sc_ic.ic_sae_rx_headers,
-                            sizeof(owner->sc.sc_ic.ic_sae_rx_headers));
-    controller->setProperty("RTWSAERawData", owner->sc.sc_ic.ic_sae_rx_data, 32);
-    controller->setProperty("RTWSAERawEAPOL", owner->sc.sc_ic.ic_sae_rx_eapol, 32);
-    controller->setProperty("RTWSAEEAPOLCalls", owner->sc.sc_ic.ic_sae_eapol_calls, 32);
-    controller->setProperty("RTWSAEStage", owner->sc.sc_ic.ic_sae_stage, 32);
-    controller->setProperty("RTWSAEError", owner->sc.sc_ic.ic_sae_error, 32);
-    controller->setProperty("RTW89Net80211State",
-                            (UInt64)owner->sc.sc_ic.ic_state, 8);
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89RxDecryptFailures", owner->sc.sc_ic.ic_stats.is_rx_wepfail, 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89RxUnencrypted", owner->sc.sc_ic.ic_stats.is_rx_unencrypted, 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89RxDecapFailures", owner->sc.sc_ic.ic_stats.is_rx_decap, 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89RxMgmtDiscard",
+                            owner->sc.sc_ic.ic_stats.is_rx_mgtdiscard, 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89RxElementTooSmall",
+                            owner->sc.sc_ic.ic_stats.is_rx_elem_toosmall, 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89RxAssocNoRate",
+                            owner->sc.sc_ic.ic_stats.is_rx_assoc_norate, 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89RxDuplicate",
+                            owner->sc.sc_ic.ic_stats.is_rx_dup, 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89RxWrongDirection",
+                            owner->sc.sc_ic.ic_stats.is_rx_wrongdir, 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89RxTooShort",
+                            owner->sc.sc_ic.ic_stats.is_rx_tooshort, 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89RxBadVersion",
+                            owner->sc.sc_ic.ic_stats.is_rx_badversion, 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89LastAssocResponseFC1",
+                            owner->lastAssocResponseFC1, 8));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89LastAssocResponseSequence",
+                            owner->lastAssocResponseSequence, 16));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89AssocStateBeforeInput",
+                            owner->assocStateBeforeInput, 8));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89AssocStateAfterInput",
+                            owner->assocStateAfterInput, 8));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89AssocStatusAfterInput",
+                            owner->assocStatusAfterInput, 16));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89Net80211NodeCount",
+                            (UInt64)owner->sc.sc_ic.ic_nnodes, 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89AssociationRunWatchdogTicks",
+                            owner->associationRunWatchdogTicks, 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89AssociationRecoveryPending",
+                            owner->associationRecoveryPending, 8));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89AssociationRecoveryAttempted",
+                            owner->associationRecoveryAttempted, 8));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89AssociationRecoveryTriggerCount",
+                            owner->associationRecoveryTriggerCount, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89AssociationRecoveryAttemptCount",
+                            owner->associationRecoveryAttemptCount, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89AssociationRecoverySuccessCount",
+                            owner->associationRecoverySuccessCount, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89HECapable", owner->sc.sc_ic.ic_hecaps != 0));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89HEEnabled", (owner->sc.sc_ic.ic_flags & IEEE80211_F_HEON) != 0));
+    RTW_DIAGNOSTIC(controller->setProperty("RTWJoinEarlyRx", owner->sc.sc_ic.ic_join_rx_early,
+                            sizeof(owner->sc.sc_ic.ic_join_rx_early)));
+    RTW_DIAGNOSTIC(controller->setProperty("RTWSAERxHeaders", owner->sc.sc_ic.ic_sae_rx_headers,
+                            sizeof(owner->sc.sc_ic.ic_sae_rx_headers)));
+    RTW_DIAGNOSTIC(controller->setProperty("RTWSAERawData", owner->sc.sc_ic.ic_sae_rx_data, 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTWSAERawEAPOL", owner->sc.sc_ic.ic_sae_rx_eapol, 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTWSAEEAPOLCalls", owner->sc.sc_ic.ic_sae_eapol_calls, 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTWSAEStage", owner->sc.sc_ic.ic_sae_stage, 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTWSAEError", owner->sc.sc_ic.ic_sae_error, 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89Net80211State",
+                            (UInt64)owner->sc.sc_ic.ic_state, 8));
     if (owner->sc.sc_ic.ic_bss) {
         struct ieee80211_node *node = owner->sc.sc_ic.ic_bss;
-        controller->setProperty("RTW89NodeFlags", (UInt64)node->ni_flags, 32);
-        controller->setProperty("RTW89NodeRsnProtocols",
-                                (UInt64)node->ni_rsnprotos, 32);
-        controller->setProperty("RTW89InterfaceFlags",
-                                (UInt64)owner->sc.sc_ic.ic_flags, 32);
-        controller->setProperty("RTW89TxBaStateBE",
-                                (UInt64)node->ni_tx_ba[EDCA_AC_BE].ba_state, 8);
-        controller->setProperty("RTW89TxBaStateBK",
-                                (UInt64)node->ni_tx_ba[EDCA_AC_BK].ba_state, 8);
-        controller->setProperty("RTW89TxBaStateVI",
-                                (UInt64)node->ni_tx_ba[EDCA_AC_VI].ba_state, 8);
-        controller->setProperty("RTW89TxBaStateVO",
-                                (UInt64)node->ni_tx_ba[EDCA_AC_VO].ba_state, 8);
+        RTW_DIAGNOSTIC(controller->setProperty("RTW89NodeFlags", (UInt64)node->ni_flags, 32));
+        RTW_DIAGNOSTIC(controller->setProperty("RTW89NodeRsnProtocols",
+                                (UInt64)node->ni_rsnprotos, 32));
+        RTW_DIAGNOSTIC(controller->setProperty("RTW89InterfaceFlags",
+                                (UInt64)owner->sc.sc_ic.ic_flags, 32));
+        RTW_DIAGNOSTIC(controller->setProperty("RTW89TxBaStateBE",
+                                (UInt64)node->ni_tx_ba[EDCA_AC_BE].ba_state, 8));
+        RTW_DIAGNOSTIC(controller->setProperty("RTW89TxBaStateBK",
+                                (UInt64)node->ni_tx_ba[EDCA_AC_BK].ba_state, 8));
+        RTW_DIAGNOSTIC(controller->setProperty("RTW89TxBaStateVI",
+                                (UInt64)node->ni_tx_ba[EDCA_AC_VI].ba_state, 8));
+        RTW_DIAGNOSTIC(controller->setProperty("RTW89TxBaStateVO",
+                                (UInt64)node->ni_tx_ba[EDCA_AC_VO].ba_state, 8));
     }
-    controller->setProperty("RTW89TxBaAgreements",
-                            owner->sc.sc_ic.ic_stats.is_ht_tx_ba_agreements, 32);
-    controller->setProperty("RTW89TxBaTimeouts",
-                            owner->sc.sc_ic.ic_stats.is_ht_tx_ba_timeout, 32);
-    controller->setProperty("RTW89LastReceiveFrequency",
-                            (UInt64)owner->lastReceiveFrequency, 32);
-    controller->setProperty("RTW89LastReceiveSignalRaw",
-                            (UInt64)owner->lastReceiveSignalRaw, 8);
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89TxBaAgreements",
+                            owner->sc.sc_ic.ic_stats.is_ht_tx_ba_agreements, 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89TxBaTimeouts",
+                            owner->sc.sc_ic.ic_stats.is_ht_tx_ba_timeout, 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89LastReceiveFrequency",
+                            (UInt64)owner->lastReceiveFrequency, 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89LastReceiveSignalRaw",
+                            (UInt64)owner->lastReceiveSignalRaw, 8));
+#endif
 }
 
 void RTWCore89::scanDwellExpired(OSObject *object, IOTimerEventSource *timer)
@@ -719,7 +723,7 @@ void RTWCore89::associationRecoveryExpired(OSObject *object,
     owner->associationRecoveryAttempted = 1;
     owner->associationRecoveryAttemptActive = 1;
     __sync_fetch_and_add(&owner->associationRecoveryAttemptCount, 1);
-    IOLog("AirportRTW-RTW89: retrying scan after short association\n");
+    RTW_LOG("AirportRTW-RTW89: retrying scan after short association\n");
     ieee80211_begin_scan(&owner->sc.sc_ic.ic_if);
 }
 
@@ -819,6 +823,7 @@ void RTWCore89::resumeTransmit(void *opaque)
 void RTWCore89::traceReceive(void *opaque, unsigned stage, const uint8_t *frame,
                              size_t length, unsigned flags)
 {
+#if RTW_DIAGNOSTICS
     auto *owner = static_cast<RTWCore89 *>(opaque);
     if (!owner || !frame || length < 24 || stage > 2) return;
     auto *ic = &owner->sc.sc_ic;
@@ -860,6 +865,9 @@ void RTWCore89::traceReceive(void *opaque, unsigned stage, const uint8_t *frame,
     } else if (stage == 1 && (flags & 1)) {
         __sync_fetch_and_add(&counts[7], 1);
     }
+#else
+    (void)opaque; (void)stage; (void)frame; (void)length; (void)flags;
+#endif
 }
 
 void RTWCore89::receive(void *opaque, const uint8_t *frame, size_t length,
@@ -941,7 +949,7 @@ void RTWCore89::receive(void *opaque, const uint8_t *frame, size_t length,
         (frameSubtype == IEEE80211_FC0_SUBTYPE_BEACON ||
          frameSubtype == IEEE80211_FC0_SUBTYPE_PROBE_RESP)) {
         __sync_fetch_and_add(&owner->beaconProbeCount, 1);
-        IOLog("RTWCore89: scan RX subtype 0x%02x len %lu rssi %d freq %u\n",
+        RTW_LOG("RTWCore89: scan RX subtype 0x%02x len %lu rssi %d freq %u\n",
               frameSubtype, (unsigned long)length, (int)rssi, frequency);
     }
     const int networkPriority = splnet();
@@ -1063,7 +1071,7 @@ int RTWCore89::newstate(struct ieee80211com *ic,
         node && node->ni_chan && node->ni_chan != IEEE80211_CHAN_ANYC) {
         const uint16_t channel = ieee80211_chan2ieee(ic, node->ni_chan);
         __sync_fetch_and_add(&owner->scanChannelCount, 1);
-        IOLog("RTWCore89: scan channel %u\n", channel);
+        RTW_LOG("RTWCore89: scan channel %u\n", channel);
         if (channel && !rtw89LinuxSetChannel(&owner->linuxContext, channel)) {
             if (beganScan) {
                 rtw89LinuxScanEnd(&owner->linuxContext);
@@ -1181,18 +1189,18 @@ int RTWCore89::newstate(struct ieee80211com *ic,
 
     const int result = sc->sc_newstate(ic, state, arg);
     if (result == 0 && state == IEEE80211_S_RUN) {
-        owner->getController()->setProperty("RTW89PeerAudit", owner->linuxContext.peerAudit,
-                                           sizeof(owner->linuxContext.peerAudit));
+        RTW_DIAGNOSTIC(owner->getController()->setProperty("RTW89PeerAudit", owner->linuxContext.peerAudit,
+                                           sizeof(owner->linuxContext.peerAudit)));
         updateEdca(ic);
         if (ic->ic_sae_enabled)
-            owner->getController()->setProperty("RTWSAENegotiatedPHY",
+            RTW_DIAGNOSTIC(owner->getController()->setProperty("RTWSAENegotiatedPHY",
                 (node->ni_flags & IEEE80211_NODE_HE) ? "802.11ax" :
                 (node->ni_flags & IEEE80211_NODE_VHT) ? "802.11ac" :
-                (node->ni_flags & IEEE80211_NODE_HT) ? "802.11n" : "legacy");
-        owner->getController()->setProperty("RTW89NegotiatedPHY",
+                (node->ni_flags & IEEE80211_NODE_HT) ? "802.11n" : "legacy"));
+        RTW_DIAGNOSTIC(owner->getController()->setProperty("RTW89NegotiatedPHY",
             (node->ni_flags & IEEE80211_NODE_HE) ? "802.11ax" :
             (node->ni_flags & IEEE80211_NODE_VHT) ? "802.11ac" :
-            (node->ni_flags & IEEE80211_NODE_HT) ? "802.11n" : "legacy");
+            (node->ni_flags & IEEE80211_NODE_HT) ? "802.11n" : "legacy"));
     }
     if (result != 0) {
         if (associated || state == IEEE80211_S_AUTH || state == IEEE80211_S_ASSOC) {

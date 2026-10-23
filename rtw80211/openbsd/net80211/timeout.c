@@ -60,7 +60,7 @@ int timeout_add_usec(CTimeout **to, int usecs)
 
 int timeout_del(CTimeout **to)
 {
-    //    IOLog("timeout_del\n");
+    //    RTW_LOG("timeout_del\n");
     return _fCommandGate->runAction(&CTimeout::timeout_del, to, _fWorkloop) == kIOReturnSuccess ? 1 : 0;
 }
 

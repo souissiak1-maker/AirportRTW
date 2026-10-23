@@ -56,7 +56,7 @@ Rtw88PciTransport *Rtw88PciTransport::withDevice(IOPCIDevice *device,
 
 bool Rtw88PciTransport::initWithDevice(IOPCIDevice *device, IOWorkLoop *loop)
 {
-    if (device) device->setProperty("RTWTransportStage", "object/device/workloop/singleton check");
+    if (device) RTW_DIAGNOSTIC(device->setProperty("RTWTransportStage", "object/device/workloop/singleton check"));
     if (!OSObject::init() || !device || !loop || active)
         return false;
 
@@ -115,7 +115,7 @@ bool Rtw88PciTransport::initWithDevice(IOPCIDevice *device, IOWorkLoop *loop)
     if (!interruptSource || workLoop->addEventSource(interruptSource) !=
                                 kIOReturnSuccess)
         return false;
-    IOLog("AirportRTW: transport ready; interrupt source held disabled\n");
+    RTW_LOG("AirportRTW: transport ready; interrupt source held disabled\n");
     recordAttachStage("transport ready");
     return true;
 }
@@ -125,7 +125,7 @@ void Rtw88PciTransport::enableInterrupts()
     if (interruptSource && !interruptsEnabled) {
         interruptSource->enable();
         interruptsEnabled = true;
-        IOLog("AirportRTW: interrupt source enabled\n");
+        RTW_LOG("AirportRTW: interrupt source enabled\n");
     }
 }
 
@@ -134,7 +134,7 @@ void Rtw88PciTransport::disableInterrupts()
     if (interruptSource && interruptsEnabled) {
         interruptSource->disable();
         interruptsEnabled = false;
-        IOLog("AirportRTW: interrupt source disabled\n");
+        RTW_LOG("AirportRTW: interrupt source disabled\n");
     }
 }
 
