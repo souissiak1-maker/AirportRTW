@@ -18,7 +18,7 @@ def require(ok, message):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--bundles', action='store_true')
-    parser.add_argument('--platforms', nargs='+', choices=['Tahoe', 'Sequoia'], default=['Tahoe', 'Sequoia'])
+    parser.add_argument('--platforms', nargs='+', choices=['High Sierra', 'Mojave', 'Catalina', 'Big Sur', 'Monterey', 'Ventura', 'Sonoma14.0', 'Sonoma14.4', 'Sequoia', 'Tahoe'], default=['Tahoe', 'Sequoia'])
     opts = parser.parse_args()
     for path in ['AirportRTW/AirportRTW.cpp', 'AirportRTW/IOPCIEDeviceWrapper.cpp',
                  'rtw/RTWEthernetController.cpp']:
@@ -62,7 +62,8 @@ def main():
             matches={int(x,16)>>16 for p in plist['IOKitPersonalities'].values() for x in p.get('IOPCIMatch','').split()}
             rtw89={0x8852,0xa85a,0xb852,0xb85b,0xb851,0xb520,0xc852,0x8922,0x892b}
             require(matches==EXPECTED | rtw89, platform+': incorrect combined PCI matches')
-            require('com.apple.iokit.IO80211FamilyLegacy' not in plist['OSBundleLibraries'], 'Unexpected legacy stack')
+            if platform in ('Tahoe', 'Sequoia'):
+                require('com.apple.iokit.IO80211FamilyLegacy' not in plist['OSBundleLibraries'], 'Unexpected legacy stack for native WCL target')
             binary=bundle/'Contents/MacOS/AirportRTW'
             symbols=subprocess.check_output(['nm',str(binary)],text=True)
             require('_ZN7RTWCore10gMetaClassE' in symbols,

@@ -30,7 +30,7 @@ def main():
             resolved[ident] = path
     visit(objects[project["rootObject"]]["mainGroup"], ROOT)
     targets = {o["name"]: o for o in objects.values() if o["isa"] == "PBXNativeTarget"}
-    names = ["Catalina", "Big Sur", "Monterey", "Ventura", "Sonoma14.0", "Sonoma14.4", "Sequoia", "Tahoe"]
+    names = ["High Sierra", "Mojave", "Catalina", "Big Sur", "Monterey", "Ventura", "Sonoma14.0", "Sonoma14.4", "Sequoia", "Tahoe"]
     for os_name in names:
         name = "AirportRTW-" + os_name
         require(name in targets, f"Missing target {name}")
@@ -71,8 +71,8 @@ def main():
             plist = plistlib.loads((ROOT / settings["INFOPLIST_FILE"]).read_bytes())
             matches = [p["IOPCIMatch"] for p in plist["IOKitPersonalities"].values() if "IOPCIMatch" in p]
             require(any("0x885210ec" in m and "0xa85a10ec" in m for m in matches), f"{name}: missing Realtek matches")
+            require(all(all(i.lower().endswith("10ec") for i in m.split()) for m in matches), f"{name}: non-Realtek IDs")
             if modern:
-                require(all(all(i.lower().endswith("10ec") for i in m.split()) for m in matches), f"{name}: non-Realtek IDs")
                 require("com.apple.iokit.IO80211FamilyLegacy" not in plist["OSBundleLibraries"], f"{name}: legacy dependency")
                 abi = "__MAC_15_2" if os_name == "Sequoia" else "__MAC_26_0"
                 require("__IO80211_TARGET=" + abi in definitions, f"{name}: wrong ABI")
