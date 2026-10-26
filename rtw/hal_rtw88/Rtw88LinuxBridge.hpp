@@ -4,6 +4,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+void rtw88LinuxGetCountry(struct Rtw88LinuxContext *, char out[3]);
 #include "../../include/HAL/RTWTxRate.h"
 
 class Rtw88PciTransport;

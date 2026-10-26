@@ -30,6 +30,27 @@ constexpr UInt16 kRtl8852CE = 0xc852;
 constexpr UInt16 kRtl8922AE = 0x8922;
 constexpr UInt16 kRtl8922AEVS = 0x892b;
 constexpr uint32_t kRtw89TxQueueSize = 256;
+
+// Every state exit (including association failure) publishes a changed domain.
+// HAL operations have released their wiphy locks before this scope ends.
+class CountryChangeNotification {
+public:
+    CountryChangeNotification(RTWCore89 *driver, struct ieee80211com *controller)
+        : owner(driver), ic(controller)
+    {
+        memcpy(before, owner->getFirmwareCountryCode(), sizeof(before));
+    }
+    ~CountryChangeNotification()
+    {
+        if (memcmp(before, owner->getFirmwareCountryCode(), sizeof(before)) &&
+            ic->ic_event_handler)
+            ic->ic_event_handler(ic, IEEE80211_EVT_COUNTRY_CODE_UPDATE, nullptr);
+    }
+private:
+    RTWCore89 *owner;
+    struct ieee80211com *ic;
+    char before[2];
+};
 }
 
 bool RTWCore89::rtw89_match(IOPCIDevice *device)
@@ -291,8 +312,24 @@ const char *RTWCore89::getFirmwareName()
     return sc.sc_fwname;
 }
 
+bool RTWCore89::setCountryCode(const char cc[2])
+{
+    if (!cc) return false;
+    char requested[3] = {cc[0], cc[1], 0};
+    getController()->setProperty("RTWCountryRequest", requested);
+    const bool applied = rtw89LinuxSetCountry(&linuxContext, cc);
+    getController()->setProperty("RTWCountryRequestApplied", applied);
+    getController()->setProperty("RTWEffectiveCountry", getFirmwareCountryCode());
+    return applied;
+}
+
 const char *RTWCore89::getFirmwareCountryCode()
 {
+    rtw89LinuxGetCountry(&linuxContext, sc.sc_country);
+    getController()->setProperty("RTWAPCountry", linuxContext.apCountry[0] ?
+        linuxContext.apCountry : "absent");
+    getController()->setProperty("RTWAPCountryApplied", linuxContext.apCountryApplied);
+    getController()->setProperty("RTWEffectiveCountry", sc.sc_country);
     return sc.sc_country;
 }
 
@@ -1043,6 +1080,7 @@ int RTWCore89::newstate(struct ieee80211com *ic,
     if (!sc || !sc->sc_newstate)
         return ENXIO;
     auto *owner = container_of(sc, RTWCore89, sc);
+    CountryChangeNotification countryUpdate(owner, ic);
     const enum ieee80211_state previous = ic->ic_state;
     struct ieee80211_node *node = ic->ic_bss;
     bool beganScan = false;
@@ -1155,6 +1193,7 @@ int RTWCore89::newstate(struct ieee80211com *ic,
         }
         const uint8_t nss = node->ni_rxmcs[1] ? 2 : 1;
         Rtw89NativePeer peer = {};
+        memcpy(peer.country, node->ni_country_alpha2, sizeof(peer.country));
         peer.caps.htCaps = node->ni_htcaps;
         peer.caps.ampduParams = node->ni_ampdu_param;
         memcpy(peer.caps.htMCS, node->ni_rxmcs, sizeof(peer.caps.htMCS));

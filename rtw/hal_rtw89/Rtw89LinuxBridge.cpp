@@ -18,6 +18,8 @@ struct ieee80211_hw *rtw88_get_hw(void);
 void rtw88_register_vif(struct ieee80211_vif *);
 void rtw88_unregister_vif(void);
 void rtw89_macos_flush_rx_ba(struct ieee80211_sta *);
+bool rtw89_macos_set_country(struct ieee80211_hw *, const char *);
+bool rtw89_macos_country_ie(struct ieee80211_hw *, const unsigned char *);
 void rtw89_macos_get_tx_rate(struct ieee80211_hw *, struct RTWTxRate *);
 void rtw89_macos_peer_audit(struct ieee80211_hw *, struct ieee80211_vif *, uint32_t *);
 }
@@ -873,6 +875,24 @@ bool rtw89LinuxIsScanning(Rtw89LinuxContext *context)
     return context && rtw88_is_scanning();
 }
 
+bool rtw89LinuxSetCountry(Rtw89LinuxContext *context, const char cc[2])
+{
+    if (!context || !context->started || !context->hardware) return false;
+    // No WiphyGuard here: the regulatory notifier acquires that mutex.
+    const bool applied = rtw89_macos_set_country(
+        static_cast<ieee80211_hw *>(context->hardware), cc);
+    if (applied) context->apCountryApplied = false;
+    return applied;
+}
+
+void rtw89LinuxGetCountry(Rtw89LinuxContext *context, char out[3])
+{
+    out[0] = '0'; out[1] = '0'; out[2] = '\0';
+    if (!context || !context->hardware || !context->device) return;
+    WiphyGuard guard(static_cast<ieee80211_hw *>(context->hardware));
+    rtw88_get_country_code(static_cast<struct rtw_dev *>(context->device), out);
+}
+
 void rtw89LinuxGetTxRate(Rtw89LinuxContext *context, RTWTxRate &rate)
 {
     rate = {};
@@ -1047,6 +1067,10 @@ bool rtw89LinuxAssociate(Rtw89LinuxContext *context,
                                       BSS_CHANGED_ASSOC | BSS_CHANGED_QOS);
         RTW_DIAGNOSTIC(rtw89_macos_peer_audit(hw, vif, context->peerAudit));
     }
+    context->apCountry[0] = peer.country[0];
+    context->apCountry[1] = peer.country[1];
+    context->apCountry[2] = 0;
+    context->apCountryApplied = rtw89_macos_country_ie(hw, peer.country);
     return true;
 }
 
@@ -1072,6 +1096,10 @@ void rtw89LinuxDisassociate(Rtw89LinuxContext *context)
     }
     context->txAmpduMask = 0;
     releaseStation(context);
+    if (context->apCountryApplied) {
+        rtw89_macos_country_ie(hw, nullptr);
+        context->apCountryApplied = false;
+    }
     if (vif) {
         vif->bss_conf.he_support = false;
         vif->bss_conf.he_oper = {};

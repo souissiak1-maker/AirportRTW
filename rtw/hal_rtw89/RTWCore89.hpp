@@ -39,6 +39,7 @@ public:
     bool getTxRate(RTWTxRate &rate) override;
     const char *getFirmwareName() override;
     const char *getFirmwareCountryCode() override;
+    bool setCountryCode(const char cc[2]) override;
     uint32_t getTxQueueSize() override;
 
     void clearScanningFlags() override;

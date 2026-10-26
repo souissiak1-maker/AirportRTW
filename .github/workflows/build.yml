@@ -33,6 +33,10 @@ jobs:
           python3 tests/rtw89_channel_request_test.py
           python3 tests/rtw_rate_snapshot_test.py
           python3 tests/rtw89_rate_snapshot_test.py
+          python3 tests/rtw_country_snapshot_test.py
+          python3 tests/rtw89_country_ie_test.py
+          python3 tests/rtw89_os_country_test.py
+          python3 tests/rtw_country_notification_test.py
           python3 tests/rtw_rate_frontend_test.py
           mkdir -p build/tests
           xcrun clang++ -std=c++14 -Wall -Wextra -Werror tests/rtw_tx_rate_test.cpp -o build/tests/rtw-tx-rate

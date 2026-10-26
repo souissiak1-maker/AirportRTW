@@ -271,6 +271,7 @@ const char *RTWCore88::getFirmwareName()
 
 const char *RTWCore88::getFirmwareCountryCode()
 {
+    rtw88LinuxGetCountry(&linuxContext, sc.sc_country);
     return sc.sc_country;
 }
 

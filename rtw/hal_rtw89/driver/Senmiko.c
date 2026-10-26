@@ -619,6 +619,82 @@ void rtw88_get_stats(struct rtw_dev *rtwdev_opaque, uint32_t *tx_bytes,
 
 /* Copy firmware rate state under the station registry lock shared with C2H. */
 #include "../../../include/HAL/RTWTxRate.h"
+/* Called without the wiphy mutex: the driver's notifier takes it itself.
+ * Keep board-programmed domains and channel flags intact. This changes only
+ * the driver's country/power-table selection, not geographic channel rules.
+ */
+bool rtw89_macos_country_ie(struct ieee80211_hw *hw, const unsigned char *cc)
+{
+    struct rtw89_dev *dev;
+    struct regulatory_request request = {0};
+    unsigned int i;
+    bool known = false;
+    if (!hw || !hw->wiphy || !hw->wiphy->reg_notifier) return false;
+    dev = hw->priv;
+    if (dev->regulatory.programmed ||
+        (cc && (hw->wiphy->regulatory_flags & REGULATORY_COUNTRY_IE_IGNORE)))
+        return false;
+    if (cc) {
+        if (cc[0] < 'A' || cc[0] > 'Z' || cc[1] < 'A' || cc[1] > 'Z')
+            return false;
+        for (i = 0; i < dev->regulatory.ctrl.nr; ++i)
+            if (!memcmp(dev->regulatory.ctrl.map[i].alpha2, cc, 2)) {
+                known = true;
+                break;
+            }
+        if (!known) return false;
+    }
+    request.alpha2[0] = cc ? cc[0] : '0';
+    request.alpha2[1] = cc ? cc[1] : '0';
+    request.initiator = cc ? NL80211_REGDOM_SET_BY_COUNTRY_IE : NL80211_REGDOM_SET_BY_CORE;
+    request.dfs_region = NL80211_DFS_UNSET;
+    hw->wiphy->reg_notifier(hw->wiphy, &request);
+    return true;
+}
+
+/* OS-provided country hint. This selects driver power tables; existing
+ * channel restrictions are not relaxed. Hardware-programmed domains win.
+ * The caller must not hold the wiphy mutex: reg_notifier takes it.
+ */
+bool rtw89_macos_set_country(struct ieee80211_hw *hw, const char *cc)
+{
+    struct rtw89_dev *dev;
+    struct regulatory_request request = {0};
+    unsigned int i;
+    bool known = false;
+    if (!hw || !hw->priv || !hw->wiphy || !hw->wiphy->reg_notifier || !cc)
+        return false;
+    if (cc[0] < 'A' || cc[0] > 'Z' || cc[1] < 'A' || cc[1] > 'Z')
+        return false;
+    dev = hw->priv;
+    for (i = 0; i < dev->regulatory.ctrl.nr; ++i)
+        if (!memcmp(dev->regulatory.ctrl.map[i].alpha2, cc, 2)) {
+            known = true;
+            break;
+        }
+    if (!known) return false;
+    if (dev->regulatory.programmed &&
+        (!dev->regulatory.regd || memcmp(dev->regulatory.regd->alpha2, cc, 2)))
+        return false;
+    request.alpha2[0] = cc[0];
+    request.alpha2[1] = cc[1];
+    request.initiator = NL80211_REGDOM_SET_BY_USER;
+    request.dfs_region = NL80211_DFS_UNSET;
+    hw->wiphy->reg_notifier(hw->wiphy, &request);
+    return dev->regulatory.regd && !memcmp(dev->regulatory.regd->alpha2, cc, 2);
+}
+
+/* Report the effective driver domain, never infer it from the PCI identity. */
+bool rtw88_get_country_code(struct rtw_dev *opaque, char out[3])
+{
+    struct rtw89_dev *dev = to_rtw89(opaque);
+    const char *cc = dev && dev->regulatory.regd ? dev->regulatory.regd->alpha2 : NULL;
+    out[0] = cc ? cc[0] : '0';
+    out[1] = cc ? cc[1] : '0';
+    out[2] = '\0';
+    return cc != NULL;
+}
+
 static void rtw89_copy_tx_rate(void *opaque, struct ieee80211_sta *sta)
 {
     struct RTWTxRate *out = opaque;

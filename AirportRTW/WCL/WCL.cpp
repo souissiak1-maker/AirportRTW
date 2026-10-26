@@ -132,6 +132,13 @@ IOReturn AirportRTWSkywalkInterface::wclCountryUpdateGated(
         return kIOReturnNotReady;
     if (!update->queue->inGate() || update->queue->onThread())
         return kIOReturnNotPermitted;
+    apple80211_country_code_data country = {};
+    const IOReturn status = update->controller->getCOUNTRY_CODE(
+        static_cast<OSObject *>(update->interface), &country);
+    if (status != kIOReturnSuccess) return status;
+    // Reflect the already-applied HAL domain in the native interface cache.
+    char effective[3] = {char(country.cc[0]), char(country.cc[1]), 0};
+    update->interface->setProperty(APPLE80211_REGKEY_COUNTRY_CODE, effective);
     update->interface->postMessage(APPLE80211_M_COUNTRY_CODE_CHANGED, nullptr, 0, false);
     return kIOReturnSuccess;
 }

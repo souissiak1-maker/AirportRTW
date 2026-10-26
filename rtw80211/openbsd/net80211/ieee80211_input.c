@@ -1682,6 +1682,7 @@ ieee80211_recv_probe_resp(struct ieee80211com *ic, mbuf_t m,
     const uint8_t *vhtopmode;
     const uint8_t *hecap;
     const uint8_t *heopmode;
+    const uint8_t *countryIE = NULL;
     const uint8_t *heMuEdca = NULL;
     bool saeH2E = false;
     const uint8_t *saeRSNXE = NULL;
@@ -1739,6 +1740,12 @@ ieee80211_recv_probe_resp(struct ieee80211com *ic, mbuf_t m,
             break;
         }
         switch (frm[0]) {
+            case IEEE80211_ELEMID_COUNTRY:
+                // A country string is three bytes; regulatory triplets follow.
+                if (frm[1] >= 6 && frm[2] >= 'A' && frm[2] <= 'Z' &&
+                    frm[3] >= 'A' && frm[3] <= 'Z')
+                    countryIE = frm;
+                break;
             case IEEE80211_ELEMID_SSID:
                 ssid = frm;
                 break;
@@ -2135,6 +2142,8 @@ ieee80211_recv_probe_resp(struct ieee80211com *ic, mbuf_t m,
      * a non-zero-length SSID filled with zeroes that we may have
      * received earlier in a beacon.
      */
+    memset(ni->ni_country_alpha2, 0, sizeof(ni->ni_country_alpha2));
+    if (countryIE) memcpy(ni->ni_country_alpha2, countryIE + 2, 2);
     if (ssid[1] != 0 && ni->ni_essid[0] == '\0') {
         ni->ni_esslen = ssid[1];
         memset(ni->ni_essid, 0, sizeof(ni->ni_essid));

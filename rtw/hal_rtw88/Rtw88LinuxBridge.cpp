@@ -826,6 +826,14 @@ unsigned rtw88LinuxGetNSS(Rtw88LinuxContext *context)
     return rtw88_hw_get_nss(hw);
 }
 
+void rtw88LinuxGetCountry(Rtw88LinuxContext *context, char out[3])
+{
+    out[0] = '0'; out[1] = '0'; out[2] = '\0';
+    if (!context || !context->hardware || !context->device) return;
+    WiphyGuard guard(static_cast<ieee80211_hw *>(context->hardware));
+    rtw88_get_country_code(static_cast<struct rtw_dev *>(context->device), out);
+}
+
 void rtw88LinuxGetTxRate(Rtw88LinuxContext *context, RTWTxRate &rate)
 {
     rate = {};

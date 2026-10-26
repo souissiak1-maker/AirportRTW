@@ -38,6 +38,8 @@ public:
     virtual UInt32 supportedFeatures() = 0;
 
     virtual const char *getFirmwareCountryCode() = 0;
+    // Success means the requested country is effective, not just cached.
+    virtual bool setCountryCode(const char cc[2]) { (void)cc; return false; }
 
     virtual uint32_t getTxQueueSize() = 0;
 };

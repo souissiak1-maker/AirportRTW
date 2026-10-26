@@ -1396,15 +1396,14 @@ void rtw88_get_stats(struct rtw_dev *rtwdev, uint32_t *tx_bytes, uint32_t *rx_by
     if (rx_bytes) *rx_bytes = (uint32_t)rtwdev->stats.rx_unicast;
 }
 
-bool rtw88_get_country_code(struct rtw_dev *rtwdev, char out_alpha2[3])
+bool rtw88_get_country_code(struct rtw_dev *dev, char out[3])
 {
-    (void)rtwdev;
-    if (out_alpha2) {
-        out_alpha2[0] = '\0';
-        out_alpha2[1] = '\0';
-        out_alpha2[2] = '\0';
-    }
-    return false;
+    const char *cc = dev && dev->regd.regulatory ? dev->regd.regulatory->alpha2 : NULL;
+    if (!out) return false;
+    out[0] = cc ? cc[0] : '0';
+    out[1] = cc ? cc[1] : '0';
+    out[2] = '\0';
+    return cc != NULL;
 }
 
 bool rtw88_set_country_code(struct rtw_dev *rtwdev, const char alpha2[2])

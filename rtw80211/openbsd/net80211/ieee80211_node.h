@@ -333,6 +333,7 @@ struct ieee80211_node {
 	u_int8_t		ni_esslen;
 	u_int8_t		ni_essid[IEEE80211_NWID_LEN];
 	struct ieee80211_rateset ni_rates;	/* negotiated rate set */
+    uint8_t ni_country_alpha2[2]; /* Validated beacon/probe country; zero if absent. */
 	u_int8_t		*ni_country;	/* country information XXX */
 	struct ieee80211_channel *ni_chan;
 	u_int8_t		ni_erp;		/* 11g only */

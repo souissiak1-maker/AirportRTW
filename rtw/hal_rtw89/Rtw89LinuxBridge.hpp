@@ -4,6 +4,8 @@
 
 #include <stddef.h>
 #include <stdint.h>
+bool rtw89LinuxSetCountry(struct Rtw89LinuxContext *, const char cc[2]);
+void rtw89LinuxGetCountry(struct Rtw89LinuxContext *, char out[3]);
 #include "../../include/HAL/RTWTxRate.h"
 
 class Rtw89PciTransport;
@@ -28,6 +30,7 @@ struct Rtw89NativeCapabilities {
 
 struct Rtw89NativePeer {
     Rtw89NativeCapabilities caps;
+    uint8_t country[2];
     uint16_t widthMHz;
     uint16_t centerFrequency;
     uint32_t heOperation;
@@ -48,6 +51,8 @@ struct Rtw89LinuxContext {
     unsigned stationState; // Last completed ieee80211_sta_state transition.
     void *keys[12]; /* group 0..5, pairwise 6..11 */
     uint8_t macAddress[6];
+    char apCountry[3];
+    bool apCountryApplied;
     bool probed;
     bool started;
     bool interfaceAdded;
