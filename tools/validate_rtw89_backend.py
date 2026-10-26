@@ -17,6 +17,15 @@ def require(condition, message):
 def main():
     project = load_project()
     objects = project["objects"]
+    firmware_source = (ROOT / "rtw/RTWCore.cpp").read_text()
+    firmware_version = re.search(r'return "AirportRTW(\d+\.\d+\.\d+)"', firmware_source)[1]
+    project_object = objects[project["rootObject"]]
+    project_versions = {}
+    for ident in objects[project_object["buildConfigurationList"]]["buildConfigurations"]:
+        configuration = objects[ident]
+        version = configuration["buildSettings"]["MODULE_VERSION"]
+        require(version == firmware_version, f"Project {configuration['name']}: module/firmware version mismatch")
+        project_versions[configuration["name"]] = version
     # Resolve file references through group paths, including renamed sources.
     resolved = {}
     def visit(ident, parent):
@@ -63,6 +72,9 @@ def main():
                     f"{name}: C archive may reuse stale driver sources")
         for config_id in objects[target["buildConfigurationList"]]["buildConfigurations"]:
             settings = objects[config_id]["buildSettings"]
+            configuration_name = objects[config_id]["name"]
+            require(settings.get("MODULE_VERSION", project_versions[configuration_name]) == project_versions[configuration_name],
+                    f"{name} {configuration_name}: target module version differs from project version")
             require("rtw80211/openbsd" in str(settings.get("HEADER_SEARCH_PATHS", "")),
                     f"{name}: project headers must participate in dependency tracking")
             definitions = settings.get("GCC_PREPROCESSOR_DEFINITIONS", [])

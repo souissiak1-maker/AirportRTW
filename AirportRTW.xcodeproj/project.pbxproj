@@ -4365,7 +4365,6 @@
 					"$(PROJECT_DIR)/MacKernelSDK/Library/x86_64",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 10.15;
-				MODULE_VERSION = 2.0.0;
 				MODULE_NAME = com.senmiko.AirportRTW;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
@@ -4401,7 +4400,6 @@
 					"$(PROJECT_DIR)/MacKernelSDK/Library/x86_64",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 10.15;
-				MODULE_VERSION = 2.0.0;
 				MODULE_NAME = com.senmiko.AirportRTW;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
