@@ -4,8 +4,10 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include "../../include/HAL/RTWTxRate.h"
 
 class Rtw89PciTransport;
+void rtw89LinuxGetTxRate(struct Rtw89LinuxContext *context, RTWTxRate &rate);
 
 struct Rtw89NativeCapabilities {
     uint16_t htCaps;

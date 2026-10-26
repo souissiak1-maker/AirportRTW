@@ -41,14 +41,18 @@ for i, filename in enumerate(paths):
   assert(getMCS_VHT{i}(&v)==(owns?6:99));
  }}
  service.driver.owns=true;
- service.driver.sample={{4333,80,9,1,RTW_RATE_VHT,true,true}};
+ service.driver.sample={{4333,80,9,1,RTW_RATE_VHT,true,true,400,false}};
  Rate r{i}{{}};MCS m{i}{{}};VHT v{i}{{}};
  assert(getRATE{i}(&r{i})==0 && r{i}.rate[0]==433);
  assert(getMCS{i}(&m{i})==0 && m{i}.index==9);
  assert(getMCS_VHT{i}(&v{i})==0 && v{i}.index==9 && v{i}.nss==1 && v{i}.bw==80 && v{i}.guard_interval==1);
- service.driver.sample={{1350,40,7,1,RTW_RATE_VHT,false,true}};
+ service.driver.sample={{1350,40,7,1,RTW_RATE_VHT,false,true,800,false}};
  assert(getRATE{i}(&r{i})==0 && r{i}.rate[0]==135);
  assert(getMCS_VHT{i}(&v{i})==0 && v{i}.index==7 && v{i}.guard_interval==0);
+ service.driver.sample={{12010,80,11,2,RTW_RATE_HE,false,true,800,false}};
+ assert(getRATE{i}(&r{i})==0 && r{i}.rate[0]==1201);
+ assert(getMCS{i}(&m{i})==0 && m{i}.index==11);
+ assert(getMCS_VHT{i}(&v{i})==6); // Do not label HE guard intervals as VHT SGI.
  service.driver.sample.mode=RTW_RATE_LEGACY;
  assert(getMCS{i}(&m{i})==6 && getMCS_VHT{i}(&v{i})==6);
 ''')

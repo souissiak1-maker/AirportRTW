@@ -280,6 +280,12 @@ void RTWCore89::free()
     super::free();
 }
 
+bool RTWCore89::getTxRate(RTWTxRate &rate)
+{
+    rtw89LinuxGetTxRate(&linuxContext, rate);
+    return true;
+}
+
 const char *RTWCore89::getFirmwareName()
 {
     return sc.sc_fwname;
@@ -574,20 +580,16 @@ void RTWCore89::watchdog(struct _ifnet *ifp)
                             owner->linuxContext.raAuditU32[42], 32));
     RTW_DIAGNOSTIC(controller->setProperty("RTW89RAAssocMask",
                             owner->linuxContext.raAuditU64[0], 64));
-    RTW_DIAGNOSTIC(controller->setProperty("RTW89RALiveMode",
-                            owner->linuxContext.raAuditU32[43], 32));
-    RTW_DIAGNOSTIC(controller->setProperty("RTW89RALiveMcs",
-                            owner->linuxContext.raAuditU32[44], 32));
-    RTW_DIAGNOSTIC(controller->setProperty("RTW89RALiveBandwidth",
-                            owner->linuxContext.raAuditU32[45], 32));
-    RTW_DIAGNOSTIC(controller->setProperty("RTW89RALiveNss",
-                            owner->linuxContext.raAuditU32[46], 32));
-    RTW_DIAGNOSTIC(controller->setProperty("RTW89RALiveFlags",
-                            owner->linuxContext.raAuditU32[47], 32));
-    RTW_DIAGNOSTIC(controller->setProperty("RTW89RALiveBitrate100Kbps",
-                            owner->linuxContext.raAuditU32[48], 32));
-    RTW_DIAGNOSTIC(controller->setProperty("RTW89RALiveHardwareRate",
-                            owner->linuxContext.raAuditU32[49], 32));
+    RTWTxRate liveRate = {};
+    owner->getTxRate(liveRate);
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89RALiveValid", liveRate.valid));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89RALiveMode", liveRate.mode, 8));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89RALiveMcs", liveRate.mcs, 8));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89RALiveBandwidth", liveRate.widthMHz, 16));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89RALiveNss", liveRate.nss, 8));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89RALiveShortGI", liveRate.shortGI));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89RALiveGuardIntervalNs", liveRate.guardIntervalNs, 16));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW89RALiveBitrate100Kbps", liveRate.bitrate100Kbps, 32));
     RTW_DIAGNOSTIC(controller->setProperty("RTW89LastAssocResponseLength",
                             owner->lastAssocResponseLength, 32));
     RTW_DIAGNOSTIC(controller->setProperty("RTW89LastAssocResponseStatus",

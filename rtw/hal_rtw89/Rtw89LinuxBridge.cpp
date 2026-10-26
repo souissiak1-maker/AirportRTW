@@ -18,6 +18,7 @@ struct ieee80211_hw *rtw88_get_hw(void);
 void rtw88_register_vif(struct ieee80211_vif *);
 void rtw88_unregister_vif(void);
 void rtw89_macos_flush_rx_ba(struct ieee80211_sta *);
+void rtw89_macos_get_tx_rate(struct ieee80211_hw *, struct RTWTxRate *);
 void rtw89_macos_peer_audit(struct ieee80211_hw *, struct ieee80211_vif *, uint32_t *);
 }
 
@@ -870,6 +871,13 @@ void rtw89LinuxScanEnd(Rtw89LinuxContext *context)
 bool rtw89LinuxIsScanning(Rtw89LinuxContext *context)
 {
     return context && rtw88_is_scanning();
+}
+
+void rtw89LinuxGetTxRate(Rtw89LinuxContext *context, RTWTxRate &rate)
+{
+    rate = {};
+    auto *hw = context ? static_cast<ieee80211_hw *>(context->hardware) : nullptr;
+    if (hw) rtw89_macos_get_tx_rate(hw, &rate);
 }
 
 bool rtw89LinuxGetCapabilities(Rtw89LinuxContext *context, bool fiveGHz,

@@ -616,4 +616,66 @@ void rtw88_get_stats(struct rtw_dev *rtwdev_opaque, uint32_t *tx_bytes,
 		*rx_bytes = (uint32_t)rtwdev->stats.rx_unicast;
 }
 
+
+/* Copy firmware rate state under the station registry lock shared with C2H. */
+#include "../../../include/HAL/RTWTxRate.h"
+static void rtw89_copy_tx_rate(void *opaque, struct ieee80211_sta *sta)
+{
+    struct RTWTxRate *out = opaque;
+    const struct rtw89_sta *rtwsta = sta_to_rtwsta(sta);
+    const struct rtw89_sta_link *link = rtwsta->links[0];
+    const struct rate_info *report;
+    uint32_t modes;
+    if (!link) return;
+    report = &link->ra_report.txrate;
+    modes = report->flags & (RATE_INFO_FLAGS_MCS | RATE_INFO_FLAGS_VHT_MCS |
+                            RATE_INFO_FLAGS_HE_MCS | RATE_INFO_FLAGS_EHT_MCS);
+    if ((modes & (modes - 1)) || (modes & RATE_INFO_FLAGS_EHT_MCS)) return;
+    /* bit_rate is not a presence flag: the compat helper returns zero for HE. */
+    if (!modes && !report->legacy) return;
+    out->shortGI = (report->flags & RATE_INFO_FLAGS_SHORT_GI) != 0;
+    out->guardIntervalNs = out->shortGI ? 400 : 800;
+    if (modes & RATE_INFO_FLAGS_HE_MCS) {
+        out->mode = RTW_RATE_HE;
+        out->mcs = report->mcs;
+        out->nss = report->nss;
+        out->shortGI = false; // Classic SHORT_GI means 400 ns, not HE's shortest GI.
+        out->dcm = report->he_dcm != 0;
+        switch (report->he_gi) {
+        case NL80211_RATE_INFO_HE_GI_0_8: out->guardIntervalNs = 800; break;
+        case NL80211_RATE_INFO_HE_GI_1_6: out->guardIntervalNs = 1600; break;
+        case NL80211_RATE_INFO_HE_GI_3_2: out->guardIntervalNs = 3200; break;
+        default: return;
+        }
+    } else if (modes & RATE_INFO_FLAGS_VHT_MCS) {
+        out->mode = RTW_RATE_VHT;
+        out->mcs = report->mcs;
+        out->nss = report->nss;
+    } else if (modes & RATE_INFO_FLAGS_MCS) {
+        out->mode = RTW_RATE_HT;
+        out->mcs = report->mcs;
+        out->nss = report->mcs / 8 + 1;
+    } else {
+        out->mode = RTW_RATE_LEGACY;
+        out->nss = 1;
+        out->bitrate100Kbps = report->legacy;
+    }
+    switch (report->bw) {
+    case RATE_INFO_BW_20: out->widthMHz = 20; break;
+    case RATE_INFO_BW_40: out->widthMHz = 40; break;
+    case RATE_INFO_BW_80: out->widthMHz = 80; break;
+    case RATE_INFO_BW_160: out->widthMHz = 160; break;
+    default: return;
+    }
+    out->bitrate100Kbps = rtw_tx_rate_calculate(out);
+    out->valid = out->bitrate100Kbps != 0;
+}
+
+void rtw89_macos_get_tx_rate(struct ieee80211_hw *hw, struct RTWTxRate *out)
+{
+    if (!out) return;
+    memset(out, 0, sizeof(*out));
+    if (hw) ieee80211_iterate_stations_atomic(hw, rtw89_copy_tx_rate, out);
+}
+
 #endif /* RTW89_MACOS */

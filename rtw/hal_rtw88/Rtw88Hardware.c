@@ -76,6 +76,7 @@ static void copy_tx_rate(void *opaque, struct ieee80211_sta *sta)
     const struct rate_info *report = &si->ra_report.txrate;
     if (!si->ra_report.bit_rate) return;
     out->shortGI = (report->flags & RATE_INFO_FLAGS_SHORT_GI) != 0;
+    out->guardIntervalNs = out->shortGI ? 400 : 800;
     if (report->flags & RATE_INFO_FLAGS_VHT_MCS) {
         out->mode = RTW_RATE_VHT;
         out->mcs = report->mcs;
