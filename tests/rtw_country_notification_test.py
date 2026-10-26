@@ -4,6 +4,8 @@ from pathlib import Path
 import subprocess,tempfile
 root=Path(__file__).resolve().parents[1]
 s=(root/'rtw/hal_rtw89/RTWCore89.cpp').read_text();start=s.index('class CountryChangeNotification {');fn=s[start:s.index('\n};',start)+3]
+s88=(root/'rtw/hal_rtw88/RTWCore88.cpp').read_text();a88=s88.index('class CountryChangeNotification {')
+assert s88[a88:s88.index('\n};',a88)+3].replace('RTWCore88','RTWCore89') == fn
 fixture=r'''
 #include <cassert>
 #include <cstring>

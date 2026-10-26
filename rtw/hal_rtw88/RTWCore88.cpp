@@ -26,6 +26,24 @@ constexpr UInt16 kRtl8821CEAlternate = 0xb821;
 constexpr UInt16 kRtl8723DE = 0xd723;
 constexpr UInt16 kRtl8814AE = 0x8813;
 constexpr uint32_t kRtw88TxQueueSize = 256;
+class CountryChangeNotification {
+public:
+    CountryChangeNotification(RTWCore88 *driver, struct ieee80211com *controller)
+        : owner(driver), ic(controller)
+    {
+        memcpy(before, owner->getFirmwareCountryCode(), sizeof(before));
+    }
+    ~CountryChangeNotification()
+    {
+        if (memcmp(before, owner->getFirmwareCountryCode(), sizeof(before)) &&
+            ic->ic_event_handler)
+            ic->ic_event_handler(ic, IEEE80211_EVT_COUNTRY_CODE_UPDATE, nullptr);
+    }
+private:
+    RTWCore88 *owner;
+    struct ieee80211com *ic;
+    char before[2];
+};
 }
 
 bool RTWCore88::rtw88_match(IOPCIDevice *device)
@@ -179,6 +197,7 @@ IOReturn RTWCore88::enable(IONetworkInterface *interface)
         return kIOReturnNotReady;
     if (sc.sc_flags & RTW88_FLAG_ENABLED)
         return kIOReturnSuccess;
+    CountryChangeNotification countryUpdate(this, &sc.sc_ic);
 #ifdef AIRPORT_WCL
     if (!rtw88LinuxSetMacAddress(&linuxContext, sc.sc_ic.ic_myaddr))
         return kIOReturnBadArgument;
@@ -269,9 +288,24 @@ const char *RTWCore88::getFirmwareName()
     return sc.sc_fwname;
 }
 
+bool RTWCore88::setCountryCode(const char cc[2])
+{
+    if (!cc) return false;
+    char requested[3] = {cc[0], cc[1], 0};
+    getController()->setProperty("RTWCountryRequest", requested);
+    const bool applied = rtw88LinuxSetCountry(&linuxContext, cc);
+    getController()->setProperty("RTWCountryRequestApplied", applied);
+    getController()->setProperty("RTWEffectiveCountry", getFirmwareCountryCode());
+    return applied;
+}
+
 const char *RTWCore88::getFirmwareCountryCode()
 {
     rtw88LinuxGetCountry(&linuxContext, sc.sc_country);
+    getController()->setProperty("RTWAPCountry", linuxContext.apCountry[0] ?
+        linuxContext.apCountry : "absent");
+    getController()->setProperty("RTWAPCountryApplied", linuxContext.apCountryApplied);
+    getController()->setProperty("RTWEffectiveCountry", sc.sc_country);
     return sc.sc_country;
 }
 
@@ -909,6 +943,7 @@ int RTWCore88::newstate(struct ieee80211com *ic,
     if (!sc || !sc->sc_newstate)
         return ENXIO;
     auto *owner = container_of(sc, RTWCore88, sc);
+    CountryChangeNotification countryUpdate(owner, ic);
     const enum ieee80211_state previous = ic->ic_state;
     struct ieee80211_node *node = ic->ic_bss;
     bool beganScan = false;
@@ -1011,6 +1046,7 @@ int RTWCore88::newstate(struct ieee80211com *ic,
         }
         const uint8_t nss = Rtw88Link::htStreams(node->ni_rxmcs, sizeof(node->ni_rxmcs));
         Rtw88NativePeer peer = {};
+        memcpy(peer.country, node->ni_country_alpha2, sizeof(peer.country));
         peer.caps.htCaps = node->ni_htcaps;
         peer.caps.ampduParams = node->ni_ampdu_param;
         memcpy(peer.caps.htMCS, node->ni_rxmcs, sizeof(peer.caps.htMCS));

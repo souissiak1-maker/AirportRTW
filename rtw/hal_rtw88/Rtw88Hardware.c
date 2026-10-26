@@ -9,6 +9,64 @@ extern const struct rtw_chip_info rtw8821c_hw_spec;
 extern const struct rtw_chip_info rtw8723d_hw_spec;
 extern const struct rtw_chip_info rtw8814a_hw_spec;
 
+#include "Rtw88CountryCodes.h"
+
+static bool country_known(const char cc[2])
+{
+    unsigned int i;
+    if (!cc || cc[0] < 'A' || cc[0] > 'Z' || cc[1] < 'A' || cc[1] > 'Z')
+        return false;
+    for (i = 0; i < ARRAY_SIZE(rtw88_country_codes); ++i)
+        if (!memcmp(rtw88_country_codes[i], cc, 2)) return true;
+    return false;
+}
+
+/* Caller serializes with wiphy; notifier takes the device mutex itself.
+ * mode: 0 restore world, 1 AP hint, 2 OS hint. Never relax channel flags.
+ */
+bool airportrtw88_apply_country(struct ieee80211_hw *hw, const char *cc, int mode)
+{
+    struct rtw_dev *dev;
+    struct regulatory_request request = {0};
+    const char world[2] = {'0', '0'};
+    if (!hw || !hw->priv || !hw->wiphy || !hw->wiphy->reg_notifier ||
+        mode < 0 || mode > 2) return false;
+    dev = hw->priv;
+    if (mode && !country_known(cc)) return false;
+    if (!mode) cc = world;
+    if (dev->regd.state == RTW_REGD_STATE_PROGRAMMED)
+        return mode == 2 && dev->regd.regulatory &&
+            !memcmp(dev->regd.regulatory->alpha2, cc, 2);
+    if (mode != 2 && (dev->regd.state == RTW_REGD_STATE_SETTING ||
+        (hw->wiphy->regulatory_flags & REGULATORY_COUNTRY_IE_IGNORE)))
+        return false;
+    request.alpha2[0] = cc[0]; request.alpha2[1] = cc[1];
+    request.initiator = mode == 2 ? NL80211_REGDOM_SET_BY_USER :
+        mode == 1 ? NL80211_REGDOM_SET_BY_COUNTRY_IE : NL80211_REGDOM_SET_BY_CORE;
+    request.dfs_region = NL80211_DFS_UNSET;
+    hw->wiphy->reg_notifier(hw->wiphy, &request);
+    return dev->regd.regulatory && !memcmp(dev->regd.regulatory->alpha2, cc, 2);
+}
+
+/* Apply a programmed-domain hint after hardware start. */
+int airportrtw88_apply_driver_hint(struct wiphy *wiphy, const char *cc)
+{
+    struct regulatory_request request = {0};
+    if (!wiphy || !wiphy->reg_notifier || !country_known(cc)) return -EINVAL;
+    request.alpha2[0] = cc[0]; request.alpha2[1] = cc[1];
+    request.initiator = NL80211_REGDOM_SET_BY_DRIVER;
+    request.dfs_region = NL80211_DFS_UNSET;
+    wiphy->reg_notifier(wiphy, &request);
+    return 0;
+}
+
+void airportrtw88_init_country(struct ieee80211_hw *hw)
+{
+    struct rtw_dev *dev = hw ? hw->priv : NULL;
+    if (dev && dev->regd.state == RTW_REGD_STATE_PROGRAMMED)
+        airportrtw88_apply_driver_hint(hw->wiphy, dev->efuse.country_code);
+}
+
 unsigned rtw88_hw_get_nss(struct ieee80211_hw *hw)
 {
     struct rtw_dev *device = hw ? hw->priv : NULL;

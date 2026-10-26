@@ -907,8 +907,10 @@ bool cfg80211_ssid_eq(struct cfg80211_ssid *a, struct cfg80211_ssid *b)
     return memcmp(a->ssid, b->ssid, a->ssid_len) == 0;
 }
 
+/* Programmed-domain hints are applied by the bridge after hardware start;
+ * the notifier writes TX-power registers and cannot run during probe. */
 int regulatory_hint(struct wiphy *wiphy, const char *alpha2)
-{ (void)wiphy; (void)alpha2; return 0; }
+{ return wiphy && alpha2 ? 0 : -EINVAL; }
 
 /* identity stub — the kext probes SDIO buses as unsupported, so the SDIO
  * data path never runs; keep the Linux signature so callers using the
@@ -1406,11 +1408,10 @@ bool rtw88_get_country_code(struct rtw_dev *dev, char out[3])
     return cc != NULL;
 }
 
-bool rtw88_set_country_code(struct rtw_dev *rtwdev, const char alpha2[2])
+bool airportrtw88_apply_country(struct ieee80211_hw *, const char *, int);
+bool rtw88_set_country_code(struct rtw_dev *dev, const char alpha2[2])
 {
-    (void)rtwdev;
-    (void)alpha2;
-    return false;
+    return dev && airportrtw88_apply_country(dev->hw, alpha2, 2);
 }
 
 #endif /* !RTW89_MACOS */

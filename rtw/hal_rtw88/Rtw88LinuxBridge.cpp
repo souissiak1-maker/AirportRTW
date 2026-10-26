@@ -15,6 +15,8 @@ extern "C" {
 int airportrtw88_probe(struct pci_dev *);
 void rtw_pci_remove(struct pci_dev *);
 struct ieee80211_hw *rtw88_get_hw(void);
+void airportrtw88_init_country(struct ieee80211_hw *);
+bool airportrtw88_apply_country(struct ieee80211_hw *, const char *, int);
 unsigned rtw88_hw_get_nss(struct ieee80211_hw *);
 void rtw88_hw_get_tx_rate(struct ieee80211_hw *, struct RTWTxRate *);
 void rtw88_register_vif(struct ieee80211_vif *);
@@ -424,6 +426,7 @@ bool rtw88LinuxPowerUp(Rtw88LinuxContext *context)
             return false;
         }
         context->started = true;
+        airportrtw88_init_country(hw);
         RTW_LOG("AirportRTW: hardware start callback complete\n");
     }
     if (!context->interfaceAdded) {
@@ -826,6 +829,16 @@ unsigned rtw88LinuxGetNSS(Rtw88LinuxContext *context)
     return rtw88_hw_get_nss(hw);
 }
 
+bool rtw88LinuxSetCountry(Rtw88LinuxContext *context, const char cc[2])
+{
+    if (!context || !context->started || !context->hardware) return false;
+    auto *hw = static_cast<ieee80211_hw *>(context->hardware);
+    WiphyGuard guard(hw);
+    const bool applied = airportrtw88_apply_country(hw, cc, 2);
+    if (applied) context->apCountryApplied = false;
+    return applied;
+}
+
 void rtw88LinuxGetCountry(Rtw88LinuxContext *context, char out[3])
 {
     out[0] = '0'; out[1] = '0'; out[2] = '\0';
@@ -1001,6 +1014,13 @@ bool rtw88LinuxAssociate(Rtw88LinuxContext *context,
             hw->ops->bss_info_changed(hw, vif, bss,
                                       BSS_CHANGED_ASSOC | BSS_CHANGED_QOS);
     }
+    context->apCountry[0] = peer.country[0];
+    context->apCountry[1] = peer.country[1];
+    context->apCountry[2] = 0;
+    {
+        WiphyGuard guard(hw);
+        context->apCountryApplied = airportrtw88_apply_country(hw, peer.country, 1);
+    }
     return true;
 }
 
@@ -1026,6 +1046,11 @@ void rtw88LinuxDisassociate(Rtw88LinuxContext *context)
     }
     context->txAmpduMask = 0;
     releaseStation(context);
+    if (context->apCountryApplied) {
+        WiphyGuard guard(hw);
+        airportrtw88_apply_country(hw, nullptr, 0);
+        context->apCountryApplied = false;
+    }
 }
 
 bool rtw88LinuxSetKey(Rtw88LinuxContext *context, uint8_t keyIndex,

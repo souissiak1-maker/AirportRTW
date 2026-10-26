@@ -4,6 +4,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+bool rtw88LinuxSetCountry(struct Rtw88LinuxContext *, const char cc[2]);
 void rtw88LinuxGetCountry(struct Rtw88LinuxContext *, char out[3]);
 #include "../../include/HAL/RTWTxRate.h"
 
@@ -25,6 +26,7 @@ struct Rtw88NativeCapabilities {
 
 struct Rtw88NativePeer {
     Rtw88NativeCapabilities caps;
+    char country[2];
     uint16_t widthMHz;
     uint16_t centerFrequency;
 };
@@ -42,6 +44,8 @@ struct Rtw88LinuxContext {
     bool stationAdded;
     void *keys[12]; /* group 0..5, pairwise 6..11 */
     uint8_t macAddress[6];
+    char apCountry[3];
+    bool apCountryApplied;
     bool probed;
     bool started;
     bool interfaceAdded;

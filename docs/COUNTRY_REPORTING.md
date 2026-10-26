@@ -34,8 +34,8 @@ On disconnect an applied AP hint is cleared to world. Existing channel flags
 are not relaxed. This selects RTW89's country-specific power tables; it does not
 provide a geographic channel database or apply country triplets.
 
-RTW88 only has the earlier effective-country reporting correction. The functional
-AP-country experiment is RTW89-only pending hardware testing. The Apple setter
+The original functional AP-country experiment was RTW89-only; the RTW88
+extension is described below. The Apple setter
 still rejects requests that were not applied. A router without a valid country
 IE leaves the world domain in place.
 
@@ -46,7 +46,7 @@ Test: `python3 tests/rtw89_country_ie_test.py` (production helper, ASan/UBSan).
 The shared optional HAL setter defaults to unsupported. RTW89 implements it
 for recognized uppercase alpha2 codes using a USER regulatory request, checks
 that the effective domain matches after the notifier, and rejects changes that
-conflict with a board-programmed domain. RTW88 continues returning unsupported.
+conflict with a board-programmed domain. RTW88 now implements the setter using its own state machine (see below).
 The native frontend defers country-change notification through the existing WCL
 notification path. Same-domain requests do not generate notification loops.
 Successful OS requests supersede AP hints and survive disassociation; the
@@ -87,3 +87,23 @@ country-change message. Unchanged domains do not emit an event.
 ASan/UBSan for association, unchanged state, failure/reset and absent handler.
 Hardware verification must compare RTWEffectiveCountry, IO80211CountryCode and
 System Information; application privacy filtering may still affect the last.
+
+## RTW88 extension (hardware testing pending)
+
+RTW88 now retains the joined AP country, applies a known country through its
+regulatory notifier, restores world after an AP-derived domain on disconnect,
+and emits the same changed-domain event used by the native frontend. OS hints
+use USER requests; the RTW88 SETTING state prevents AP/reset overrides.
+PROGRAMMED states reject conflicting requests. Programmed-domain DRIVER hints reach the notifier after hardware start,
+so the efuse domain is applied without writing registers during probe.
+The driver mutex remains owned by the notifier; bridge calls serialize with the
+wiphy lock. Existing channel flags are not relaxed. Imported driver files are
+unchanged. Rtw88CountryCodes.h mirrors the donor table; the production-state
+test verifies it matches exactly.
+
+Validation: `python3 tests/rtw88_country_test.py` runs the real state handlers and
+notifier with the new helpers under ASan/UBSan. Tests cover AP hints/reset, OS
+priority, malformed/unknown codes, programmed-domain protection and probe hints.
+RTW89 automatic AP application and native reporting were hardware verified with
+TN. RTW88 hardware has not been tested; testers should check both HAL and native
+country properties on association, switching APs, disconnect, and Wi-Fi toggle.
