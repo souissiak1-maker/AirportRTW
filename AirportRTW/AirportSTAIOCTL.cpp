@@ -481,6 +481,13 @@ getRATE(OSObject *object, struct apple80211_rate_data *rd)
         memset(rd, 0, sizeof(*rd));
         rd->version = APPLE80211_VERSION;
         rd->num_radios = 1;
+        RTWTxRate liveRate = {};
+        if (fHalService->getDriverInfo()->getTxRate(liveRate)) {
+            if (!liveRate.valid) return 6;
+            rd->rate[0] = liveRate.bitrate100Kbps / 10; // Apple ABI uses integer Mbps.
+            return kIOReturnSuccess;
+        }
+
         sgi = ieee80211_node_supports_sgi(ic->ic_bss);
         if (ic->ic_curmode == IEEE80211_MODE_11AC) {
             if (sgi)
@@ -763,6 +770,15 @@ getMCS_VHT(OSObject *object, struct apple80211_mcs_vht_data *data)
     }
     memset(data, 0, sizeof(struct apple80211_mcs_vht_data));
     data->version = APPLE80211_VERSION;
+    RTWTxRate liveRate = {};
+    if (fHalService->getDriverInfo()->getTxRate(liveRate)) {
+        if (!liveRate.valid || liveRate.mode != RTW_RATE_VHT) return 6;
+        data->guard_interval = liveRate.shortGI ? APPLE80211_GI_SHORT : APPLE80211_GI_LONG;
+        data->index = liveRate.mcs;
+        data->nss = liveRate.nss;
+        data->bw = liveRate.widthMHz;
+        return kIOReturnSuccess;
+    }
     data->guard_interval = (ieee80211_node_supports_vht_sgi80(ic->ic_bss) || ieee80211_node_supports_vht_sgi160(ic->ic_bss)) ? APPLE80211_GI_SHORT : APPLE80211_GI_LONG;
     data->index = ic->ic_bss->ni_txmcs;
     data->nss = fHalService->getDriverInfo()->getTxNSS();
@@ -1286,6 +1302,13 @@ getMCS(OSObject *object, struct apple80211_mcs_data* md)
     struct ieee80211com *ic = fHalService->get80211Controller();
     if (ic->ic_state != IEEE80211_S_RUN ||  ic->ic_bss == NULL || !md)
         return 6;
+    RTWTxRate liveRate = {};
+    if (fHalService->getDriverInfo()->getTxRate(liveRate)) {
+        if (!liveRate.valid || liveRate.mode == RTW_RATE_LEGACY) return 6;
+        md->version = APPLE80211_VERSION;
+        md->index = liveRate.mcs;
+        return kIOReturnSuccess;
+    }
     md->version = APPLE80211_VERSION;
     md->index = ic->ic_bss->ni_txmcs;
     return kIOReturnSuccess;

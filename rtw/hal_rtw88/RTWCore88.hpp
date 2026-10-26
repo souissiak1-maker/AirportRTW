@@ -36,6 +36,7 @@ public:
     struct ieee80211com *get80211Controller() override { return &sc.sc_ic; }
 
     int getTxNSS() override;
+    bool getTxRate(RTWTxRate &rate) override;
     bool is5GBandSupport() override;
     const char *getFirmwareName() override;
     const char *getFirmwareCountryCode() override;

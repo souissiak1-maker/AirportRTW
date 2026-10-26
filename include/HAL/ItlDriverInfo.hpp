@@ -15,6 +15,8 @@
 #ifndef ItlDriverInfo_h
 #define ItlDriverInfo_h
 
+#include "RTWTxRate.h"
+
 class ItlDriverInfo {
     
 public:
@@ -26,6 +28,10 @@ public:
     virtual bool is5GBandSupport() = 0;
     
     virtual int getTxNSS() = 0;
+
+    // true: HAL owns rate reporting; valid=false means no sample yet.
+    virtual bool getTxRate(RTWTxRate &rate) { (void)rate; return false; }
+
     
     virtual const char *getFirmwareName() = 0;
     

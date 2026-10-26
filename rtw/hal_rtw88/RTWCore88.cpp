@@ -252,6 +252,12 @@ int RTWCore88::getTxNSS()
     return rtw88LinuxGetNSS(&linuxContext);
 }
 
+bool RTWCore88::getTxRate(RTWTxRate &rate)
+{
+    rtw88LinuxGetTxRate(&linuxContext, rate);
+    return true;
+}
+
 bool RTWCore88::is5GBandSupport()
 {
     Rtw88NativeCapabilities caps = {};
@@ -484,12 +490,6 @@ void RTWCore88::watchdog(struct _ifnet *ifp)
                             owner->linuxContext.txDescMacId, 32));
     RTW_DIAGNOSTIC(controller->setProperty("RTW88TxDescQueueSelect",
                             owner->linuxContext.txDescQueueSelect, 32));
-    RTW_DIAGNOSTIC(controller->setProperty("RTW88TxReportCount",
-                            owner->linuxContext.txReportCount, 64));
-    RTW_DIAGNOSTIC(controller->setProperty("RTW88TxReportStatus",
-                            owner->linuxContext.txReportStatus, 32));
-    RTW_DIAGNOSTIC(controller->setProperty("RTW88TxReportAttempts",
-                            owner->linuxContext.txReportAttempts, 32));
     RTW_DIAGNOSTIC(controller->setProperty("RTW88TxAvailableSlots",
                             rtw88LinuxTxAvailableSlots(&owner->linuxContext), 32));
     RTW_DIAGNOSTIC(controller->setProperty("RTW88OutputQueueLength",
@@ -527,20 +527,15 @@ void RTWCore88::watchdog(struct _ifnet *ifp)
                             owner->linuxContext.raAuditU32[42], 32));
     RTW_DIAGNOSTIC(controller->setProperty("RTW88RAAssocMask",
                             owner->linuxContext.raAuditU64[0], 64));
-    RTW_DIAGNOSTIC(controller->setProperty("RTW88RALiveMode",
-                            owner->linuxContext.raAuditU32[43], 32));
-    RTW_DIAGNOSTIC(controller->setProperty("RTW88RALiveMcs",
-                            owner->linuxContext.raAuditU32[44], 32));
-    RTW_DIAGNOSTIC(controller->setProperty("RTW88RALiveBandwidth",
-                            owner->linuxContext.raAuditU32[45], 32));
-    RTW_DIAGNOSTIC(controller->setProperty("RTW88RALiveNss",
-                            owner->linuxContext.raAuditU32[46], 32));
-    RTW_DIAGNOSTIC(controller->setProperty("RTW88RALiveFlags",
-                            owner->linuxContext.raAuditU32[47], 32));
-    RTW_DIAGNOSTIC(controller->setProperty("RTW88RALiveBitrate100Kbps",
-                            owner->linuxContext.raAuditU32[48], 32));
-    RTW_DIAGNOSTIC(controller->setProperty("RTW88RALiveHardwareRate",
-                            owner->linuxContext.raAuditU32[49], 32));
+    RTWTxRate liveRate = {};
+    owner->getTxRate(liveRate);
+    RTW_DIAGNOSTIC(controller->setProperty("RTW88RALiveValid", liveRate.valid));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW88RALiveMode", liveRate.mode, 8));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW88RALiveMcs", liveRate.mcs, 8));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW88RALiveBandwidth", liveRate.widthMHz, 16));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW88RALiveNss", liveRate.nss, 8));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW88RALiveShortGI", liveRate.shortGI));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW88RALiveBitrate100Kbps", liveRate.bitrate100Kbps, 32));
     RTW_DIAGNOSTIC(controller->setProperty("RTW88LastAssocResponseLength",
                             owner->lastAssocResponseLength, 32));
     RTW_DIAGNOSTIC(controller->setProperty("RTW88LastAssocResponseStatus",

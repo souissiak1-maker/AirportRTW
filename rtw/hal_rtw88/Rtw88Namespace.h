@@ -3,6 +3,7 @@
 #ifndef AIRPORTRTW88_NAMESPACE_H
 #define AIRPORTRTW88_NAMESPACE_H
 #define rtw88_hw_get_nss airportrtw88_rtw88_hw_get_nss
+#define rtw88_hw_get_tx_rate airportrtw88_rtw88_hw_get_tx_rate
 #define card_disable_flow_8814a airportrtw88_card_disable_flow_8814a
 #define card_enable_flow_8814a airportrtw88_card_enable_flow_8814a
 #define rtw8723d_agc_tbl airportrtw88_rtw8723d_agc_tbl

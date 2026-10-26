@@ -66,3 +66,43 @@ void rtw88_rx_ampdu_stop(struct ieee80211_sta *sta, u8 tid)
     (void)ampdu(sta && tid < IEEE80211_NUM_TIDS && sta->txq[tid] ? sta->txq[tid]->vif : NULL,
                 sta, tid, 0, 0, IEEE80211_AMPDU_RX_STOP);
 }
+
+/* Share the station iteration lock with C2H RA updates and station teardown. */
+#include "../../include/HAL/RTWTxRate.h"
+static void copy_tx_rate(void *opaque, struct ieee80211_sta *sta)
+{
+    struct RTWTxRate *out = opaque;
+    const struct rtw_sta_info *si = (const void *)sta->drv_priv;
+    const struct rate_info *report = &si->ra_report.txrate;
+    if (!si->ra_report.bit_rate) return;
+    out->shortGI = (report->flags & RATE_INFO_FLAGS_SHORT_GI) != 0;
+    if (report->flags & RATE_INFO_FLAGS_VHT_MCS) {
+        out->mode = RTW_RATE_VHT;
+        out->mcs = report->mcs;
+        out->nss = report->nss;
+    } else if (report->flags & RATE_INFO_FLAGS_MCS) {
+        out->mode = RTW_RATE_HT;
+        out->mcs = report->mcs;
+        out->nss = report->mcs / 8 + 1;
+    } else {
+        out->mode = RTW_RATE_LEGACY;
+        out->nss = 1;
+        out->bitrate100Kbps = report->legacy;
+    }
+    switch (report->bw) {
+    case RATE_INFO_BW_20: out->widthMHz = 20; break;
+    case RATE_INFO_BW_40: out->widthMHz = 40; break;
+    case RATE_INFO_BW_80: out->widthMHz = 80; break;
+    case RATE_INFO_BW_160: out->widthMHz = 160; break;
+    default: return;
+    }
+    out->bitrate100Kbps = rtw_tx_rate_calculate(out);
+    out->valid = out->bitrate100Kbps != 0;
+}
+
+void rtw88_hw_get_tx_rate(struct ieee80211_hw *hw, struct RTWTxRate *out)
+{
+    if (!out) return;
+    memset(out, 0, sizeof(*out));
+    if (hw) ieee80211_iterate_stations_atomic(hw, copy_tx_rate, out);
+}

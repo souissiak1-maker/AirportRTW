@@ -16,6 +16,7 @@ int airportrtw88_probe(struct pci_dev *);
 void rtw_pci_remove(struct pci_dev *);
 struct ieee80211_hw *rtw88_get_hw(void);
 unsigned rtw88_hw_get_nss(struct ieee80211_hw *);
+void rtw88_hw_get_tx_rate(struct ieee80211_hw *, struct RTWTxRate *);
 void rtw88_register_vif(struct ieee80211_vif *);
 void rtw88_unregister_vif(void);
 }
@@ -823,6 +824,13 @@ unsigned rtw88LinuxGetNSS(Rtw88LinuxContext *context)
 {
     auto *hw = context ? static_cast<ieee80211_hw *>(context->hardware) : nullptr;
     return rtw88_hw_get_nss(hw);
+}
+
+void rtw88LinuxGetTxRate(Rtw88LinuxContext *context, RTWTxRate &rate)
+{
+    rate = {};
+    auto *hw = context ? static_cast<ieee80211_hw *>(context->hardware) : nullptr;
+    if (hw) rtw88_hw_get_tx_rate(hw, &rate);
 }
 
 bool rtw88LinuxGetCapabilities(Rtw88LinuxContext *context, bool fiveGHz,
