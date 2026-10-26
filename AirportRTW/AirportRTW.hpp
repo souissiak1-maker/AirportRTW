@@ -22,7 +22,7 @@
 #include <libkern/c++/OSMetaClass.h>
 #include <IOKit/IOFilterInterruptEventSource.h>
 
-#include "ItlRtw89.hpp"
+#include "../rtw/RTWCore.hpp"
 
 #include "AirportRTWInterface.hpp"
 

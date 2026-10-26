@@ -189,6 +189,10 @@ extern	void ieee80211_ht_negotiate(struct ieee80211com *,
     struct ieee80211_node *);
 extern  void ieee80211_vht_negotiate(struct ieee80211com *,
     struct ieee80211_node *);
+void ieee80211_sae_clear(struct ieee80211com *, bool);
+mbuf_t ieee80211_sae_auth(struct ieee80211com *, struct ieee80211_node *, unsigned);
+void ieee80211_sae_receive(struct ieee80211com *, struct ieee80211_node *,
+    const struct ieee80211_frame *, unsigned, unsigned, const uint8_t *, size_t);
 extern  void ieee80211_he_negotiate(struct ieee80211com *,
     struct ieee80211_node *);
 extern  void ieee80211_sta_set_rx_nss(struct ieee80211com *, struct ieee80211_node *);

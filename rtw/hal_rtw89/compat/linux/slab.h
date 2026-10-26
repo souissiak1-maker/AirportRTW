@@ -58,7 +58,7 @@ static inline void kfree(const void *ptr)
     /* Kernel pointers on x86-64 macOS have the high bit set.
      * A low address means something corrupted this pointer — log and skip. */
     if ((uintptr_t)ptr < 0xffff000000000000ULL) {
-        IOLog("rtw88: kfree: bad pointer %p — skipping (corruption?)\n", ptr);
+        RTW_LOG("AirportRTW: kfree: bad pointer %p — skipping (corruption?)\n", ptr);
         return;
     }
     size_t *block = (size_t *)ptr - 1;

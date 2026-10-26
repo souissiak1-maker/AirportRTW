@@ -27,6 +27,31 @@ public:
     bool initWithDevice(IOPCIDevice *device, IOWorkLoop *workLoop);
     void free() override;
 
+    // Store attach diagnostics on the PCI device, which survives failed attach.
+    void recordAttachStage(const char *stage) {
+        pciDevice->setProperty("RTWTransportStage", stage);
+    }
+    static void recordPCIProbeStage(const char *stage, int result) {
+        if (!active || !active->pciDevice) return;
+        active->pciDevice->setProperty("RTWPCIProbeStage", stage);
+        active->pciDevice->setProperty("RTWPCIProbeStageCode",
+            static_cast<unsigned long long>(result), 32);
+    }
+    static void recordChipStage(const char *stage) {
+        if (active && active->pciDevice)
+            active->pciDevice->setProperty("RTWChipStage", stage);
+    }
+    static void recordPollFailure(unsigned reg, unsigned value,
+                                  unsigned mask, unsigned expected) {
+        if (!active || !active->pciDevice) return;
+        active->pciDevice->setProperty("RTWPollRegister", reg, 32);
+        active->pciDevice->setProperty("RTWPollValue", value, 32);
+        active->pciDevice->setProperty("RTWPollMask", mask, 32);
+        active->pciDevice->setProperty("RTWPollExpected", expected, 32);
+    }
+    void recordProbeResult(int result) {
+        pciDevice->setProperty("RTWPCIProbeResult", static_cast<unsigned long long>(result), 32);
+    }
     struct pci_dev *linuxDevice() const { return compatDevice; }
     volatile void *mmioBase() const { return mmioBaseAddress; }
 

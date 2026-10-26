@@ -76,12 +76,12 @@ static int rtw89_pci_rst_bdram_ax(struct rtw89_dev *rtwdev)
 	return ret;
 }
 
-/* feixiao diagnostics: host-side RX/NAPI liveness counters, dumped by the CH12
+/* airportrtw diagnostics: host-side RX/NAPI liveness counters, dumped by the CH12
  * fwcmd wedge probe below so the next log shows whether the host is still
  * servicing the device when the firmware stops consuming H2C. */
-static u32 feixiao_napi_polls;
-static u32 feixiao_rx_delivered;
-static u32 feixiao_rpq_reports;
+static u32 airportrtw_napi_polls;
+static u32 airportrtw_rx_delivered;
+static u32 airportrtw_rpq_reports;
 
 static u32 rtw89_pci_dma_recalc(struct rtw89_dev *rtwdev,
 				struct rtw89_pci_dma_ring *bd_ring,
@@ -459,7 +459,7 @@ static void rtw89_pci_rxbd_deliver(struct rtw89_dev *rtwdev,
 		}
 
 		cnt -= rx_cnt;
-		feixiao_rx_delivered += rx_cnt;
+		airportrtw_rx_delivered += rx_cnt;
 	}
 
 	rtw89_write16(rtwdev, bd_ring->addr.idx, bd_ring->wp);
@@ -796,7 +796,7 @@ static int rtw89_pci_poll_rpq_dma(struct rtw89_dev *rtwdev,
 		goto out_unlock;
 
 	rtw89_pci_release_tx(rtwdev, rx_ring, cnt);
-	feixiao_rpq_reports += cnt;
+	airportrtw_rpq_reports += cnt;
 
 out_unlock:
 	spin_unlock_bh(&rtwpci->trx_lock);
@@ -1025,14 +1025,14 @@ static irqreturn_t rtw89_pci_interrupt_threadfn(int irq, void *dev)
 	rtw89_chip_recognize_intrs(rtwdev, rtwpci, &isrs);
 	spin_unlock_irqrestore(&rtwpci->irq_lock, flags);
 
-	/* feixiao diagnostic: the firmware wedges ~20-45s after association
+	/* airportrtw diagnostic: the firmware wedges ~20-45s after association
 	 * (no tx fwcmd resource) and never recovers.  Surface the hardware's
 	 * error path at warn level so the next dmesg shows *why*: RDU means the
 	 * host RX ring starved (we are not replenishing fast enough / RX DMA
 	 * stalled); a HALT/WDT c2h with an err_status means the MAC firmware
 	 * asserted (the code identifies which subsystem). */
 	if (unlikely(isrs.isrs[0] & isr_def->isr_rdu)) {
-		rtw89_warn(rtwdev, "feixiao: RDU rx-desc unavailable isr0=0x%08x\n",
+		rtw89_warn(rtwdev, "airportrtw: RDU rx-desc unavailable isr0=0x%08x\n",
 			   isrs.isrs[0]);
 		rtw89_pci_isr_rxd_unavail(rtwdev, rtwpci);
 	}
@@ -1040,12 +1040,12 @@ static irqreturn_t rtw89_pci_interrupt_threadfn(int irq, void *dev)
 	if (unlikely(isrs.halt_c2h_isrs & isr_def->isr_halt_c2h)) {
 		u32 err = rtw89_mac_get_err_status(rtwdev);
 
-		rtw89_warn(rtwdev, "feixiao: FW HALT c2h err_status=0x%08x\n", err);
+		rtw89_warn(rtwdev, "airportrtw: FW HALT c2h err_status=0x%08x\n", err);
 		rtw89_ser_notify(rtwdev, err);
 	}
 
 	if (unlikely(isrs.halt_c2h_isrs & isr_def->isr_wdt_timeout)) {
-		rtw89_warn(rtwdev, "feixiao: FW watchdog timeout\n");
+		rtw89_warn(rtwdev, "airportrtw: FW watchdog timeout\n");
 		rtw89_ser_notify(rtwdev, MAC_AX_ERR_L2_ERR_WDT_TIMEOUT_INT);
 	}
 
@@ -1321,16 +1321,16 @@ u32 __rtw89_pci_check_and_reclaim_tx_fwcmd_resource(struct rtw89_dev *rtwdev)
 	cnt = rtw89_pci_get_avail_txbd_num(tx_ring);
 	spin_unlock_bh(&rtwpci->trx_lock);
 
-	/* feixiao diagnostic: the CH12 (fwcmd/H2C) ring goes to zero avail ~24s
+	/* airportrtw diagnostic: the CH12 (fwcmd/H2C) ring goes to zero avail ~24s
 	 * after connect and never recovers, with the firmware not asserting.
 	 * Reclaim advances bd_ring->rp from the raw hardware index register; dump
 	 * wp/rp/len and that raw register periodically while the ring is full so
 	 * the next log shows whether the hardware index is FROZEN (firmware
 	 * stopped consuming H2C) or still ADVANCING (a host-side reclaim bug). */
 	if (cnt == 0) {
-		static u32 feixiao_full_n;
+		static u32 airportrtw_full_n;
 
-		if ((feixiao_full_n++ & 0x1f) == 0) {
+		if ((airportrtw_full_n++ & 0x1f) == 0) {
 			struct rtw89_pci_dma_ring *bd = &tx_ring->bd_ring;
 			struct rtw89_pci_rx_ring *rxq =
 				&rtwpci->rx.rings[RTW89_RXCH_RXQ];
@@ -1338,7 +1338,7 @@ u32 __rtw89_pci_check_and_reclaim_tx_fwcmd_resource(struct rtw89_dev *rtwdev)
 				&rtwpci->rx.rings[RTW89_RXCH_RPQ];
 
 			rtw89_warn(rtwdev,
-				   "feixiao: CH12 full wp=%u rp=%u len=%u hwidx=0x%08x\n",
+				   "airportrtw: CH12 full wp=%u rp=%u len=%u hwidx=0x%08x\n",
 				   bd->wp, bd->rp, bd->len,
 				   rtw89_read32(rtwdev, bd->addr.idx));
 			/* Pin the first domino: is the host still servicing the
@@ -1349,9 +1349,9 @@ u32 __rtw89_pci_check_and_reclaim_tx_fwcmd_resource(struct rtw89_dev *rtwdev)
 			 * showing the ring full (hw_idx+1 == host_idx) means we
 			 * stopped replenishing and the FW RX ring starved. */
 			rtw89_warn(rtwdev,
-				   "feixiao: host napi=%u rx=%u rpq=%u | RXQ wp=%u rp=%u reg=0x%08x | RPQ wp=%u rp=%u reg=0x%08x\n",
-				   feixiao_napi_polls, feixiao_rx_delivered,
-				   feixiao_rpq_reports,
+				   "airportrtw: host napi=%u rx=%u rpq=%u | RXQ wp=%u rp=%u reg=0x%08x | RPQ wp=%u rp=%u reg=0x%08x\n",
+				   airportrtw_napi_polls, airportrtw_rx_delivered,
+				   airportrtw_rpq_reports,
 				   rxq->bd_ring.wp, rxq->bd_ring.rp,
 				   rtw89_read32(rtwdev, rxq->bd_ring.addr.idx),
 				   rpq->bd_ring.wp, rpq->bd_ring.rp,
@@ -4703,7 +4703,7 @@ static int rtw89_pci_napi_poll(struct napi_struct *napi, int budget)
 	int work_done;
 
 	rtwdev->napi_budget_countdown = budget;
-	feixiao_napi_polls++;
+	airportrtw_napi_polls++;
 
 	rtw89_write32(rtwdev, isr_def->isr_clear_rpq.addr, isr_def->isr_clear_rpq.data);
 	work_done = rtw89_pci_poll_rpq_dma(rtwdev, rtwpci, rtwdev->napi_budget_countdown);

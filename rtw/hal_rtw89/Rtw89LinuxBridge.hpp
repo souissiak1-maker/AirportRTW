@@ -7,6 +7,31 @@
 
 class Rtw89PciTransport;
 
+struct Rtw89NativeCapabilities {
+    uint16_t htCaps;
+    uint8_t ampduParams;
+    uint8_t htMCS[10];
+    uint32_t vhtCaps;
+    uint16_t vhtRxMCS;
+    uint16_t vhtTxMCS;
+    bool ht;
+    bool vht;
+    bool he;
+    uint8_t heMAC[6];
+    uint8_t hePHY[11];
+    uint16_t heRxMCS80;
+    uint16_t heTxMCS80;
+    uint8_t hePPE[25];
+};
+
+struct Rtw89NativePeer {
+    Rtw89NativeCapabilities caps;
+    uint16_t widthMHz;
+    uint16_t centerFrequency;
+    uint32_t heOperation;
+    uint16_t heBasicMCS;
+};
+
 struct Rtw89LinuxContext {
     typedef void (*ReceiveCallback)(void *, const uint8_t *, size_t,
                                     int32_t, uint16_t, bool, bool);
@@ -17,6 +42,8 @@ struct Rtw89LinuxContext {
     void *station;
     size_t vifAllocationSize;
     size_t stationAllocationSize;
+    uint32_t peerAudit[11];
+    unsigned stationState; // Last completed ieee80211_sta_state transition.
     void *keys[12]; /* group 0..5, pairwise 6..11 */
     uint8_t macAddress[6];
     bool probed;
@@ -55,6 +82,17 @@ struct Rtw89LinuxContext {
     volatile uint32_t lastActionRxCode;
     volatile uint32_t lastActionRxToken;
     volatile uint32_t lastActionRxStatus;
+    volatile uint64_t rxHardwareDecryptedCount;
+    volatile uint64_t rxProtectedSoftwareCount;
+    volatile uint64_t rxCCMPMICStrippedCount;
+    volatile uint64_t rxConnectionProtectedCount;
+    volatile uint64_t rxConnectionUndecryptedCount;
+    volatile uint64_t rxConnectionInvalidCount;
+    volatile uint64_t rxConnectionSNAPCount;
+    volatile uint64_t rxConnectionDHCPCount;
+    volatile uint64_t txAddressMismatchCount;
+    volatile uint64_t eapolTxSubmitted;
+    volatile uint64_t eapolTxAcked;
     volatile uint64_t dataTxCount;
     volatile uint64_t protectedTxCount;
     volatile uint64_t dhcpTxCount;
@@ -77,6 +115,7 @@ struct Rtw89LinuxContext {
     volatile uint32_t txReportAttempts;
     void *nativeOwner;
     ReceiveCallback receive;
+    void (*traceReceive)(void *, unsigned, const uint8_t *, size_t, unsigned);
     TxResumeCallback txResume;
 };
 
@@ -85,6 +124,7 @@ bool rtw89LinuxAttach(Rtw89PciTransport *transport,
 void rtw89LinuxDetach(Rtw89PciTransport *transport,
                       Rtw89LinuxContext *context);
 bool rtw89LinuxPowerUp(Rtw89LinuxContext *context);
+bool rtw89LinuxSetMacAddress(Rtw89LinuxContext *context, const uint8_t address[6]);
 void rtw89LinuxPowerDown(Rtw89LinuxContext *context);
 
 bool rtw89LinuxSetChannel(Rtw89LinuxContext *context, uint16_t channel);
@@ -93,11 +133,15 @@ bool rtw89LinuxPrepareConnection(Rtw89LinuxContext *context,
 void rtw89LinuxScanBegin(Rtw89LinuxContext *context);
 void rtw89LinuxScanEnd(Rtw89LinuxContext *context);
 bool rtw89LinuxIsScanning(Rtw89LinuxContext *context);
+bool rtw89LinuxGetCapabilities(Rtw89LinuxContext *context, bool fiveGHz,
+                               Rtw89NativeCapabilities &caps);
 bool rtw89LinuxAssociate(Rtw89LinuxContext *context,
                          const uint8_t bssid[6], uint16_t aid,
                          uint16_t capability, uint16_t channel,
                          uint16_t beaconInterval, uint8_t dtimPeriod,
-                         bool qos, bool ht, bool vht, uint8_t rxNss);
+                         bool qos, bool ht, bool vht, uint8_t rxNss,
+                         const Rtw89NativePeer &peer);
+bool rtw89LinuxAuthenticateStation(Rtw89LinuxContext *context);
 void rtw89LinuxDisassociate(Rtw89LinuxContext *context);
 
 enum Rtw89NativeCipher : uint8_t {
@@ -113,7 +157,7 @@ bool rtw89LinuxSetKey(Rtw89LinuxContext *context, uint8_t keyIndex,
 void rtw89LinuxDeleteKey(Rtw89LinuxContext *context, uint8_t keyIndex,
                          bool pairwise);
 bool rtw89LinuxTransmit(Rtw89LinuxContext *context, const uint8_t *frame,
-                        size_t length, bool management);
+                        size_t length, bool management, bool softwareEncrypted = false);
 bool rtw89LinuxTxAvailable(Rtw89LinuxContext *context);
 unsigned int rtw89LinuxTxAvailableSlots(Rtw89LinuxContext *context);
 bool rtw89LinuxAmpduStart(Rtw89LinuxContext *context, uint8_t tid,
@@ -122,7 +166,7 @@ void rtw89LinuxAmpduStop(Rtw89LinuxContext *context, uint8_t tid,
                          bool receive);
 bool rtw89LinuxConfigureQueue(Rtw89LinuxContext *context, uint8_t accessClass,
                               uint16_t cwMin, uint16_t cwMax, uint8_t aifs,
-                              uint16_t txop);
+                              uint16_t txop, const uint8_t *muEdca = nullptr);
 void rtw89LinuxUpdateSlot(Rtw89LinuxContext *context, bool shortSlot);
 void rtw89LinuxSetAllMulticast(Rtw89LinuxContext *context, bool enabled);
 

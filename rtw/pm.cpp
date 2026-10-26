@@ -12,7 +12,7 @@
 * GNU General Public License for more details.
 */
 
-#include "RTWCore.hpp"
+#include "RTWEthernetController.hpp"
 
 static IOPMPowerState powerStateArray[kPowerStateCount] =
 {
@@ -20,7 +20,7 @@ static IOPMPowerState powerStateArray[kPowerStateCount] =
     {1, kIOPMDeviceUsable, kIOPMPowerOn, kIOPMPowerOn, 0, 0, 0, 0, 0, 0, 0, 0}
 };
 
-void RTWCore::unregistPM()
+void RTWEthernetController::unregistPM()
 {
     if (powerOffThreadCall) {
         thread_call_free(powerOffThreadCall);
@@ -32,7 +32,7 @@ void RTWCore::unregistPM()
     }
 }
 
-IOReturn RTWCore::setPowerState(unsigned long powerStateOrdinal, IOService *policyMaker)
+IOReturn RTWEthernetController::setPowerState(unsigned long powerStateOrdinal, IOService *policyMaker)
 {
     IOReturn result = IOPMAckImplied;
     
@@ -65,7 +65,7 @@ IOReturn RTWCore::setPowerState(unsigned long powerStateOrdinal, IOService *poli
     return result;
 }
 
-IOReturn RTWCore::setWakeOnMagicPacket(bool active)
+IOReturn RTWEthernetController::setWakeOnMagicPacket(bool active)
 {
     magicPacketEnabled = active;
     return kIOReturnSuccess;
@@ -74,7 +74,7 @@ IOReturn RTWCore::setWakeOnMagicPacket(bool active)
 static void handleSetPowerStateOff(thread_call_param_t param0,
                              thread_call_param_t param1)
 {
-    RTWCore *self = (RTWCore *)param0;
+    RTWEthernetController *self = (RTWEthernetController *)param0;
 
     if (param1 == 0)
     {
@@ -92,7 +92,7 @@ static void handleSetPowerStateOff(thread_call_param_t param0,
 static void handleSetPowerStateOn(thread_call_param_t param0,
                             thread_call_param_t param1)
 {
-    RTWCore *self = (RTWCore *) param0;
+    RTWEthernetController *self = (RTWEthernetController *) param0;
 
     if (param1 == 0)
     {
@@ -107,7 +107,7 @@ static void handleSetPowerStateOn(thread_call_param_t param0,
     }
 }
 
-IOReturn RTWCore::registerWithPolicyMaker(IOService *policyMaker)
+IOReturn RTWEthernetController::registerWithPolicyMaker(IOService *policyMaker)
 {
     IOReturn ret;
     
@@ -126,13 +126,13 @@ IOReturn RTWCore::registerWithPolicyMaker(IOService *policyMaker)
     return ret;
 }
 
-void RTWCore::setPowerStateOff()
+void RTWEthernetController::setPowerStateOff()
 {
     pmPowerState = kPowerStateOff;
     pmPolicyMaker->acknowledgeSetPowerState();
 }
 
-void RTWCore::setPowerStateOn()
+void RTWEthernetController::setPowerStateOn()
 {
     pmPowerState = kPowerStateOn;
     pmPolicyMaker->acknowledgeSetPowerState();

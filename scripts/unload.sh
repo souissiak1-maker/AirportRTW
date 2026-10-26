@@ -1,2 +1,3 @@
-sudo kextunload ../Build/Products/Debug/itlwm.kext
-sudo kextunload -b com.zxystd.itlwm
+#!/bin/bash
+set -euo pipefail
+sudo kextunload -b com.senmiko.RTWCore

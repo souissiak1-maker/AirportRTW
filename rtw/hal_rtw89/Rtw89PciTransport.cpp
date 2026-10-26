@@ -55,6 +55,7 @@ Rtw89PciTransport *Rtw89PciTransport::withDevice(IOPCIDevice *device,
 
 bool Rtw89PciTransport::initWithDevice(IOPCIDevice *device, IOWorkLoop *loop)
 {
+    if (device) RTW_DIAGNOSTIC(device->setProperty("RTWTransportStage", "object/device/workloop/singleton check"));
     if (!OSObject::init() || !device || !loop || active)
         return false;
 
@@ -63,6 +64,7 @@ bool Rtw89PciTransport::initWithDevice(IOPCIDevice *device, IOWorkLoop *loop)
     workLoop = loop;
     workLoop->retain();
 
+    recordAttachStage("DMA locks");
     dmaLock = IOSimpleLockAlloc();
     pendingLock = IOSimpleLockAlloc();
     if (!dmaLock || !pendingLock)
@@ -71,14 +73,17 @@ bool Rtw89PciTransport::initWithDevice(IOPCIDevice *device, IOWorkLoop *loop)
     pciDevice->setBusMasterEnable(true);
     pciDevice->setMemoryEnable(true);
 
+    recordAttachStage("BAR2 memory mapping");
     mmioMap = pciDevice->mapDeviceMemoryWithRegister(kIOPCIConfigBaseAddress2);
     if (!mmioMap)
         return false;
+    recordAttachStage("BAR2 virtual address");
     mmioBaseAddress = reinterpret_cast<volatile void *>(
         mmioMap->getVirtualAddress());
     if (!mmioBaseAddress)
         return false;
 
+    recordAttachStage("Linux PCI device allocation");
     compatDevice = static_cast<struct pci_dev *>(
         IOMallocZero(sizeof(struct pci_dev)));
     if (!compatDevice)
@@ -99,15 +104,18 @@ bool Rtw89PciTransport::initWithDevice(IOPCIDevice *device, IOWorkLoop *loop)
     active = this;
     rtw88_pci_io_ops = &pciOperations;
     rtw88_dma_ops = &dmaOperations;
+    recordAttachStage("compatibility initialization");
     if (rtw88_compat_init() != 0)
         return false;
 
+    recordAttachStage("interrupt source creation/registration");
     interruptSource = IOInterruptEventSource::interruptEventSource(
         this, &Rtw89PciTransport::interruptOccurred, pciDevice, 0);
     if (!interruptSource || workLoop->addEventSource(interruptSource) !=
                                 kIOReturnSuccess)
         return false;
-    IOLog("AirportRTW-RTW89: transport ready; interrupt source held disabled\n");
+    RTW_LOG("AirportRTW-RTW89: transport ready; interrupt source held disabled\n");
+    recordAttachStage("transport ready");
     return true;
 }
 
@@ -116,7 +124,7 @@ void Rtw89PciTransport::enableInterrupts()
     if (interruptSource && !interruptsEnabled) {
         interruptSource->enable();
         interruptsEnabled = true;
-        IOLog("AirportRTW-RTW89: interrupt source enabled\n");
+        RTW_LOG("AirportRTW-RTW89: interrupt source enabled\n");
     }
 }
 
@@ -125,7 +133,7 @@ void Rtw89PciTransport::disableInterrupts()
     if (interruptSource && interruptsEnabled) {
         interruptSource->disable();
         interruptsEnabled = false;
-        IOLog("AirportRTW-RTW89: interrupt source disabled\n");
+        RTW_LOG("AirportRTW-RTW89: interrupt source disabled\n");
     }
 }
 

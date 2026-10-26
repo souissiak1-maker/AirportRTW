@@ -62,7 +62,7 @@ taskq_next_work(struct taskq *tq, struct task *work)
 {
     struct task *next;
     
-    //    IOLog("itlwm: taskq %s lock\n", __FUNCTION__);
+    //    RTW_LOG("itlwm: taskq %s lock\n", __FUNCTION__);
     IORecursiveLockLock(tq->tq_mtx);
     
     while ((next = TAILQ_FIRST(&tq->tq_worklist)) == NULL) {
@@ -80,7 +80,7 @@ taskq_next_work(struct taskq *tq, struct task *work)
 
     next = TAILQ_FIRST(&tq->tq_worklist);
     IORecursiveLockUnlock(tq->tq_mtx);
-//    IOLog("itlwm: taskq %s unlock\n", __FUNCTION__);
+//    RTW_LOG("itlwm: taskq %s unlock\n", __FUNCTION__);
 
     if (next != NULL && tq->tq_nthreads > 1)
         IORecursiveLockWakeup(tq->tq_mtx, tq, true);
@@ -100,19 +100,19 @@ taskq_thread(void *xtq)
 
 //    WITNESS_CHECKORDER(&tq->tq_lock_object, LOP_NEWORDER, NULL);
     
-    IOLog("itlwm: taskq %s schedule task\n", __FUNCTION__);
+    RTW_LOG("itlwm: taskq %s schedule task\n", __FUNCTION__);
 
     while (taskq_next_work(tq, &work)) {
 //        WITNESS_LOCK(&tq->tq_lock_object, 0);
-//        IOLog("itlwm: taskq worker thread=%lld work=%s\n", thread_tid(current_thread()), work.name);
+//        RTW_LOG("itlwm: taskq worker thread=%lld work=%s\n", thread_tid(current_thread()), work.name);
         (*work.t_func)(work.t_arg);
-//        IOLog("itlwm: taskq worker thread=%lld work=%s done", thread_tid(current_thread()), work.name);
+//        RTW_LOG("itlwm: taskq worker thread=%lld work=%s done", thread_tid(current_thread()), work.name);
 //        WITNESS_UNLOCK(&tq->tq_lock_object, 0);
 //        sched_pause(yield);
         IOSleep(1);
     }
     
-    IOLog("itlwm: taskq %s schedule task done\n", __FUNCTION__);
+    RTW_LOG("itlwm: taskq %s schedule task done\n", __FUNCTION__);
 
     IORecursiveLockLock(tq->tq_mtx);
     last = (--tq->tq_running == 0);
@@ -122,7 +122,7 @@ taskq_thread(void *xtq)
 //        KERNEL_LOCK();
 
     if (last) {
-        IOLog("itlwm: taskq %s schedule task wakeup\n", __FUNCTION__);
+        RTW_LOG("itlwm: taskq %s schedule task wakeup\n", __FUNCTION__);
         IORecursiveLockWakeup(tq->tq_mtx, tq, false);
     }
 
@@ -134,11 +134,11 @@ void taskq_create_thread(void *arg)
 {
     struct taskq *tq = (struct taskq *)arg;
     int rv;
-    IOLog("itlwm: taskq %s lock\n", __FUNCTION__);
+    RTW_LOG("itlwm: taskq %s lock\n", __FUNCTION__);
     IORecursiveLockLock(tq->tq_mtx);
     switch (tq->tq_state) {
         case TQ_S_DESTROYED:
-            IOLog("itlwm: taskq %s unlock\n", __FUNCTION__);
+            RTW_LOG("itlwm: taskq %s unlock\n", __FUNCTION__);
             IORecursiveLockUnlock(tq->tq_mtx);
             if (tq != systq) {
                 IORecursiveLockFree(tq->tq_mtx);
@@ -151,7 +151,7 @@ void taskq_create_thread(void *arg)
             break;
 
         default:
-            IOLog("itlwm: unexpected %s tq state %u", tq->tq_name, tq->tq_state);
+            RTW_LOG("itlwm: unexpected %s tq state %u", tq->tq_name, tq->tq_state);
             IORecursiveLockUnlock(tq->tq_mtx);
             if (tq != systq) {
                 IORecursiveLockFree(tq->tq_mtx);
@@ -162,17 +162,17 @@ void taskq_create_thread(void *arg)
 
     do {
         tq->tq_running++;
-        IOLog("itlwm: taskq %s unlock\n", __FUNCTION__);
+        RTW_LOG("itlwm: taskq %s unlock\n", __FUNCTION__);
         IORecursiveLockUnlock(tq->tq_mtx);
 
         thread_t new_thread;
         rv = kernel_thread_start((thread_continue_t)taskq_thread, tq, &new_thread);
         thread_deallocate(new_thread);
 
-        IOLog("itlwm: taskq %s lock\n", __FUNCTION__);
+        RTW_LOG("itlwm: taskq %s lock\n", __FUNCTION__);
         IORecursiveLockLock(tq->tq_mtx);
         if (rv != KERN_SUCCESS) {
-            IOLog("itlwm: tasq unable to create thread for \"%s\" taskq\n",
+            RTW_LOG("itlwm: tasq unable to create thread for \"%s\" taskq\n",
                    tq->tq_name);
 
             tq->tq_running--;
@@ -184,7 +184,7 @@ void taskq_create_thread(void *arg)
         }
     } while (tq->tq_running < tq->tq_nthreads);
     
-    IOLog("itlwm: taskq %s unlock\n", __FUNCTION__);
+    RTW_LOG("itlwm: taskq %s unlock\n", __FUNCTION__);
     IORecursiveLockUnlock(tq->tq_mtx);
 }
 
@@ -244,7 +244,7 @@ taskq_destroy(struct taskq *tq)
             break;
 
         default:
-            IOLog("itlwm: unexpected %s tq state %u", tq->tq_name, tq->tq_state);
+            RTW_LOG("itlwm: unexpected %s tq state %u", tq->tq_name, tq->tq_state);
             tq->tq_state = TQ_S_DESTROYED;
             IORecursiveLockUnlock(tq->tq_mtx);
             return;
@@ -276,19 +276,19 @@ int
 task_add(struct taskq *tq, struct task *w)
 {
     int rv = 0;
-//    IOLog("itlwm: taskq task_add %s thread: %lld\n", w->name, thread_tid(current_thread()));
+//    RTW_LOG("itlwm: taskq task_add %s thread: %lld\n", w->name, thread_tid(current_thread()));
     
     if (ISSET(w->t_flags, TASK_ONQUEUE))
         return (0);
 
     IORecursiveLockLock(tq->tq_mtx);
     if (ISSET(w->t_flags, TASK_ONQUEUE)) {
-//        IOLog("itlwm: taskq task_add %s is already on queue thread: %lld\n", w->name, thread_tid(current_thread()));
+//        RTW_LOG("itlwm: taskq task_add %s is already on queue thread: %lld\n", w->name, thread_tid(current_thread()));
         IORecursiveLockUnlock(tq->tq_mtx);
         return (0);
     }
     if (!ISSET(w->t_flags, TASK_ONQUEUE)) {
-//        IOLog("itlwm: taskq task_add %s add to queue thread: %lld\n", w->name, thread_tid(current_thread()));
+//        RTW_LOG("itlwm: taskq task_add %s add to queue thread: %lld\n", w->name, thread_tid(current_thread()));
         rv = 1;
         SET(w->t_flags, TASK_ONQUEUE);
         TAILQ_INSERT_TAIL(&tq->tq_worklist, w, t_entry);
@@ -305,7 +305,7 @@ int
 task_del(struct taskq *tq, struct task *w)
 {
     int rv = 0;
-//    IOLog("itlwm: taskq task_del %s thread: %lld\n", w->name, thread_tid(current_thread()));
+//    RTW_LOG("itlwm: taskq task_del %s thread: %lld\n", w->name, thread_tid(current_thread()));
     
     if (!ISSET(w->t_flags, TASK_ONQUEUE))
         return (0);

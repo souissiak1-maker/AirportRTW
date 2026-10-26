@@ -831,6 +831,8 @@ struct ieee80211_bss_conf {
     struct ieee80211_chan_req chanreq;
     bool he_support;
     bool eht_support;
+    u8 htc_trig_based_pkt_ext;
+    u16 frame_time_rts_th;
     struct {
         u32 params;
         u16 nss_set;

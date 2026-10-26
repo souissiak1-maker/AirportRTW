@@ -7772,6 +7772,8 @@ int rtw89_set_channel(struct rtw89_dev *rtwdev);
 u8 rtw89_core_acquire_bit_map(unsigned long *addr, unsigned long size);
 void rtw89_core_release_bit_map(unsigned long *addr, u8 bit);
 void rtw89_core_release_all_bits_map(unsigned long *addr, unsigned int nbits);
+void rtw89_core_purge_sta_ba_entries(struct rtw89_dev *rtwdev,
+                                   struct rtw89_sta_link *rtwsta_link);
 int rtw89_core_acquire_sta_ba_entry(struct rtw89_dev *rtwdev,
 				    struct rtw89_sta_link *rtwsta_link, u8 tid,
 				    u8 *cam_idx);

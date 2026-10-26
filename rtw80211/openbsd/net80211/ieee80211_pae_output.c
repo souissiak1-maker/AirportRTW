@@ -99,7 +99,9 @@ ieee80211_send_eapol_key(struct ieee80211com *ic, mbuf_t m,
     
     info = BE_READ_2(key->info);
     /* use V3 descriptor if KDF is SHA256-based */
-    if (ieee80211_is_sha256_akm((enum ieee80211_akm)ni->ni_rsnakms))
+    if (ni->ni_rsnakms == IEEE80211_AKM_SAE)
+        info |= 0; /* AKM-defined */
+    else if (ieee80211_is_sha256_akm((enum ieee80211_akm)ni->ni_rsnakms))
         info |= EAPOL_KEY_DESC_V3;
     /* use V2 descriptor if pairwise or group cipher is CCMP */
     else if (ni->ni_rsncipher == IEEE80211_CIPHER_CCMP ||
@@ -341,11 +343,12 @@ ieee80211_send_4way_msg2(struct ieee80211com *ic, struct ieee80211_node *ni,
     u_int16_t info;
     u_int8_t *frm;
     
+    ic->ic_sae_stage = 6;
     ni->ni_rsn_supp_state = RSNA_SUPP_PTKNEGOTIATING;
     m = ieee80211_get_eapol_key(MBUF_DONTWAIT, MT_DATA,
                                 (ni->ni_rsnprotos == IEEE80211_PROTO_WPA) ?
                                 2 + IEEE80211_WPAIE_MAXLEN :
-                                2 + IEEE80211_RSNIE_MAXLEN);
+                                2 + IEEE80211_RSNIE_MAXLEN + 3);
     if (m == NULL)
         return ENOMEM;
     key = mtod(m, struct ieee80211_eapol_key *);
@@ -370,6 +373,9 @@ ieee80211_send_4way_msg2(struct ieee80211com *ic, struct ieee80211_node *ni,
         BE_WRITE_2(key->keylen, keylen);
     } else	/* RSN */
         frm = ieee80211_add_rsn(frm, ic, ni);
+    if (ic->ic_sae_enabled && ni->ni_sae_h2e) {
+        *frm++ = 244; *frm++ = 1; *frm++ = 0x20;
+    }
     size_t l = frm - (u_int8_t *)key;
     mbuf_pkthdr_setlen(m, l);
     mbuf_setlen(m, l);

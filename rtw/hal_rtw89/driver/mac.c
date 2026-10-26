@@ -2,6 +2,7 @@
 /* Copyright(c) 2019-2020  Realtek Corporation
  */
 
+#include "macos_probe.h"
 #include "cam.h"
 #include "chan.h"
 #include "debug.h"
@@ -1254,6 +1255,7 @@ static int pwr_cmd_poll(struct rtw89_dev *rtwdev,
 	if (!ret)
 		return 0;
 
+	RTW89_POLL_FAILURE(addr, val, cfg->msk, cfg->val);
 	rtw89_warn(rtwdev, "[ERR] Polling timeout\n");
 	rtw89_warn(rtwdev, "[ERR] addr: %X, %X\n", addr, cfg->addr);
 	rtw89_warn(rtwdev, "[ERR] val: %X, %X\n", val, cfg->val);
@@ -4024,6 +4026,20 @@ static int rtw89_mac_reset_pwr_state_ax(struct rtw89_dev *rtwdev)
 		    !test_bit(RTW89_FLAG_PROBE_DONE, rtwdev->flags))
 			return -EAGAIN;
 
+#ifdef __APPLE__
+        /* The macOS power-off guard trusts POWERON. A previous driver/boot
+         * can leave the MAC on before this instance has set that flag.
+         * Hardware has just confirmed MAC_ON, so permit mac_pwr_on()'s
+         * existing power-off/on recovery instead of skipping power-off and
+         * returning EBUSY again. Keep the guard for genuinely powered-off
+         * devices, where accessing the off-sequence registers is unsafe.
+         */
+        set_bit(RTW89_FLAG_POWERON, rtwdev->flags);
+#endif
+        RTW89_CHIP_STAGE("MAC-already-powered-on");
+        RTW89_POLL_FAILURE(R_AX_IC_PWR_STATE,
+            rtw89_read32(rtwdev, R_AX_IC_PWR_STATE),
+            B_AX_WLMAC_PWR_STE_MASK, 0);
 		rtw89_err(rtwdev, "MAC has already powered on\n");
 		return -EBUSY;
 	}

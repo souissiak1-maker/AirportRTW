@@ -1,0 +1,104 @@
+name: Build AirportRTW
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-15-intel
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [Catalina, 'Big Sur', Monterey, Ventura, Sonoma14.0, Sonoma14.4, Sequoia, Tahoe]
+        configuration: [Debug, Release]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned MacKernelSDK
+        uses: actions/checkout@v4
+        with:
+          repository: acidanthera/MacKernelSDK
+          ref: 3f750085caa17ec3a7880f11c11bf4f48cd6a164
+          path: MacKernelSDK
+      - name: Validate source and protocol layouts
+        run: |
+          python3 tools/validate_rtw89_backend.py
+          python3 tools/validate_rtw88_backend.py
+          python3 tests/rtw_join_order_test.py
+          python3 tests/rtw_he_writer_test.py
+          python3 tests/rtw89_channel_request_test.py
+          mkdir -p build/tests
+          for abi in 150200 260000; do
+            xcrun clang++ -std=c++14 -Wall -Wextra -Werror \
+              -D__MAC_15_2=150200 -D__IO80211_TARGET=$abi \
+              tests/wcl_protocol_test.cpp -o build/tests/wcl-$abi
+            build/tests/wcl-$abi
+          done
+          xcrun clang++ -std=c++14 -Wall -Wextra -Werror \
+            tests/rtw89_rx_layout_test.cpp -o build/tests/rtw89-rx-layout
+          build/tests/rtw89-rx-layout
+          xcrun clang++ -std=c++14 -Wall -Wextra -Werror \
+            tests/rtw89_link_policy_test.cpp -o build/tests/rtw89-link-policy
+          build/tests/rtw89-link-policy
+          xcrun clang++ -std=c++14 -Wall -Wextra -Werror \
+            tests/rtw89_he_test.cpp -o build/tests/rtw89-he
+          build/tests/rtw89-he
+          xcrun clang++ -std=c++14 -Wall -Wextra -Werror \
+            tests/rtw88_hal_test.cpp -o build/tests/rtw88-hal
+          build/tests/rtw88-hal
+      - name: Check RTW89 Block Ack CAM lifetime
+        run: |
+          xcrun clang -std=gnu11 -Wall -Wextra -Werror -fsanitize=address,undefined \
+            tests/rtw89_ba_cam_test.c -o build/tests/rtw89-ba-cam
+          build/tests/rtw89-ba-cam
+      - name: Check SAE crypto and malformed exchanges
+        run: |
+          SAE_HOST_TEST=1 DERIVED_FILE_DIR="$PWD/build/tests/sae" bash scripts/build_sae_archive.sh
+          python3 tools/validate_sae_backend.py --archive build/tests/sae/librtw_sae.a
+          xcrun clang++ -std=c++14 -Wall -Wextra -Werror tests/rtw89_ptk_test.cpp \
+            build/tests/sae/librtw_sae.a -o build/tests/rtw89-ptk
+          build/tests/rtw89-ptk
+          for test in sae_exchange_test sae_crypto_test; do
+            xcrun clang -std=c11 -Wall -Wextra -Werror "tests/$test.c" \
+              build/tests/sae/librtw_sae.a -o "build/tests/$test"
+            "build/tests/$test"
+          done
+      - name: Build target
+        env:
+          PLATFORM: ${{ matrix.platform }}
+          CONFIGURATION: ${{ matrix.configuration }}
+        run: |
+          set -euo pipefail
+          mkdir -p logs
+          bash scripts/build_release_kexts.sh "AirportRTW-$PLATFORM" > logs/build.log 2>&1 || {
+            tail -100 logs/build.log
+            exit 1
+          }
+      - name: Check bundle
+        env:
+          PLATFORM: ${{ matrix.platform }}
+          CONFIGURATION: ${{ matrix.configuration }}
+        run: |
+          bundle="build/releases/$CONFIGURATION/$PLATFORM/AirportRTW.kext"
+          test -f "$bundle/Contents/MacOS/AirportRTW"
+          plutil -lint "$bundle/Contents/Info.plist"
+          mkdir -p artifacts
+          ditto -c -k --keepParent "$bundle" "artifacts/AirportRTW-$PLATFORM-$CONFIGURATION.zip"
+      - name: Check combined native HALs
+        if: matrix.configuration == 'Release' && (matrix.platform == 'Tahoe' || matrix.platform == 'Sequoia')
+        env:
+          PLATFORM: ${{ matrix.platform }}
+        run: python3 tools/validate_rtw88_backend.py --bundles --platforms "$PLATFORM"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AirportRTW-${{ matrix.platform }}-${{ matrix.configuration }}
+          path: artifacts/*.zip
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: logs-${{ matrix.platform }}-${{ matrix.configuration }}
+          path: logs

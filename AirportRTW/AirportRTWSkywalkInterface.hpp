@@ -1,3 +1,6 @@
+#ifdef AIRPORT_WCL
+#include "WCL/AirportRTWNativeInterface.hpp"
+#else
 //
 //  AirportRTWSkywalkInterface.hpp
 //  AirportRTW-Sonoma
@@ -271,3 +274,5 @@ private:
 
 
 #endif /* AirportRTWSkywalkInterface_hpp */
+
+#endif // AIRPORT_WCL

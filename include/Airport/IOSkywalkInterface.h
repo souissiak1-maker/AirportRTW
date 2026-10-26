@@ -1,3 +1,8 @@
+#if defined(AIRPORT_WCL) && __IO80211_TARGET == __MAC_15_2
+#include "macOS15/IOSkywalkInterface.h"
+#elif defined(AIRPORT_WCL) && __IO80211_TARGET == __MAC_26_0
+#include "macOS26/IOSkywalkInterface.h"
+#else
 //
 //  IOSkywalkInterface.h
 //  itlwm
@@ -49,3 +54,5 @@ public:
 static_assert(sizeof(IOSkywalkInterface) == 0xB0, "Invalid class size");
 
 #endif /* IOSkywalkInterface_h */
+
+#endif // OS-specific ABI

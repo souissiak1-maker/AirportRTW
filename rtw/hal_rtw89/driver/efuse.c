@@ -2,6 +2,7 @@
 /* Copyright(c) 2019-2020  Realtek Corporation
  */
 
+#include "macos_probe.h"
 #include "debug.h"
 #include "efuse.h"
 #include "mac.h"
@@ -60,6 +61,7 @@ static int rtw89_switch_efuse_bank(struct rtw89_dev *rtwdev,
 	if (bank == val)
 		return 0;
 
+	RTW89_POLL_FAILURE(R_AX_EFUSE_CTRL_1, val, B_AX_EF_CELL_SEL_MASK, bank);
 	return -EBUSY;
 }
 
@@ -126,8 +128,11 @@ static int rtw89_dump_physical_efuse_map_ddv(struct rtw89_dev *rtwdev, u8 *map,
 		ret = read_poll_timeout_atomic(rtw89_read32, efuse_ctl,
 					       efuse_ctl & B_AX_EF_RDY, 1, 1000000,
 					       true, rtwdev, R_AX_EFUSE_CTRL);
-		if (ret)
+		if (ret) {
+            RTW89_POLL_FAILURE(R_AX_EFUSE_CTRL, efuse_ctl,
+                               B_AX_EF_RDY, B_AX_EF_RDY);
 			return -EBUSY;
+        }
 
 		*map++ = (u8)(efuse_ctl & 0xff);
 	}

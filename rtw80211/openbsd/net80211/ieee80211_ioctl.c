@@ -145,6 +145,8 @@ ieee80211_node2req(struct ieee80211com *ic, const struct ieee80211_node *ni,
 		nr->nr_rsnprotos |= IEEE80211_WPA_PROTO_WPA1;
 	if (ni->ni_supported_rsnakms & IEEE80211_AKM_8021X)
 		nr->nr_rsnakms |= IEEE80211_WPA_AKM_8021X;
+    if (ni->ni_supported_rsnakms & IEEE80211_AKM_SAE)
+        nr->nr_rsnakms |= IEEE80211_WPA_AKM_SAE;
 	if (ni->ni_supported_rsnakms & IEEE80211_AKM_PSK)
 		nr->nr_rsnakms |= IEEE80211_WPA_AKM_PSK;
 	if (ni->ni_supported_rsnakms & IEEE80211_AKM_SHA256_8021X)
@@ -340,6 +342,8 @@ ieee80211_ioctl_setwpaparms(struct ieee80211com *ic,
 		ic->ic_rsnprotos = IEEE80211_PROTO_RSN;
 
 	ic->ic_rsnakms = 0;
+    if (wpa->i_akms & IEEE80211_WPA_AKM_SAE)
+        ic->ic_rsnakms |= IEEE80211_AKM_SAE;
 	if (wpa->i_akms & IEEE80211_WPA_AKM_PSK)
 		ic->ic_rsnakms |= IEEE80211_AKM_PSK;
 	if (wpa->i_akms & IEEE80211_WPA_AKM_SHA256_PSK)
@@ -397,6 +401,8 @@ ieee80211_ioctl_getwpaparms(struct ieee80211com *ic,
 		wpa->i_protos |= IEEE80211_WPA_PROTO_WPA2;
 
 	wpa->i_akms = 0;
+    if (ic->ic_rsnakms & IEEE80211_AKM_SAE)
+        wpa->i_akms |= IEEE80211_WPA_AKM_SAE;
 	if (ic->ic_rsnakms & IEEE80211_AKM_PSK)
 		wpa->i_akms |= IEEE80211_WPA_AKM_PSK;
 	if (ic->ic_rsnakms & IEEE80211_AKM_SHA256_PSK)
@@ -441,6 +447,8 @@ ieee80211_ess_getwpaparms(struct ieee80211_ess *ess,
 		wpa->i_protos |= IEEE80211_WPA_PROTO_WPA2;
 
 	wpa->i_akms = 0;
+    if (ess->rsnakms & IEEE80211_AKM_SAE)
+        wpa->i_akms |= IEEE80211_WPA_AKM_SAE;
 	if (ess->rsnakms & IEEE80211_AKM_PSK)
 		wpa->i_akms |= IEEE80211_WPA_AKM_PSK;
 	if (ess->rsnakms & IEEE80211_AKM_SHA256_PSK)

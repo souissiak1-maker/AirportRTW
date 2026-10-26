@@ -1,3 +1,8 @@
+#if defined(AIRPORT_WCL) && __IO80211_TARGET == __MAC_15_2
+#include "macOS15/IO80211WorkQueue.h"
+#elif defined(AIRPORT_WCL) && __IO80211_TARGET == __MAC_26_0
+#include "macOS26/IO80211WorkQueue.h"
+#else
 
 #ifndef _IO80211WORKQUEUE_H
 #define _IO80211WORKQUEUE_H
@@ -32,3 +37,5 @@ public:
 };
 
 #endif
+
+#endif // OS-specific ABI

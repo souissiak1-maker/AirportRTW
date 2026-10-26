@@ -32,7 +32,7 @@ static void rtw89_ops_tx(struct ieee80211_hw *hw,
 	u32 flags = info->flags;
 	int ret, qsel;
 
-	/* The Feixiao kext sets info->control.vif on every frame it submits;
+	/* The AirportRTW kext sets info->control.vif on every frame it submits;
 	 * NULL means TX raced interface bring-up/teardown — drop the frame
 	 * instead of dereferencing. */
 	if (!vif) {

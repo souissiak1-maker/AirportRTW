@@ -55,6 +55,7 @@ enum ieee80211_cipher {
  * 802.11 Authentication and Key Management Protocols.
  */
 enum ieee80211_akm {
+    IEEE80211_AKM_SAE = 0x00000010,
 	IEEE80211_AKM_NONE		= 0x00000000,
 	IEEE80211_AKM_8021X		= 0x00000001,
 	IEEE80211_AKM_PSK		= 0x00000002,
@@ -95,7 +96,7 @@ static __inline int
 ieee80211_is_sha256_akm(enum ieee80211_akm akm)
 {
 	return akm == IEEE80211_AKM_SHA256_8021X ||
-	    akm == IEEE80211_AKM_SHA256_PSK;
+	    akm == IEEE80211_AKM_SHA256_PSK || akm == IEEE80211_AKM_SAE;
 }
 
 struct ieee80211_key {

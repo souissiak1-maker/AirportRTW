@@ -1,3 +1,4 @@
+#include "ieee80211_he_policy.hpp"
 /*
  * Copyright (C) 2020  钟先耀
  *
@@ -828,6 +829,14 @@ ieee80211_reset_scan(struct _ifnet *ifp)
     
     memcpy(ic->ic_chan_scan, ic->ic_chan_active,
            sizeof(ic->ic_chan_active));
+#ifdef AIRPORT_WCL
+    if (ic->ic_wcl_scan_requested && ic->ic_wcl_scan_restricted) {
+        for (unsigned channel = 0; channel <= IEEE80211_CHAN_MAX; ++channel)
+            if (channel >= sizeof(ic->ic_wcl_scan_channels) * 8 ||
+                !isset(ic->ic_wcl_scan_channels, channel))
+                clrbit(ic->ic_chan_scan, channel);
+    }
+#endif
     /* NB: hack, setup so next_scan starts with the first channel */
     if (ic->ic_bss != NULL && ic->ic_bss->ni_chan == IEEE80211_CHAN_ANYC)
         ic->ic_bss->ni_chan = &ic->ic_channels[IEEE80211_CHAN_MAX];
@@ -890,6 +899,10 @@ ieee80211_begin_scan(struct _ifnet *ifp)
     ieee80211_setmode(ic, (enum ieee80211_phymode)ic->ic_curmode);
     
     ic->ic_scan_count = 0;
+#ifdef AIRPORT_WCL
+    if (ic->ic_wcl_scan_requested && !ic->ic_wcl_scan_active)
+        ic->ic_flags &= ~IEEE80211_F_ASCAN;
+#endif
     
     /* Scan the next channel. */
     ieee80211_next_scan(ifp);
@@ -1055,6 +1068,10 @@ ieee80211_match_bss(struct ieee80211com *ic, struct ieee80211_node *ni,
     u_int8_t rate;
     int fail;
     
+#ifdef AIRPORT_WCL
+    if (!ic->ic_wcl_join_requested)
+        return IEEE80211_NODE_ASSOCFAIL_ESSID;
+#endif
     fail = 0;
     if ((ic->ic_flags & IEEE80211_F_BGSCAN) == 0 &&
         isclr(ic->ic_chan_active, ieee80211_chan2ieee(ic, ni->ni_chan)))
@@ -1418,6 +1435,13 @@ ieee80211_end_scan(struct _ifnet *ifp)
     if (ic->ic_opmode == IEEE80211_M_STA)
         ieee80211_clean_inactive_nodes(ic, IEEE80211_INACT_SCAN);
     
+#ifdef AIRPORT_WCL
+    if (!ic->ic_wcl_join_requested && !bgscan) {
+        ic->ic_flags &= ~IEEE80211_F_ASCAN;
+        ieee80211_new_state(ic, IEEE80211_S_INIT, -1);
+        return;
+    }
+#endif
     ni = RB_MIN(ieee80211_tree, &ic->ic_tree);
     
 #ifndef IEEE80211_STA_ONLY
@@ -1591,7 +1615,9 @@ ieee80211_choose_rsnparams(struct ieee80211com *ic)
     /* filter out unsupported AKMPs */
     ni->ni_rsnakms &= ic->ic_rsnakms;
     /* prefer SHA-256 based AKMPs */
-    if ((ic->ic_flags & IEEE80211_F_PSK) && (ni->ni_rsnakms &
+    if (ic->ic_sae_enabled && (ni->ni_rsnakms & IEEE80211_AKM_SAE)) {
+        ni->ni_rsnakms = IEEE80211_AKM_SAE;
+    } else if ((ic->ic_flags & IEEE80211_F_PSK) && (ni->ni_rsnakms &
                                              (IEEE80211_AKM_PSK | IEEE80211_AKM_SHA256_PSK))) {
         /* AP supports PSK AKMP and a PSK is configured */
         if (ni->ni_rsnakms & IEEE80211_AKM_SHA256_PSK)
@@ -2790,14 +2816,19 @@ void
 ieee80211_setup_hecaps(struct ieee80211_node *ni, const uint8_t *data,
                        uint8_t len)
 {
+    bzero(&ni->ni_he_cap_elem, sizeof(ni->ni_he_cap_elem));
+    bzero(&ni->ni_he_mcs_nss_supp, sizeof(ni->ni_he_mcs_nss_supp));
+    bzero(ni->ni_ppe_thres, sizeof(ni->ni_ppe_thres));
+    if (!Net80211HE::validCapabilities(data, len)) return;
     struct ieee80211_he_cap_elem *he_cap_ie_elem = (struct ieee80211_he_cap_elem *)data;
     uint8_t mcs_nss_size, he_ppe_size, he_total_size;
     
     mcs_nss_size = ieee80211_he_mcs_nss_size(he_cap_ie_elem);
-    he_ppe_size =
+    he_ppe_size = (he_cap_ie_elem->phy_cap_info[6] &
+        IEEE80211_HE_PHY_CAP6_PPE_THRESHOLD_PRESENT) ?
         ieee80211_he_ppe_size(data[sizeof(ni->ni_he_cap_elem) +
                         mcs_nss_size],
-                      he_cap_ie_elem->phy_cap_info);
+                      he_cap_ie_elem->phy_cap_info) : 0;
     he_total_size = sizeof(ni->ni_he_cap_elem) + mcs_nss_size +
             he_ppe_size;
     
@@ -2822,6 +2853,7 @@ int
 ieee80211_setup_heop(struct ieee80211_node *ni, const uint8_t *data,
                      uint8_t len)
 {
+    if (!Net80211HE::validOperation(data, len)) return 0;
     struct ieee80211_he_operation *he_op_ie = (struct ieee80211_he_operation *)data;
     
     ni->ni_he_oper_params = le32toh(he_op_ie->he_oper_params);

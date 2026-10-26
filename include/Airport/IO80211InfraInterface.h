@@ -1,3 +1,8 @@
+#if defined(AIRPORT_WCL) && __IO80211_TARGET == __MAC_15_2
+#include "macOS15/IO80211InfraInterface.h"
+#elif defined(AIRPORT_WCL) && __IO80211_TARGET == __MAC_26_0
+#include "macOS26/IO80211InfraInterface.h"
+#else
 //
 //  IO80211InfraInterface.h
 //  itlwm
@@ -82,3 +87,5 @@ public:
 };
 
 #endif /* IO80211InfraInterface_h */
+
+#endif // OS-specific ABI

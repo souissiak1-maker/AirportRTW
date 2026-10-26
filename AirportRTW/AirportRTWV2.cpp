@@ -142,7 +142,7 @@ initCCLogs()
     driverLogOptions.pad10 = 2;
     driverLogOptions.file_options = 0;
     driverLogOptions.log_policy = 0;
-    driverLogPipe = CCPipe::withOwnerNameCapacity(this, "com.zxystd.AirportRTW", "DriverLogs", &driverLogOptions);
+    driverLogPipe = CCPipe::withOwnerNameCapacity(this, "com.senmiko.AirportRTW", "DriverLogs", &driverLogOptions);
     XYLog("%s driverLogPipeRet %d\n", __FUNCTION__, driverLogPipe != NULL);
     
     memset(&driverLogOptions, 0, sizeof(driverLogOptions));
@@ -157,7 +157,7 @@ initCCLogs()
     driverLogOptions.pad10 = LOWER32(0x202800000);
     driverLogOptions.file_options = 0;
     driverLogOptions.log_policy = 0;
-    driverDataPathPipe = CCPipe::withOwnerNameCapacity(this, "com.zxystd.AirportRTW", "DatapathEvents", &driverLogOptions);
+    driverDataPathPipe = CCPipe::withOwnerNameCapacity(this, "com.senmiko.AirportRTW", "DatapathEvents", &driverLogOptions);
     XYLog("%s driverDataPathPipeRet %d\n", __FUNCTION__, driverDataPathPipe != NULL);
     
     memset(&driverLogOptions, 0, sizeof(driverLogOptions));
@@ -167,7 +167,7 @@ initCCLogs()
     strlcpy(driverLogOptions.name, "0", sizeof(driverLogOptions.name));
     strlcpy(driverLogOptions.directory_name, "WiFi", sizeof(driverLogOptions.directory_name));
     driverLogOptions.pipe_size = 128;
-    driverSnapshotsPipe = CCPipe::withOwnerNameCapacity(this, "com.zxystd.AirportRTW", "StateSnapshots", &driverLogOptions);
+    driverSnapshotsPipe = CCPipe::withOwnerNameCapacity(this, "com.senmiko.AirportRTW", "StateSnapshots", &driverLogOptions);
     XYLog("%s driverSnapshotsPipeRet %d\n", __FUNCTION__, driverSnapshotsPipe != NULL);
     
     CCStreamOptions faultReportOptions = { 0 };
@@ -759,7 +759,7 @@ getDRIVER_VERSION(OSObject *object,
     if (!hv)
         return kIOReturnError;
     hv->version = APPLE80211_VERSION;
-    snprintf(hv->string, sizeof(hv->string), "AirportRTW %s%s", ITLWM_VERSION, GIT_COMMIT);
+    snprintf(hv->string, sizeof(hv->string), "%s", fHalService->getDriverInfo()->getFirmwareVersion());
     hv->string_len = strlen(hv->string);
     return kIOReturnSuccess;
 }
@@ -825,7 +825,7 @@ setPOWER(OSObject *object,
 {
     if (!pd)
         return kIOReturnError;
-    IOLog("AirportRTW: setPOWER: num_radios[%d]  power_state(0:%u  1:%u  2:%u  3:%u)\n", pd->num_radios, pd->power_state[0], pd->power_state[1], pd->power_state[2], pd->power_state[3]);
+    RTW_LOG("AirportRTW: setPOWER: num_radios[%d]  power_state(0:%u  1:%u  2:%u  3:%u)\n", pd->num_radios, pd->power_state[0], pd->power_state[1], pd->power_state[2], pd->power_state[3]);
     if (pd->num_radios > 0) {
         bool isRunning = (fHalService->get80211Controller()->ic_ac.ac_if.if_flags & (IFF_UP | IFF_RUNNING)) != 0;
         if (pd->power_state[0] == 0) {

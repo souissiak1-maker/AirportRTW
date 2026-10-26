@@ -1,3 +1,4 @@
+#include <HAL/RealtekPhyMode.hpp>
 //
 //  AirportRTWSkywalkInterface.cpp
 //  AirportRTW-Sonoma
@@ -7,7 +8,7 @@
 //
 #include "AirportRTWV2.hpp"
 #include "AirportRTWSkywalkInterface.hpp"
-#include "ItlRtw89.hpp"
+#include "../rtw/RTWCore.hpp"
 #include <sys/CTimeout.hpp>
 #include <libkern/c++/OSMetaClass.h>
 #include <crypto/sha1.h>
@@ -388,47 +389,34 @@ IOReturn AirportRTWSkywalkInterface::
 getPHY_MODE(struct apple80211_phymode_data *pd)
 {
     struct ieee80211com *ic = fHalService->get80211Controller();
-    
+
     pd->version = APPLE80211_VERSION;
     pd->phy_mode = APPLE80211_MODE_11A
     | APPLE80211_MODE_11B
     | APPLE80211_MODE_11G
     | APPLE80211_MODE_11N;
-    
+
     if (ic->ic_flags & IEEE80211_F_VHTON)
         pd->phy_mode |= APPLE80211_MODE_11AC;
-    
-    if (ic->ic_flags & IEEE80211_F_HEON)
+
+    if (ic->ic_hecaps)
         pd->phy_mode |= APPLE80211_MODE_11AX;
-    
-    switch (fHalService->get80211Controller()->ic_curmode) {
-        case IEEE80211_MODE_AUTO:
-            pd->active_phy_mode = APPLE80211_MODE_AUTO;
-            break;
-        case IEEE80211_MODE_11A:
-            pd->active_phy_mode = APPLE80211_MODE_11A;
-            break;
-        case IEEE80211_MODE_11B:
-            pd->active_phy_mode = APPLE80211_MODE_11B;
-            break;
-        case IEEE80211_MODE_11G:
-            pd->active_phy_mode = APPLE80211_MODE_11G;
-            break;
-        case IEEE80211_MODE_11N:
-            pd->active_phy_mode = APPLE80211_MODE_11N;
-            break;
-        case IEEE80211_MODE_11AC:
-            pd->active_phy_mode = APPLE80211_MODE_11AC;
-            break;
-        case IEEE80211_MODE_11AX:
-            pd->active_phy_mode = APPLE80211_MODE_11AX;
-            break;
-            
-        default:
-            pd->active_phy_mode = APPLE80211_MODE_AUTO;
-            break;
+
+    const auto *node = ic->ic_bss;
+    switch (RealtekPhy::active(ic->ic_state == IEEE80211_S_RUN && node,
+        node && (node->ni_flags & IEEE80211_NODE_HE),
+        node && (node->ni_flags & IEEE80211_NODE_VHT),
+        node && (node->ni_flags & IEEE80211_NODE_HT))) {
+    case RealtekPhy::Mode::HE: pd->active_phy_mode = APPLE80211_MODE_11AX; break;
+    case RealtekPhy::Mode::VHT: pd->active_phy_mode = APPLE80211_MODE_11AC; break;
+    case RealtekPhy::Mode::HT: pd->active_phy_mode = APPLE80211_MODE_11N; break;
+    case RealtekPhy::Mode::Legacy:
+        pd->active_phy_mode = ic->ic_curmode == IEEE80211_MODE_11A ? APPLE80211_MODE_11A :
+            ic->ic_curmode == IEEE80211_MODE_11B ? APPLE80211_MODE_11B : APPLE80211_MODE_11G;
+        break;
+    default: pd->active_phy_mode = APPLE80211_MODE_AUTO; break;
     }
-    
+
     return kIOReturnSuccess;
 }
 
@@ -634,7 +622,7 @@ getRSSI(struct apple80211_rssi_data *rd)
         rd->rssi[0] = rd->aggregate_rssi
         = rd->rssi_ext[0]
         = rd->aggregate_rssi_ext
-        = -(0 - RTW89_MIN_DBM - ic->ic_bss->ni_rssi);
+        = -(0 - RTW_MIN_DBM - ic->ic_bss->ni_rssi);
         return kIOReturnSuccess;
     }
     return 6;
@@ -898,7 +886,7 @@ getLINK_CHANGED_EVENT_DATA(struct apple80211_link_changed_event_data *ed)
         ed->voluntary = disassocIsVoluntary;
         ed->reason = APPLE80211_LINK_DOWN_REASON_DEAUTH;
     } else
-        ed->rssi = -(0 - RTW89_MIN_DBM - ic->ic_bss->ni_rssi);
+        ed->rssi = -(0 - RTW_MIN_DBM - ic->ic_bss->ni_rssi);
     XYLog("Link %s, reason: %d, voluntary: %d\n", ed->isLinkDown ? "down" : "up", ed->reason, ed->voluntary);
     return kIOReturnSuccess;
 }
@@ -961,7 +949,7 @@ static int convertNodeToScanResult(ItlHalService *fHalService, struct ieee80211_
     result->asr_channel.channel = ieee80211_chan2ieee(fHalService->get80211Controller(), fNextNodeToSend->ni_chan);
     result->asr_channel.flags = ieeeChanFlag2appleScanFlagVentura(fNextNodeToSend->ni_chan->ic_flags);
     result->asr_noise = -fHalService->getDriverInfo()->getBSSNoise();
-    result->asr_rssi = -(0 - RTW89_MIN_DBM - fNextNodeToSend->ni_rssi);
+    result->asr_rssi = -(0 - RTW_MIN_DBM - fNextNodeToSend->ni_rssi);
     memcpy(result->asr_bssid, fNextNodeToSend->ni_bssid, IEEE80211_ADDR_LEN);
     result->asr_ssid_len = fNextNodeToSend->ni_esslen;
     if (result->asr_ssid_len != 0)

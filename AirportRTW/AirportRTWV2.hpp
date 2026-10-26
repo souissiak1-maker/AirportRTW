@@ -1,3 +1,6 @@
+#ifdef AIRPORT_WCL
+#include "WCL/AirportRTWNativeController.hpp"
+#else
 //
 //  AirportRTWV2.hpp
 //  AirportRTW-Sonoma
@@ -20,7 +23,7 @@
 #include <libkern/c++/OSMetaClass.h>
 #include <IOKit/IOFilterInterruptEventSource.h>
 
-#include "ItlRtw89.hpp"
+#include "../rtw/RTWCore.hpp"
 
 #include "AirportRTWEthernetInterface.hpp"
 
@@ -251,3 +254,5 @@ public:
 };
 
 #endif /* AirportRTWV2_hpp */
+
+#endif // AIRPORT_WCL

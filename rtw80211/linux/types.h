@@ -76,7 +76,7 @@
  * which I'm lazy to do so just do a regular print for now. If you
  * want to port this read kernel/panic.c
  */
-#define __WARN_printf(func, line, arg...)   do { IOLog("(AppleIntelWifiAdapter) (%s:%d) WARN", func, line);} while (0);
+#define __WARN_printf(func, line, arg...)   do { RTW_LOG("(AppleIntelWifiAdapter) (%s:%d) WARN", func, line);} while (0);
 #endif
 
 #ifndef unlikely
@@ -110,11 +110,15 @@
 
 #define BUILD_BUG_ON(condition) ((void)sizeof(char[1 - 2*!!(condition)]))
 
+#if RTW_DIAGNOSTICS
 #define XYLog(fmt, x...)\
 do\
 {\
 kprintf("%s: " fmt, "itlwm", ##x);\
 }while(0)
+#else
+#define XYLog(...) do {} while (0)
+#endif
 
 typedef UInt8  u8;
 typedef UInt16 u16;

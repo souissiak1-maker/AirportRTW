@@ -438,6 +438,19 @@ struct ieee80211com {
 	int			(*ic_bgscan_start)(struct ieee80211com *);
     /* The channel width has changed (20<->2040) */
     void            (*ic_update_chw)(struct ieee80211com *);
+#ifdef AIRPORT_WCL
+    bool ic_wcl_mac_reconfig;
+    bool ic_wcl_enterprise;
+    uint64_t ic_wcl_tx_packets[4];
+    uint64_t ic_wcl_rx_packets[4];
+    bool ic_wcl_join_requested;
+    bool ic_wcl_scan_requested;
+    bool ic_wcl_scan_active;
+    uint8_t ic_wcl_scan_ssid_length;
+    uint8_t ic_wcl_scan_ssid[32];
+    bool ic_wcl_scan_restricted;
+    uint8_t ic_wcl_scan_channels[32];
+#endif
     void            (*ic_event_handler)(struct ieee80211com *, int, void *);
 	CTimeout*		ic_bgscan_timeout;
 	uint32_t		ic_bgscan_fail;
@@ -546,6 +559,17 @@ struct ieee80211com {
 	u_int16_t		ic_htcaps;
     uint32_t        ic_vhtcaps;
     uint32_t        ic_hecaps;
+    void           *ic_sae;
+    uint32_t        ic_join_rx_early[33]; /* Non-secret RX boundary counters. */
+    uint32_t        ic_join_serial;
+    uint32_t        ic_sae_rx_headers[8][4]; /* FC, length, flags/state, EtherType only */
+    uint32_t        ic_sae_rx_data, ic_sae_rx_eapol;
+    uint32_t        ic_sae_eapol_calls;
+    uint32_t        ic_sae_stage; /* request, commit, peer commit, confirm, EAPOL, M2, M3, port */
+    uint32_t        ic_sae_error; /* numeric diagnostic only; no credential data */
+    bool            ic_sae_enabled;
+    uint8_t         ic_sae_password[64];
+    uint8_t         ic_sae_password_len;
 	u_int8_t		ic_ampdu_params;
 	u_int8_t		ic_sup_mcs[howmany(80, NBBY)];
 	u_int16_t		ic_max_rxrate;	/* in Mb/s, 0 <= rate <= 1023 */
@@ -662,6 +686,20 @@ struct ieee80211_ess {
 #define IEEE80211_EVT_STA_DEAUTH                2
 #define IEEE80211_EVT_COUNTRY_CODE_UPDATE       3
 #define IEEE80211_EVT_SCAN_DONE                 4
+#ifdef AIRPORT_WCL
+#define IEEE80211_EVT_BEACON 5
+#define IEEE80211_EVT_DRIVER_READY 6
+#define IEEE80211_EVT_DRIVER_STOPPED 7
+#define IEEE80211_EVT_DRIVER_RESET_BEGIN 8
+struct ieee80211_beacon_event {
+    const struct ieee80211_node *node;
+    const uint8_t *ies;
+    size_t length;
+    const uint8_t *frame;
+    size_t frame_length;
+};
+#endif
+
 
 void	ieee80211_ifattach(struct _ifnet *, IOEthernetController *controller);
 void	ieee80211_ifdetach(struct _ifnet *);
@@ -702,5 +740,17 @@ struct ieee80211_ess *ieee80211_get_ess(struct ieee80211com *, const char *, int
 void ieee80211_begin_cache_bgscan(struct _ifnet *);
 
 extern	int ieee80211_cache_size;
+
+
+#ifdef AIRPORT_WCL
+static inline unsigned ieee80211_wcl_ac(unsigned tid)
+{
+    static const unsigned categories[8] = {
+        EDCA_AC_BE, EDCA_AC_BK, EDCA_AC_BK, EDCA_AC_BE,
+        EDCA_AC_VI, EDCA_AC_VI, EDCA_AC_VO, EDCA_AC_VO
+    };
+    return tid < 8 ? categories[tid] : EDCA_AC_BE;
+}
+#endif
 
 #endif /* _NET80211_IEEE80211_VAR_H_ */

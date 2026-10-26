@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause
 /* Copyright(c) 2019-2020  Realtek Corporation
  */
+#include "macos_probe.h"
 #include <linux/ip.h>
 #include <linux/sort.h>
 #include <linux/udp.h>
@@ -3103,7 +3104,7 @@ static void rtw89_core_bcn_track_assoc(struct rtw89_dev *rtwdev,
 	rcu_read_lock();
 	bss_conf = rtw89_vif_rcu_dereference_link(rtwvif_link, true);
 	beacon_int = bss_conf->beacon_int ?: 100;
-	/* The Feixiao kext may not know the DTIM period at assoc time;
+	/* The AirportRTW kext may not know the DTIM period at assoc time;
 	 * 0 here means a divide-by-zero below. */
 	dtim = bss_conf->dtim_period ?: 1;
 	rcu_read_unlock();
@@ -4011,6 +4012,8 @@ out:
 	rcu_read_unlock();
 }
 
+extern void rtw89_macos_trace_rx(const u8 *frame, size_t length, unsigned int flags);
+
 void rtw89_core_rx(struct rtw89_dev *rtwdev,
 		   struct rtw89_rx_desc_info *desc_info,
 		   struct sk_buff *skb)
@@ -4024,6 +4027,11 @@ void rtw89_core_rx(struct rtw89_dev *rtwdev,
 		rtw89_core_rx_process_report(rtwdev, desc_info, skb);
 		return;
 	}
+
+	rtw89_macos_trace_rx(skb->data, skb->len,
+		(desc_info->crc32_err ? 1 : 0) | (desc_info->icv_err ? 2 : 0) |
+		((desc_info->long_rxdesc &&
+		  (BIT(desc_info->frame_type) & PPDU_FILTER_BITMAP)) ? 4 : 0));
 
 	if (ppdu_sts->curr_rx_ppdu_cnt[band] != ppdu_cnt) {
 		rtw89_core_flush_ppdu_rx_queue(rtwdev, desc_info);
@@ -4984,77 +4992,6 @@ void rtw89_core_release_bit_map(unsigned long *addr, u8 bit)
 void rtw89_core_release_all_bits_map(unsigned long *addr, unsigned int nbits)
 {
 	bitmap_zero(addr, nbits);
-}
-
-int rtw89_core_acquire_sta_ba_entry(struct rtw89_dev *rtwdev,
-				    struct rtw89_sta_link *rtwsta_link, u8 tid,
-				    u8 *cam_idx)
-{
-	const struct rtw89_chip_info *chip = rtwdev->chip;
-	struct rtw89_cam_info *cam_info = &rtwdev->cam_info;
-	struct rtw89_ba_cam_entry *entry = NULL, *tmp;
-	u8 idx;
-	int i;
-
-	lockdep_assert_wiphy(rtwdev->hw->wiphy);
-
-	idx = rtw89_core_acquire_bit_map(cam_info->ba_cam_map, chip->bacam_num);
-	if (idx == chip->bacam_num) {
-		/* allocate a static BA CAM to tid=0/5, so replace the existing
-		 * one if BA CAM is full. Hardware will process the original tid
-		 * automatically.
-		 */
-		if (tid != 0 && tid != 5)
-			return -ENOSPC;
-
-		for_each_set_bit(i, cam_info->ba_cam_map, chip->bacam_num) {
-			tmp = &cam_info->ba_cam_entry[i];
-			if (tmp->tid == 0 || tmp->tid == 5)
-				continue;
-
-			idx = i;
-			entry = tmp;
-			list_del(&entry->list);
-			break;
-		}
-
-		if (!entry)
-			return -ENOSPC;
-	} else {
-		entry = &cam_info->ba_cam_entry[idx];
-	}
-
-	entry->tid = tid;
-	list_add_tail(&entry->list, &rtwsta_link->ba_cam_list);
-
-	*cam_idx = idx;
-
-	return 0;
-}
-
-int rtw89_core_release_sta_ba_entry(struct rtw89_dev *rtwdev,
-				    struct rtw89_sta_link *rtwsta_link, u8 tid,
-				    u8 *cam_idx)
-{
-	struct rtw89_cam_info *cam_info = &rtwdev->cam_info;
-	struct rtw89_ba_cam_entry *entry = NULL, *tmp;
-	u8 idx;
-
-	lockdep_assert_wiphy(rtwdev->hw->wiphy);
-
-	list_for_each_entry_safe(entry, tmp, &rtwsta_link->ba_cam_list, list) {
-		if (entry->tid != tid)
-			continue;
-
-		idx = entry - cam_info->ba_cam_entry;
-		list_del(&entry->list);
-
-		rtw89_core_release_bit_map(cam_info->ba_cam_map, idx);
-		*cam_idx = idx;
-		return 0;
-	}
-
-	return -ENOENT;
 }
 
 #define RTW89_TYPE_MAPPING(_type)	\
@@ -6069,7 +6006,7 @@ int rtw89_core_start(struct rtw89_dev *rtwdev)
 	rtw89_chip_bb_postinit(rtwdev);
 	rtw89_phy_init_rf_reg(rtwdev, false);
 
-	/* Feixiao: no macOS driver feeds the BT half.  BTC_MODE_WL runs the
+	/* AirportRTW: no macOS driver feeds the BT half.  BTC_MODE_WL runs the
 	 * coex engine in its designed wifi-only policy — antenna/GNT granted
 	 * to WLAN, no TDMA slot cycling against a silent BT firmware (which
 	 * previously wedged the register-H2C pipe). */
@@ -6659,18 +6596,22 @@ static int rtw89_chip_efuse_info_setup(struct rtw89_dev *rtwdev)
 	const struct rtw89_mac_gen_def *mac = rtwdev->chip->mac_def;
 	int ret;
 
+	RTW89_CHIP_STAGE("efuse-MAC-partial-init");
 	ret = rtw89_mac_partial_init(rtwdev, false);
 	if (ret)
 		return ret;
 
+	RTW89_CHIP_STAGE("efuse-map");
 	ret = mac->parse_efuse_map(rtwdev);
 	if (ret)
 		return ret;
 
+	RTW89_CHIP_STAGE("phycap-map");
 	ret = mac->parse_phycap_map(rtwdev);
 	if (ret)
 		return ret;
 
+	RTW89_CHIP_STAGE("phycap-setup");
 	ret = rtw89_mac_setup_phycap(rtwdev);
 	if (ret)
 		return ret;
@@ -6759,36 +6700,43 @@ int rtw89_chip_info_setup(struct rtw89_dev *rtwdev)
 	struct rtw89_hal *hal = &rtwdev->hal;
 	int ret;
 
+	RTW89_CHIP_STAGE("read-chip-version");
 	rtw89_read_chip_ver(rtwdev);
 
+	RTW89_CHIP_STAGE("power-on");
 	ret = rtw89_mac_pwr_on(rtwdev);
 	if (ret) {
 		rtw89_err(rtwdev, "failed to power on\n");
 		return ret;
 	}
 
+	RTW89_CHIP_STAGE("firmware-completion");
 	ret = rtw89_wait_firmware_completion(rtwdev);
 	if (ret) {
 		rtw89_err(rtwdev, "failed to wait firmware completion\n");
 		goto out;
 	}
 
+	RTW89_CHIP_STAGE("firmware-recognition");
 	ret = rtw89_fw_recognize(rtwdev);
 	if (ret) {
 		rtw89_err(rtwdev, "failed to recognize firmware\n");
 		goto out;
 	}
 
+	RTW89_CHIP_STAGE("efuse-info");
 	ret = rtw89_chip_efuse_info_setup(rtwdev);
 	if (ret)
 		goto out;
 
+	RTW89_CHIP_STAGE("firmware-elements");
 	ret = rtw89_fw_recognize_elements(rtwdev);
 	if (ret) {
 		rtw89_err(rtwdev, "failed to recognize firmware elements\n");
 		goto out;
 	}
 
+	RTW89_CHIP_STAGE("board-info");
 	ret = rtw89_chip_board_info_setup(rtwdev);
 	if (ret)
 		goto out;

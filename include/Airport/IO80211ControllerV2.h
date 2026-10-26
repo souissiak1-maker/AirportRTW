@@ -1,3 +1,8 @@
+#if defined(AIRPORT_WCL) && __IO80211_TARGET == __MAC_15_2
+#include "macOS15/IO80211ControllerV2.h"
+#elif defined(AIRPORT_WCL) && __IO80211_TARGET == __MAC_26_0
+#include "macOS26/IO80211ControllerV2.h"
+#else
 //
 //  IOSkywalkInterface.h
 //  itlwm
@@ -259,3 +264,5 @@ protected:
 #endif /* defined(KERNEL) && defined(__cplusplus) */
 
 #endif /* !_IO80211CONTROLLER_H */
+
+#endif // OS-specific ABI

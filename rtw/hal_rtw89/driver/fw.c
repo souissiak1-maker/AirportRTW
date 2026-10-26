@@ -8086,7 +8086,7 @@ static int rtw89_fw_write_h2c_reg(struct rtw89_dev *rtwdev,
 				rtwdev, chip->h2c_ctrl_reg);
 	if (ret) {
 		rtw89_warn(rtwdev, "FW does not process h2c registers\n");
-		/* feixiao diagnostic: the firmware stops answering ~30 s after
+		/* airportrtw diagnostic: the firmware stops answering ~30 s after
 		 * association with no halt/watchdog interrupt (the SER path never
 		 * fires).  Probe the MAC error register directly (bounded 100 ms
 		 * poll) the first time we detect the wedge.  If the firmware
@@ -8096,12 +8096,12 @@ static int rtw89_fw_write_h2c_reg(struct rtw89_dev *rtwdev,
 		 * Either way the next dmesg finally says which.  Fires once so the
 		 * per-retry flood does not stack 100 ms polls. */
 		{
-			static bool feixiao_err_probed;
+			static bool airportrtw_err_probed;
 
-			if (!feixiao_err_probed) {
-				feixiao_err_probed = true;
+			if (!airportrtw_err_probed) {
+				airportrtw_err_probed = true;
 				rtw89_warn(rtwdev,
-					   "feixiao: probing FW err status after wedge\n");
+					   "airportrtw: probing FW err status after wedge\n");
 				rtw89_mac_get_err_status(rtwdev);
 			}
 		}

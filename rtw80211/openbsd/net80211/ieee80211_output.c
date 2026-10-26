@@ -1070,6 +1070,9 @@ ieee80211_add_rsn_body(u_int8_t *frm, struct ieee80211com *ic,
         *frm++ = 6;
         count++;
     }
+    if (!wpa && (ni->ni_rsnakms & IEEE80211_AKM_SAE)) {
+        memcpy(frm, oui, 3); frm += 3; *frm++ = 8; count++;
+    }
     /* write AKM Suite List Count field */
     LE_WRITE_2(pcount, count);
 
@@ -1260,53 +1263,25 @@ ieee80211_add_vhtcaps(uint8_t *frm, struct ieee80211com *ic)
 uint8_t *
 ieee80211_add_hecaps(uint8_t *frm, struct ieee80211com *ic)
 {
-    uint8_t nss_size, ie_len;
-    uint8_t *orig_pos = frm;
-    
+    uint8_t nss_size, ppe_size;
+
     nss_size = ieee80211_he_mcs_nss_size(&ic->ic_he_cap_elem);
-    ie_len = 2 + 1 +
-    sizeof(ic->ic_he_cap_elem) + nss_size +
-    ieee80211_he_ppe_size(ic->ic_ppe_thres[0],
-                  ic->ic_he_cap_elem.phy_cap_info);
-    
+    ppe_size = ieee80211_he_ppe_size(ic->ic_ppe_thres[0],
+        ic->ic_he_cap_elem.phy_cap_info);
+
     *frm++ = IEEE80211_ELEMID_EXTENSION;
-    frm++; /* We'll set the size later below */
+    /* The length includes the extension ID, even when PPE is absent. */
+    *frm++ = 1 + sizeof(ic->ic_he_cap_elem) + nss_size + ppe_size;
     *frm++ = IEEE80211_ELEMID_EXT_HE_CAPABILITY;
-    
-    /* Fixed data */
+
     memcpy(frm, &ic->ic_he_cap_elem, sizeof(ic->ic_he_cap_elem));
     frm += sizeof(ic->ic_he_cap_elem);
-    
     memcpy(frm, &ic->ic_he_mcs_nss_supp, nss_size);
     frm += nss_size;
-    
-    /* Check if PPE Threshold should be present */
-    if ((ic->ic_he_cap_elem.phy_cap_info[6] &
-         IEEE80211_HE_PHY_CAP6_PPE_THRESHOLD_PRESENT) == 0)
-        return frm;
-    
-    /*
-     * Calculate how many PPET16/PPET8 pairs are to come. Algorithm:
-     * (NSS_M1 + 1) x (num of 1 bits in RU_INDEX_BITMASK)
-     */
-    nss_size = hweight8(ic->ic_ppe_thres[0] &
-             IEEE80211_PPE_THRES_RU_INDEX_BITMASK_MASK);
-    
-    nss_size *= (1 + ((ic->ic_ppe_thres[0] & IEEE80211_PPE_THRES_NSS_MASK) >>
-           IEEE80211_PPE_THRES_NSS_POS));
-    
-    /*
-     * Each pair is 6 bits, and we need to add the 7 "header" bits to the
-     * total size.
-     */
-    nss_size = (nss_size * IEEE80211_PPE_THRES_INFO_PPET_SIZE * 2) + 7;
-    nss_size = DIV_ROUND_UP(nss_size, 8);
-    
-    /* Copy PPE Thresholds */
-    memcpy(frm, &ic->ic_ppe_thres, nss_size);
-    frm += nss_size;
-    
-    orig_pos[1] = (frm - orig_pos) - 2;
+    if (ppe_size) {
+        memcpy(frm, ic->ic_ppe_thres, ppe_size);
+        frm += ppe_size;
+    }
     return frm;
 }
 
@@ -1381,7 +1356,11 @@ ieee80211_get_probe_req(struct ieee80211com *ic, struct ieee80211_node *ni)
 	u_int8_t *frm;
 
 	m = ieee80211_getmgmt(MBUF_DONTWAIT, MT_DATA,
+#ifdef AIRPORT_WCL
+        2 + (ic->ic_wcl_scan_requested ? ic->ic_wcl_scan_ssid_length : ic->ic_des_esslen) +
+#else
 	    2 + ic->ic_des_esslen +
+#endif
 	    2 + min(rs->rs_nrates, IEEE80211_RATE_SIZE) +
 	    ((rs->rs_nrates > IEEE80211_RATE_SIZE) ?
 		2 + rs->rs_nrates - IEEE80211_RATE_SIZE : 0) +
@@ -1391,7 +1370,13 @@ ieee80211_get_probe_req(struct ieee80211com *ic, struct ieee80211_node *ni)
 		return NULL;
 
 	frm = mtod(m, u_int8_t *);
+#ifdef AIRPORT_WCL
+    frm = ic->ic_wcl_scan_requested ?
+        ieee80211_add_ssid(frm, ic->ic_wcl_scan_ssid, ic->ic_wcl_scan_ssid_length) :
+        ieee80211_add_ssid(frm, ic->ic_des_essid, ic->ic_des_esslen);
+#else
 	frm = ieee80211_add_ssid(frm, ic->ic_des_essid, ic->ic_des_esslen);
+#endif
 	frm = ieee80211_add_rates(frm, rs);
 	if (rs->rs_nrates > IEEE80211_RATE_SIZE)
 		frm = ieee80211_add_xrates(frm, rs);
@@ -1500,6 +1485,8 @@ ieee80211_get_auth(struct ieee80211com *ic, struct ieee80211_node *ni,
 	mbuf_t m;
     u_int8_t *frm;
     
+    if (ic->ic_sae_enabled && ni->ni_rsnakms == IEEE80211_AKM_SAE)
+        return ieee80211_sae_auth(ic, ni, seq);
     mbuf_gethdr(MBUF_DONTWAIT, MT_DATA, &m);
     if (m == NULL)
         return NULL;
@@ -1575,7 +1562,7 @@ ieee80211_get_assoc_req(struct ieee80211com *ic, struct ieee80211_node *ni,
 		2 + IEEE80211_WPAIE_MAXLEN : 0) +
 	    ((ic->ic_flags & IEEE80211_F_HTON) ? sizeof(struct ieee80211_ie_htcap) + sizeof(struct ieee80211_wme_info) : 0) +
         ((ic->ic_flags & IEEE80211_F_VHTON) ? sizeof(struct ieee80211_ie_vhtcap) + 2 : 0) +
-        ((ic->ic_flags & IEEE80211_F_HEON) ? (sizeof(struct ieee80211_he_cap_elem) + 2 + 1 + sizeof(struct ieee80211_he_mcs_nss_supp) + IEEE80211_HE_PPE_THRES_MAX_LEN) : 0));
+        ((ic->ic_flags & IEEE80211_F_HEON) ? (sizeof(struct ieee80211_he_cap_elem) + 2 + 1 + sizeof(struct ieee80211_he_mcs_nss_supp) + IEEE80211_HE_PPE_THRES_MAX_LEN) : 0) + 3);
 	if (m == NULL)
 		return NULL;
 
@@ -1601,7 +1588,7 @@ ieee80211_get_assoc_req(struct ieee80211com *ic, struct ieee80211_node *ni,
 	if ((ic->ic_flags & IEEE80211_F_RSNON) &&
 		(ni->ni_rsnprotos & IEEE80211_PROTO_RSN)) {
 #ifdef USE_APPLE_SUPPLICANT
-		if (ic->ic_rsn_ie_override[1] > 0) {
+		if (ic->ic_rsn_ie_override[1] > 0 && !ic->ic_sae_enabled) {
 			memcpy(frm, ic->ic_rsn_ie_override, 2 + ic->ic_rsn_ie_override[1]);
 			frm += 2 + ic->ic_rsn_ie_override[1];
 		}
@@ -1614,7 +1601,7 @@ ieee80211_get_assoc_req(struct ieee80211com *ic, struct ieee80211_node *ni,
 	if ((ic->ic_flags & IEEE80211_F_RSNON) &&
 		(ni->ni_rsnprotos & IEEE80211_PROTO_WPA)) {
 #ifdef USE_APPLE_SUPPLICANT
-		if (ic->ic_rsn_ie_override[1] > 0) {
+		if (ic->ic_rsn_ie_override[1] > 0 && !ic->ic_sae_enabled) {
 			memcpy(frm, ic->ic_rsn_ie_override, 2 + ic->ic_rsn_ie_override[1]);
 			frm += 2 + ic->ic_rsn_ie_override[1];
 		}
@@ -1630,8 +1617,11 @@ ieee80211_get_assoc_req(struct ieee80211com *ic, struct ieee80211_node *ni,
     if (ic->ic_flags & IEEE80211_F_VHTON)
         frm = ieee80211_add_vhtcaps(frm, ic);
     
-    if (ic->ic_flags & IEEE80211_F_HEON)
+    if ((ic->ic_flags & IEEE80211_F_HEON) && ni->ni_he_advertised)
         frm = ieee80211_add_hecaps(frm, ic);
+    if (ic->ic_sae_enabled && ni->ni_sae_h2e) {
+        *frm++ = 244; *frm++ = 1; *frm++ = 0x20;
+    }
 
     size_t l = frm - mtod(m, u_int8_t *);
     mbuf_pkthdr_setlen(m, l);

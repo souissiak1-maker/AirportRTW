@@ -1,3 +1,8 @@
+#if defined(AIRPORT_WCL) && __IO80211_TARGET == __MAC_15_2
+#include "macOS15/IO80211SkywalkInterface.h"
+#elif defined(AIRPORT_WCL) && __IO80211_TARGET == __MAC_26_0
+#include "macOS26/IO80211SkywalkInterface.h"
+#else
 //
 //  IO80211SkywalkInterface.h
 //  IO80211Family
@@ -189,3 +194,5 @@ public:
 };
 
 #endif /* _IO80211SKYWALK_H */
+
+#endif // OS-specific ABI

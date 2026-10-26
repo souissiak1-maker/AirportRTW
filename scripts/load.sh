@@ -1,4 +1,7 @@
-sudo kextunload -b com.zxystd.itlwm
-sudo chown -R root:wheel ./../Build/Products/Debug/itlwm.kext
-sudo kextutil -v 6 ./../Build/Products/Debug/itlwm.kext
-
+#!/bin/bash
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+BUNDLE="$ROOT/build/releases/${CONFIGURATION:-Debug}/RTWCore.kext"
+sudo kextunload -b com.senmiko.RTWCore || true
+sudo chown -R root:wheel "$BUNDLE"
+sudo kextutil -v 6 "$BUNDLE"

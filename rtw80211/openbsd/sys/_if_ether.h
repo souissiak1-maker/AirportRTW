@@ -288,6 +288,7 @@ static inline int
 ether_ifattach(struct _ifnet *ifp, IOEthernetInterface *iface)
 {
     ifp->iface = iface;
+    return 0;
 }
 
 static inline void

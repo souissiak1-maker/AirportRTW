@@ -1,3 +1,4 @@
+#include "ieee80211_he_policy.hpp"
 /*
  * Copyright (C) 2020  钟先耀
  *
@@ -619,6 +620,11 @@ ieee80211_inputm(struct _ifnet *ifp, mbuf_t m, struct ieee80211_node *ni,
                 bpf_mtap(ic->ic_rawbpf, m, BPF_DIRECTION_IN);
 #endif
             
+#ifdef AIRPORT_WCL
+            if (ic->ic_opmode == IEEE80211_M_STA)
+                __sync_fetch_and_add(&ic->ic_wcl_rx_packets[
+                    hasqos ? ieee80211_wcl_ac(tid) : EDCA_AC_BE], 1);
+#endif
             if ((ni->ni_flags & IEEE80211_NODE_HT) &&
                 hasqos && (qos & IEEE80211_QOS_AMSDU))
                 ieee80211_amsdu_decap(ic, m, ni, hdrlen, ml);
@@ -1129,7 +1135,14 @@ ieee80211_enqueue_data(struct ieee80211com *ic, mbuf_t m,
             if (ifp->if_bpf && m1 == NULL)
                 bpf_mtap(ifp->if_bpf, m, BPF_DIRECTION_IN);
 #endif
-#ifdef USE_APPLE_SUPPLICANT
+#if defined(AIRPORT_WCL)
+            if (ic->ic_wcl_enterprise) {
+                mbuf_t eapCopy = NULL;
+                if (mbuf_dup(m, MBUF_DONTWAIT, &eapCopy) == 0 && eapCopy)
+                    ml_enqueue(ml, eapCopy);
+            }
+            ieee80211_eapol_key_input(ic, m, ni);
+#elif defined(USE_APPLE_SUPPLICANT)
             ml_enqueue(ml, m);
 #else
 #ifdef IO80211FAMILY_V2
@@ -1461,6 +1474,7 @@ ieee80211_parse_rsn_akm(const u_int8_t selector[4])
                 return IEEE80211_AKM_PSK;
             case 5:    /* IEEE 802.1X with SHA256 KDF */
                 return IEEE80211_AKM_SHA256_8021X;
+            case 8: return IEEE80211_AKM_SAE;
             case 6:    /* PSK with SHA256 KDF */
                 return IEEE80211_AKM_SHA256_PSK;
         }
@@ -1668,6 +1682,9 @@ ieee80211_recv_probe_resp(struct ieee80211com *ic, mbuf_t m,
     const uint8_t *vhtopmode;
     const uint8_t *hecap;
     const uint8_t *heopmode;
+    const uint8_t *heMuEdca = NULL;
+    bool saeH2E = false;
+    const uint8_t *saeRSNXE = NULL;
     u_int16_t capinfo, bintval;
     u_int8_t chan, bchan, erp, dtim_count, dtim_period;
     int is_new;
@@ -1785,9 +1802,16 @@ ieee80211_recv_probe_resp(struct ieee80211com *ic, mbuf_t m,
                         wmmie = frm;
                 }
                 break;
+            case 244: /* RSN Extension: SAE Hash-to-Element */
+                if (frm[1] >= 1 && frm[1] <= 16 && (frm[2] & 15) + 1 == frm[1]) {
+                    saeH2E = (frm[2] & 0x20) != 0; saeRSNXE = frm;
+                }
+                break;
             case IEEE80211_ELEMID_EXTENSION:
+                if (frm[1] < 1) break;
                 switch (frm[2]) {
                     case IEEE80211_ELEMID_EXT_HE_MU_EDCA:
+                        heMuEdca = frm;
                         break;
                     case IEEE80211_ELEMID_EXT_HE_CAPABILITY:
                         hecap = frm;
@@ -1885,6 +1909,9 @@ ieee80211_recv_probe_resp(struct ieee80211com *ic, mbuf_t m,
         is_new = 0;
     
     ni->ni_chan = &ic->ic_channels[chan];
+    ni->ni_sae_h2e = saeH2E;
+    bzero(ni->ni_sae_rsnxe, sizeof(ni->ni_sae_rsnxe));
+    if (saeRSNXE) memcpy(ni->ni_sae_rsnxe, saeRSNXE, saeRSNXE[1] + 2);
     
     if (htcaps)
         ieee80211_setup_htcaps(ni, htcaps + 2, htcaps[1]);
@@ -1895,9 +1922,20 @@ ieee80211_recv_probe_resp(struct ieee80211com *ic, mbuf_t m,
         ieee80211_setup_vhtcaps(ic, ni, vhtcap);
         ieee80211_setup_vhtopmode(ni, vhtopmode);
     }
-    if (hecap != NULL && heopmode != NULL) {
+    ni->ni_he_advertised = false;
+    if (hecap != NULL && heopmode != NULL && hecap[1] > 1 && heopmode[1] > 1 &&
+        Net80211HE::validCapabilities(hecap + 3, hecap[1] - 1) &&
+        Net80211HE::validOperation(heopmode + 3, heopmode[1] - 1)) {
+        ni->ni_he_advertised = true;
         ieee80211_setup_hecaps(ni, hecap + 3, hecap[1] - 1);
         ieee80211_setup_heop(ni, heopmode + 3, heopmode[1] - 1);
+        bool hasMu = heMuEdca && heMuEdca[1] >= 14;
+        bool muChanged = hasMu != ni->ni_he_mu_edca_present ||
+            (hasMu && memcmp(ni->ni_he_mu_edca, heMuEdca + 4, 12));
+        ni->ni_he_mu_edca_present = hasMu;
+        if (hasMu) memcpy(ni->ni_he_mu_edca, heMuEdca + 4, 12);
+        if (muChanged && ni == ic->ic_bss && ic->ic_state == IEEE80211_S_RUN &&
+            ic->ic_updateedca) ic->ic_updateedca(ic);
     }
     
     ni->ni_dtimcount = dtim_count;
@@ -2020,11 +2058,16 @@ ieee80211_recv_probe_resp(struct ieee80211com *ic, mbuf_t m,
             ni->ni_flags &= ~IEEE80211_NODE_QOS;
     }
     
+
     if (ic->ic_state == IEEE80211_S_SCAN ||
         (ic->ic_flags & IEEE80211_F_BGSCAN)) {
         struct ieee80211_rsnparams rsn, wpa;
         
+#ifdef AIRPORT_WCL
+        uint32_t tlv_len = (mtod(m, u_int8_t *) + mbuf_len(m)) - (u_int8_t *)&wh[1] - 8 - 2 - 2;
+#else
         uint32_t tlv_len = (mtod(m, u_int8_t *) + mbuf_len(m)) - (u_int8_t *)&wh[1] + 1 - 8 - 2 - 2;
+#endif
         ieee80211_save_ie_tlv(((u_int8_t *)&wh[1]) + 8 + 2 + 2, &ni->ni_rsnie_tlv, &ni->ni_rsnie_tlv_len, tlv_len);
         ni->ni_rsnprotos = IEEE80211_PROTO_NONE;
         ni->ni_supported_rsnprotos = IEEE80211_PROTO_NONE;
@@ -2120,6 +2163,18 @@ ieee80211_recv_probe_resp(struct ieee80211com *ic, mbuf_t m,
     ni->ni_erp = erp;
     /* NB: must be after ni_chan is setup */
     ieee80211_setup_rates(ic, ni, rates, xrates, IEEE80211_F_DOSORT);
+#ifdef AIRPORT_WCL
+    if (ic->ic_event_handler) {
+        const uint8_t *ies = (const uint8_t *)&wh[1] + 12;
+        const uint8_t *end = mtod(m, const uint8_t *) + mbuf_len(m);
+        if (end >= ies) {
+            struct ieee80211_beacon_event event = {ni, ies, (size_t)(end - ies),
+                (const uint8_t *)wh, (size_t)(end - (const uint8_t *)wh)};
+            ic->ic_event_handler(ic, IEEE80211_EVT_BEACON, &event);
+        }
+    }
+#endif
+
 #ifndef IEEE80211_STA_ONLY
     if (ic->ic_opmode == IEEE80211_M_IBSS && is_new && isprobe) {
         /*
@@ -2259,7 +2314,13 @@ ieee80211_recv_auth(struct ieee80211com *ic, mbuf_t m,
     DPRINTF(("auth %d seq %d from %s\n", algo, seq,
              ether_sprintf((u_int8_t *)wh->i_addr2)));
     
-    /* only "open" auth mode is supported */
+    if (ic->ic_sae_enabled) {
+        if (algo != 3) return;
+        ieee80211_sae_receive(ic, ni, wh, seq, status, frm,
+            mbuf_len(m) - sizeof(*wh) - 6);
+        return;
+    }
+    /* Other algorithms retain their existing dispatch. */
     if (algo != IEEE80211_AUTH_ALG_OPEN) {
         DPRINTF(("unsupported auth algorithm %d from %s\n",
                  algo, ether_sprintf((u_int8_t *)wh->i_addr2)));
@@ -2642,6 +2703,7 @@ ieee80211_recv_assoc_resp(struct ieee80211com *ic, mbuf_t m,
     const uint8_t *vhtopmode;
     const uint8_t *hecap;
     const uint8_t *heopmode;
+    const uint8_t *heMuEdca = NULL;
     u_int16_t capinfo, status, associd;
     u_int8_t rate;
     
@@ -2664,7 +2726,13 @@ ieee80211_recv_assoc_resp(struct ieee80211com *ic, mbuf_t m,
     status =  LE_READ_2(frm); frm += 2;
 
     ic->ic_assoc_status = status;
-    if (status == IEEE80211_STATUS_SUCCESS) {
+#ifdef AIRPORT_WCL
+    // Rejects can be reported immediately. Success waits for validation and RUN.
+    if (status != IEEE80211_STATUS_SUCCESS)
+#else
+    if (status == IEEE80211_STATUS_SUCCESS)
+#endif
+    {
         if (ic->ic_event_handler) {
             (*ic->ic_event_handler)(ic, IEEE80211_EVT_STA_ASSOC_DONE, NULL);
         }
@@ -2722,8 +2790,10 @@ ieee80211_recv_assoc_resp(struct ieee80211com *ic, mbuf_t m,
                 }
                 break;
             case IEEE80211_ELEMID_EXTENSION:
+                if (frm[1] < 1) break;
                 switch (frm[2]) {
                     case IEEE80211_ELEMID_EXT_HE_MU_EDCA:
+                        heMuEdca = frm;
                         break;
                     case IEEE80211_ELEMID_EXT_HE_CAPABILITY:
                         hecap = frm;
@@ -2782,14 +2852,26 @@ ieee80211_recv_assoc_resp(struct ieee80211com *ic, mbuf_t m,
         ieee80211_setup_vhtcaps(ic, ni, vhtcap);
         ieee80211_setup_vhtopmode(ni, vhtopmode);
     }
-    if (hecap != NULL && heopmode != NULL) {
+    if (hecap != NULL && heopmode != NULL && hecap[1] > 1 && heopmode[1] > 1 &&
+        Net80211HE::validCapabilities(hecap + 3, hecap[1] - 1) &&
+        Net80211HE::validOperation(heopmode + 3, heopmode[1] - 1)) {
         ieee80211_setup_hecaps(ni, hecap + 3, hecap[1] - 1);
         ieee80211_setup_heop(ni, heopmode + 3, heopmode[1] - 1);
+        bool hasMu = heMuEdca && heMuEdca[1] >= 14;
+        bool muChanged = hasMu != ni->ni_he_mu_edca_present ||
+            (hasMu && memcmp(ni->ni_he_mu_edca, heMuEdca + 4, 12));
+        ni->ni_he_mu_edca_present = hasMu;
+        if (hasMu) memcpy(ni->ni_he_mu_edca, heMuEdca + 4, 12);
+        if (muChanged && ni == ic->ic_bss && ic->ic_state == IEEE80211_S_RUN &&
+            ic->ic_updateedca) ic->ic_updateedca(ic);
     }
 
+    ni->ni_flags &= ~IEEE80211_NODE_HE;
     ieee80211_ht_negotiate(ic, ni);
     ieee80211_vht_negotiate(ic, ni);
-    if (hecap != NULL && heopmode != NULL) {
+    if (hecap != NULL && heopmode != NULL && hecap[1] > 1 && heopmode[1] > 1 &&
+        Net80211HE::validCapabilities(hecap + 3, hecap[1] - 1) &&
+        Net80211HE::validOperation(heopmode + 3, heopmode[1] - 1)) {
         ieee80211_he_negotiate(ic, ni);
     }
     
@@ -2842,8 +2924,21 @@ ieee80211_recv_assoc_resp(struct ieee80211com *ic, mbuf_t m,
     } else if (ic->ic_flags & IEEE80211_F_WEPON)
         ni->ni_flags |= IEEE80211_NODE_TXRXPROT;
     
+#ifdef AIRPORT_WCL
+    // Both native Realtek HALs complete this transition synchronously. Do not
+    // tell WCL that association succeeded while firmware setup is incomplete.
+    const int transitionResult = ic->ic_newstate(ic, IEEE80211_S_RUN,
+                                                IEEE80211_FC0_SUBTYPE_ASSOC_RESP);
+    if (transitionResult || ic->ic_state != IEEE80211_S_RUN) {
+        ic->ic_assoc_status = IEEE80211_STATUS_UNSPECIFIED;
+        ic->ic_sae_error = 0x40000u | (unsigned(transitionResult) & 0xffffu);
+        if (ic->ic_event_handler)
+            ic->ic_event_handler(ic, IEEE80211_EVT_STA_ASSOC_DONE, NULL);
+    }
+#else
     ieee80211_new_state(ic, IEEE80211_S_RUN,
                         IEEE80211_FC0_SUBTYPE_ASSOC_RESP);
+#endif
 }
 
 /*-

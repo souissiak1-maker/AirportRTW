@@ -91,6 +91,7 @@ ieee80211_eapol_key_input(struct ieee80211com *ic, mbuf_t m,
                           struct ieee80211_node *ni)
 {
     XYLog("%s\n", __FUNCTION__);
+    if (ic->ic_flags & IEEE80211_F_RSNON) ++ic->ic_sae_eapol_calls;
     struct _ifnet *ifp = &ic->ic_if;
     struct ether_header *eh;
     struct ieee80211_eapol_key *key;
@@ -139,11 +140,14 @@ ieee80211_eapol_key_input(struct ieee80211com *ic, mbuf_t m,
     info = BE_READ_2(key->info);
     
     /* discard EAPOL-Key frames with an unknown descriptor version */
+    if (ic->ic_sae_stage < 5) ic->ic_sae_stage = 5;
     desc = info & EAPOL_KEY_VERSION_MASK;
-    if (desc < EAPOL_KEY_DESC_V1 || desc > EAPOL_KEY_DESC_V3)
-        goto done;
+    if (ni->ni_rsnakms == IEEE80211_AKM_SAE ? desc != 0 :
+        (desc < EAPOL_KEY_DESC_V1 || desc > EAPOL_KEY_DESC_V3)) goto done;
     
-    if (ieee80211_is_sha256_akm((enum ieee80211_akm)ni->ni_rsnakms)) {
+    if (ni->ni_rsnakms == IEEE80211_AKM_SAE) {
+        if (desc != 0) goto done;
+    } else if (ieee80211_is_sha256_akm((enum ieee80211_akm)ni->ni_rsnakms)) {
         if (desc != EAPOL_KEY_DESC_V3)
             goto done;
     } else if (ni->ni_rsncipher == IEEE80211_CIPHER_CCMP ||
@@ -380,6 +384,7 @@ ieee80211_recv_4way_msg3(struct ieee80211com *ic,
                          struct ieee80211_eapol_key *key, struct ieee80211_node *ni)
 {
     XYLog("%s\n", __FUNCTION__);
+    ic->ic_sae_stage = 7;
     struct ieee80211_ptk tptk;
     struct ieee80211_key *k;
     const u_int8_t *frm, *efrm;
@@ -423,6 +428,7 @@ ieee80211_recv_4way_msg3(struct ieee80211com *ic,
     
     /* check Key MIC field using KCK */
     if (ieee80211_eapol_key_check_mic(key, tptk.kck) != 0) {
+        ic->ic_sae_error = 1;
         DPRINTF(("key MIC failed\n"));
         ic->ic_stats.is_rx_eapol_badmic++;
         return;
@@ -433,6 +439,7 @@ ieee80211_recv_4way_msg3(struct ieee80211com *ic,
     /* if encrypted, decrypt Key Data field using KEK */
     if ((info & EAPOL_KEY_ENCRYPTED) &&
         ieee80211_eapol_key_decrypt(key, ni->ni_ptk.kek) != 0) {
+        ic->ic_sae_error = 2;
         DPRINTF(("decryption failed\n"));
         return;
     }
@@ -446,11 +453,16 @@ ieee80211_recv_4way_msg3(struct ieee80211com *ic,
      * RSN IEs in message 3/4.  We only take into account the IE of the
      * version of the protocol we negotiated at association time.
      */
+    const uint8_t *saeRSNXE = NULL;
     rsnie1 = rsnie2 = gtk = igtk = NULL;
     while (frm + 2 <= efrm) {
         if (frm + 2 + frm[1] > efrm)
             break;
         switch (frm[0]) {
+            case 244: /* Authenticate the AP RSNXE against discovery. */
+                if (saeRSNXE) return;
+                saeRSNXE = frm;
+                break;
             case IEEE80211_ELEMID_RSN:
                 if (ni->ni_rsnprotos != IEEE80211_PROTO_RSN)
                     break;
@@ -486,6 +498,13 @@ ieee80211_recv_4way_msg3(struct ieee80211com *ic,
                 break;
         }
         frm += 2 + frm[1];
+    }
+    if (ni->ni_rsnakms == IEEE80211_AKM_SAE) {
+        if (!gtk || !igtk || !(info & EAPOL_KEY_ENCRYPTED)) { ic->ic_sae_error = 4; return; }
+        if (ni->ni_sae_rsnxe[1]) {
+            if (!saeRSNXE || saeRSNXE[1] != ni->ni_sae_rsnxe[1] ||
+                memcmp(saeRSNXE, ni->ni_sae_rsnxe, saeRSNXE[1] + 2)) { ic->ic_sae_error = 3; return; }
+        } else if (saeRSNXE) { ic->ic_sae_error = 3; return; }
     }
     /* first WPA/RSN IE is mandatory */
     if (rsnie1 == NULL) {
@@ -688,6 +707,7 @@ ieee80211_recv_4way_msg3(struct ieee80211com *ic,
             if (deferlink == 0) {
                 DPRINTF(("marking port %s valid\n",
                          ether_sprintf(ni->ni_macaddr)));
+                { ic->ic_sae_stage = 8; ic->ic_sae_error = 0; }
                 ni->ni_port_valid = 1;
                 ieee80211_set_link_state(ic, LINK_STATE_UP);
             }
@@ -698,6 +718,7 @@ ieee80211_recv_4way_msg3(struct ieee80211com *ic,
     }
 deauth:
     if (reason != 0) {
+        ic->ic_sae_error = 0x30000u | reason;
         IEEE80211_SEND_MGMT(ic, ni, IEEE80211_FC0_SUBTYPE_DEAUTH,
                             reason);
         ieee80211_new_state(ic, IEEE80211_S_SCAN, -1);

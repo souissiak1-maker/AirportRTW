@@ -24,13 +24,13 @@
 
 void CTimeout::timeoutOccurred(OSObject* owner, IOTimerEventSource* timer)
 {
-//    IOLog("itlwm %s\n", __FUNCTION__);
+//    RTW_LOG("itlwm %s\n", __FUNCTION__);
     if (owner == NULL) {
-        IOLog("itlwm tm owner == NULL!!!\n");
+        RTW_LOG("itlwm tm owner == NULL!!!\n");
     }
     CTimeout *tm = OSDynamicCast(CTimeout, owner);
     if (tm == NULL) {
-        IOLog("itlwm tm == NULL!!!\n");
+        RTW_LOG("itlwm tm == NULL!!!\n");
         return;
     }
     //callback
