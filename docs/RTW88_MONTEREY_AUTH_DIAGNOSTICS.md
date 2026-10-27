@@ -34,20 +34,3 @@ Test: install the new Monterey Debug kext, reboot, make one manual join,
 wait for failure, run the supplied collector immediately, and return the ZIP
 with security type, band/channel if known, and approximate attempt time.
 No boot-arg changes are required. Restore the saved Release kext afterward.
-
-## Hardware snapshot at authentication transmit
-
-The follow-up build reads the selected VIF port MAC/BSSID registers and RCR
-under the device mutex immediately before submitting each authentication TX.
-It does not write registers or change receive filters.
-
-RTW88AuthSnapshotValid must be 1 before interpreting the other fields.
-RTW88AuthHardwareChannel is the driver's active channel cache, not an RF
-measurement; RequestedChannel is the configured channel. RCR is the hardware
-receive-configuration register. Port identifies the selected VIF port.
-AddressMatchMask bits compare the transmitted source with VIF address (1),
-driver port MAC (2), and read-back hardware MAC (4), then the transmitted
-BSSID with driver port BSSID (8) and read-back hardware BSSID (16).
-All matches produce 31. No raw addresses are added to these properties.
-The snapshot is retained across later scans; unlike LastReceiveFrequency,
-these fields describe authentication TX time.

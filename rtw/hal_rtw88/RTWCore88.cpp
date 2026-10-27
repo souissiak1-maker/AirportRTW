@@ -475,12 +475,6 @@ void RTWCore88::watchdog(struct _ifnet *ifp)
     RTW_DIAGNOSTIC(controller->setProperty("RTW88AuthTxAckCount", owner->linuxContext.authTxAckCount, 64));
     RTW_DIAGNOSTIC(controller->setProperty("RTW88AssocTxCount", owner->linuxContext.assocTxCount, 64));
     RTW_DIAGNOSTIC(controller->setProperty("RTW88AssocTxAckCount", owner->linuxContext.assocTxAckCount, 64));
-    RTW_DIAGNOSTIC(controller->setProperty("RTW88AuthRCR", owner->linuxContext.authHardwareSnapshot[0], 32));
-    RTW_DIAGNOSTIC(controller->setProperty("RTW88AuthHardwareChannel", owner->linuxContext.authHardwareSnapshot[1], 32));
-    RTW_DIAGNOSTIC(controller->setProperty("RTW88AuthRequestedChannel", owner->linuxContext.authHardwareSnapshot[2], 32));
-    RTW_DIAGNOSTIC(controller->setProperty("RTW88AuthAddressMatchMask", owner->linuxContext.authHardwareSnapshot[3], 32));
-    RTW_DIAGNOSTIC(controller->setProperty("RTW88AuthPort", owner->linuxContext.authHardwareSnapshot[4], 32));
-    RTW_DIAGNOSTIC(controller->setProperty("RTW88AuthSnapshotValid", owner->linuxContext.authHardwareSnapshot[5], 32));
     RTW_DIAGNOSTIC(controller->setProperty("RTW88AuthBridgeCount", owner->linuxContext.authBridgeCount, 64));
     RTW_DIAGNOSTIC(controller->setProperty("RTW88AuthBridgeBadCRCCount", owner->linuxContext.authBridgeBadCRCCount, 64));
     RTW_DIAGNOSTIC(controller->setProperty("RTW88AuthRxCount", owner->linuxContext.authRxCount, 64));

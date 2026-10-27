@@ -8,9 +8,6 @@
 #include <IOKit/IOLib.h>
 
 extern "C" {
-#if defined(DEBUG) && DEBUG
-void airportrtw88_auth_snapshot(struct ieee80211_hw *, struct ieee80211_vif *, const uint8_t *, const uint8_t *, uint32_t[6]);
-#endif
 unsigned int airportrtw88_get_locale(struct ieee80211_hw *);
 #include "compat/rtw88_compat.h"
 #include "compat/linux/pci.h"
@@ -504,10 +501,6 @@ bool rtw88LinuxTransmit(Rtw88LinuxContext *context, const uint8_t *frame,
     const struct ieee80211_hdr *header =
         reinterpret_cast<const struct ieee80211_hdr *>(frame);
     const uint16_t frameControl = le16_to_cpu(header->frame_control);
-    RTW_DIAGNOSTIC(if ((frameControl & (IEEE80211_FCTL_FTYPE | IEEE80211_FCTL_STYPE)) == IEEE80211_STYPE_AUTH) {
-        airportrtw88_auth_snapshot(hw, vif, header->addr2, header->addr3,
-                                  context->authHardwareSnapshot);
-    });
     const bool data = (frameControl & IEEE80211_FCTL_FTYPE) ==
                       IEEE80211_FTYPE_DATA;
     if (data && memcmp(header->addr2, vif->addr, ETH_ALEN))

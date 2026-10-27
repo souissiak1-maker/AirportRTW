@@ -3,7 +3,6 @@
 #include "compat/rtw88_compat.h"
 #include "driver/main.h"
 #include "driver/pci.h"
-#include "driver/reg.h"
 extern const struct rtw_chip_info rtw8822c_hw_spec;
 extern const struct rtw_chip_info rtw8822b_hw_spec;
 extern const struct rtw_chip_info rtw8821c_hw_spec;
@@ -184,34 +183,3 @@ void rtw88_hw_get_tx_rate(struct ieee80211_hw *hw, struct RTWTxRate *out)
     memset(out, 0, sizeof(*out));
     if (hw) ieee80211_iterate_stations_atomic(hw, copy_tx_rate, out);
 }
-
-#if defined(DEBUG) && DEBUG
-/* Read-only snapshot at authentication TX; export comparisons, not MACs. */
-void airportrtw88_auth_snapshot(struct ieee80211_hw *hw,
-                                struct ieee80211_vif *vif,
-                                const u8 *source, const u8 *bssid, u32 out[6])
-{
-    struct rtw_dev *dev = hw ? hw->priv : NULL;
-    struct rtw_vif *rv = vif ? (struct rtw_vif *)vif->drv_priv : NULL;
-    u8 mac[ETH_ALEN], peer[ETH_ALEN];
-    unsigned int i;
-    memset(out, 0, 6 * sizeof(*out));
-    if (!dev || !rv || !rv->conf || !source || !bssid) return;
-    mutex_lock(&dev->mutex);
-    for (i = 0; i < ETH_ALEN; ++i) {
-        mac[i] = rtw_read8(dev, rv->conf->mac_addr.addr + i);
-        peer[i] = rtw_read8(dev, rv->conf->bssid.addr + i);
-    }
-    out[0] = rtw_read32(dev, REG_RCR);
-    out[1] = dev->hal.current_channel;
-    out[2] = hw->conf.chandef.chan ? hw->conf.chandef.chan->hw_value : 0;
-    out[3] = (!memcmp(source, vif->addr, ETH_ALEN) ? 1 : 0) |
-             (!memcmp(source, rv->mac_addr, ETH_ALEN) ? 2 : 0) |
-             (!memcmp(source, mac, ETH_ALEN) ? 4 : 0) |
-             (!memcmp(bssid, rv->bssid, ETH_ALEN) ? 8 : 0) |
-             (!memcmp(bssid, peer, ETH_ALEN) ? 16 : 0);
-    out[4] = rv->port;
-    out[5] = 1;
-    mutex_unlock(&dev->mutex);
-}
-#endif
