@@ -122,3 +122,19 @@ of hardcoding FCC. Native country notifications update IO80211Locale alongside
 IO80211CountryCode from the effective HAL state. Hardware confirmation of the
 new Locale display is pending. tests/rtw_locale_test.py compiles both production
 readers with ASan/UBSan and verifies Apple's enum ABI values.
+
+### Native Locale refresh ordering
+
+On the tested Tahoe IO80211Family binary, updateLocaleProperty queries Locale
+through the WCL/glue path and apple80211getLOCALE. The latter dispatches directly
+to IO80211InfraInterface::getLOCALE, which derives the category from an internal
+country table rather than our HAL getter. The country-change refresh can thus
+overwrite a previously published HAL-derived IO80211Locale with Unknown.
+Publish the effective HAL category after the notification returns. This fixes
+the registry display without changing the reported country, RF configuration or
+Apple's private country table. Direct callers of Apple's base Locale method can
+still receive its own classification; no binary patch is installed.
+
+Test: tests/rtw_locale_cache_test.py executes the production refresh block with
+a native notification that overwrites Locale, verifying final ETSI, Unknown and
+getter-error behavior. Hardware display verification is pending.
