@@ -308,8 +308,9 @@ init(IOService *provider)
 IOReturn AirportRTWSkywalkInterface::
 getSSID(struct apple80211_ssid_data *sd)
 {
+    if (!sd) return kIOReturnBadArgument;
     struct ieee80211com * ic = fHalService->get80211Controller();
-    if (ic->ic_state == IEEE80211_S_RUN) {
+    if (ic && ic->ic_bss && ic->ic_state == IEEE80211_S_RUN) {
         memset(sd, 0, sizeof(*sd));
         sd->version = APPLE80211_VERSION;
 #ifdef AIRPORT_WCL
@@ -646,8 +647,9 @@ getRATE(struct apple80211_rate_data *rd)
 IOReturn AirportRTWSkywalkInterface::
 getBSSID(struct apple80211_bssid_data *bd)
 {
+    if (!bd) return kIOReturnBadArgument;
     struct ieee80211com *ic = fHalService->get80211Controller();
-    if (ic->ic_state == IEEE80211_S_RUN) {
+    if (ic && ic->ic_bss && ic->ic_state == IEEE80211_S_RUN) {
         memset(bd, 0, sizeof(*bd));
         bd->version = APPLE80211_VERSION;
         memcpy(bd->bssid.octet, ic->ic_bss->ni_bssid, APPLE80211_ADDR_LEN);
