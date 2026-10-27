@@ -475,6 +475,8 @@ void RTWCore88::watchdog(struct _ifnet *ifp)
     RTW_DIAGNOSTIC(controller->setProperty("RTW88AuthTxAckCount", owner->linuxContext.authTxAckCount, 64));
     RTW_DIAGNOSTIC(controller->setProperty("RTW88AssocTxCount", owner->linuxContext.assocTxCount, 64));
     RTW_DIAGNOSTIC(controller->setProperty("RTW88AssocTxAckCount", owner->linuxContext.assocTxAckCount, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW88AuthBridgeCount", owner->linuxContext.authBridgeCount, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW88AuthBridgeBadCRCCount", owner->linuxContext.authBridgeBadCRCCount, 64));
     RTW_DIAGNOSTIC(controller->setProperty("RTW88AuthRxCount", owner->linuxContext.authRxCount, 64));
     RTW_DIAGNOSTIC(controller->setProperty("RTW88AssocRxCount", owner->linuxContext.assocRxCount, 64));
     RTW_DIAGNOSTIC(controller->setProperty("RTW88ActionTxCount", owner->linuxContext.actionTxCount, 64));
@@ -812,6 +814,25 @@ void RTWCore88::receive(void *opaque, const uint8_t *frame, size_t length,
     auto *wh = reinterpret_cast<const struct ieee80211_frame *>(frame);
     const uint8_t frameType = wh->i_fc[0] & IEEE80211_FC0_TYPE_MASK;
     const uint8_t frameSubtype = wh->i_fc[0] & IEEE80211_FC0_SUBTYPE_MASK;
+    const bool authFrame = frameType == IEEE80211_FC0_TYPE_MGT &&
+        frameSubtype == IEEE80211_FC0_SUBTYPE_AUTH;
+    RTW_DIAGNOSTIC(if (authFrame) {
+        auto *controller = owner->getController();
+        controller->setProperty("RTW88AuthHALSeen", true);
+        controller->setProperty("RTW88AuthFrameLength", (UInt32)length, 32);
+        controller->setProperty("RTW88AuthFrequency", frequency, 32);
+        controller->setProperty("RTW88AuthStateAtReceive", (UInt32)ic->ic_state, 32);
+        controller->setProperty("RTW88AuthDestinationMatches", IEEE80211_ADDR_EQ(wh->i_addr1, ic->ic_myaddr));
+        controller->setProperty("RTW88AuthSourceMatches", ic->ic_bss && IEEE80211_ADDR_EQ(wh->i_addr2, ic->ic_bss->ni_bssid));
+        controller->setProperty("RTW88AuthBSSIDMatches", ic->ic_bss && IEEE80211_ADDR_EQ(wh->i_addr3, ic->ic_bss->ni_bssid));
+        if (length >= sizeof(struct ieee80211_frame) + 6) {
+            const uint8_t *body = frame + sizeof(struct ieee80211_frame);
+            controller->setProperty("RTW88AuthAlgorithm", (UInt32)(body[0] | (body[1] << 8)), 32);
+            controller->setProperty("RTW88AuthSequence", (UInt32)(body[2] | (body[3] << 8)), 32);
+            controller->setProperty("RTW88AuthStatus", (UInt32)(body[4] | (body[5] << 8)), 32);
+        }
+        controller->setProperty("RTW88AuthInputStage", "before mbuf allocation");
+    });
     mbuf_t m = nullptr;
     /* The OpenBSD receive/decapsulation path and IO80211 use mtod() plus
      * mbuf_len() in several places, so normal management and data frames
@@ -873,6 +894,7 @@ void RTWCore88::receive(void *opaque, const uint8_t *frame, size_t length,
     const int networkPriority = splnet();
     struct ieee80211_node *node = ieee80211_find_rxnode(ic, wh);
     if (!node) {
+        RTW_DIAGNOSTIC(if (authFrame) owner->getController()->setProperty("RTW88AuthInputStage", "node lookup failed"));
         splx(networkPriority);
         mbuf_freem(m);
         return;
@@ -926,7 +948,15 @@ void RTWCore88::receive(void *opaque, const uint8_t *frame, size_t length,
         ic->ic_recv_mgmt(ic, m, node, &rxi, frameSubtype);
         mbuf_freem(m);
     } else {
+        RTW_DIAGNOSTIC(if (authFrame) {
+            owner->getController()->setProperty("RTW88AuthInputStage", "net80211 input");
+            owner->getController()->setProperty("RTW88AuthStateBeforeInput", (UInt32)ic->ic_state, 32);
+        });
         ieee80211_inputm(&ic->ic_if, m, node, &rxi, &list);
+        RTW_DIAGNOSTIC(if (authFrame) {
+            owner->getController()->setProperty("RTW88AuthStateAfterInput", (UInt32)ic->ic_state, 32);
+            owner->getController()->setProperty("RTW88AuthInputStage", "net80211 input returned");
+        });
         if_input(&ic->ic_if, &list);
     }
     ieee80211_release_node(ic, node);

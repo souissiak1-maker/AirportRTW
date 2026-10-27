@@ -53,6 +53,13 @@ static void receiveFrame(void *opaque, struct sk_buff *skb)
         skb_trim(skb, skb->len - fcsLength);
     }
 
+    RTW_DIAGNOSTIC(if (context && skb->data && skb->len >= 24 &&
+                       (skb->data[0] & 0xfc) == 0xb0) {
+        __sync_fetch_and_add(&context->authBridgeCount, 1);
+        if (status->flag & (RX_FLAG_FAILED_FCS_CRC | RX_FLAG_FAILED_PLCP_CRC))
+            __sync_fetch_and_add(&context->authBridgeBadCRCCount, 1);
+    });
+
     // Count only downlink data from our associated AP, addressed to this
     // station or a group. Global protected-frame counts include other BSSes.
     auto *vif = context ? static_cast<ieee80211_vif *>(context->vif) : nullptr;
