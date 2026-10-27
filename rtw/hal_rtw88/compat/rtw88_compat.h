@@ -319,7 +319,7 @@ void rtw88_handshake_rx_filter(struct ieee80211_hw *hw, bool open);
  */
 void rtw88_connect_hw_setup(struct ieee80211_hw *hw,
                              struct ieee80211_vif *vif,
-                             const uint8_t *bssid);
+                             const uint8_t *bssid, uint32_t *diagnostic);
 void rtw88_restore_connected_hw(struct ieee80211_hw *hw,
                                  struct ieee80211_vif *vif,
                                  const uint8_t *bssid);

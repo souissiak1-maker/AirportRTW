@@ -475,6 +475,13 @@ void RTWCore88::watchdog(struct _ifnet *ifp)
     RTW_DIAGNOSTIC(controller->setProperty("RTW88AuthTxAckCount", owner->linuxContext.authTxAckCount, 64));
     RTW_DIAGNOSTIC(controller->setProperty("RTW88AssocTxCount", owner->linuxContext.assocTxCount, 64));
     RTW_DIAGNOSTIC(controller->setProperty("RTW88AssocTxAckCount", owner->linuxContext.assocTxAckCount, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW88SetupCachedRCR", owner->linuxContext.connectionDiagnostic[0], 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW88SetupCachedChannel", owner->linuxContext.connectionDiagnostic[1], 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW88SetupRequestedChannel", owner->linuxContext.connectionDiagnostic[2], 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW88SetupVifMACMatchesPort", owner->linuxContext.connectionDiagnostic[3], 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW88SetupBSSIDMatchesPort", owner->linuxContext.connectionDiagnostic[4], 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW88SetupSnapshotValid", owner->linuxContext.connectionDiagnostic[5], 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTW88AuthTxSourceMatchesVif", owner->linuxContext.authTxSourceMatchesVif, 32));
     RTW_DIAGNOSTIC(controller->setProperty("RTW88AuthBridgeCount", owner->linuxContext.authBridgeCount, 64));
     RTW_DIAGNOSTIC(controller->setProperty("RTW88AuthBridgeBadCRCCount", owner->linuxContext.authBridgeBadCRCCount, 64));
     RTW_DIAGNOSTIC(controller->setProperty("RTW88AuthRxCount", owner->linuxContext.authRxCount, 64));
@@ -888,8 +895,7 @@ void RTWCore88::receive(void *opaque, const uint8_t *frame, size_t length,
         (frameSubtype == IEEE80211_FC0_SUBTYPE_BEACON ||
          frameSubtype == IEEE80211_FC0_SUBTYPE_PROBE_RESP)) {
         __sync_fetch_and_add(&owner->beaconProbeCount, 1);
-        RTW_LOG("RTWCore88: scan RX subtype 0x%02x len %lu rssi %d freq %u\n",
-              frameSubtype, (unsigned long)length, (int)rssi, frequency);
+
     }
     const int networkPriority = splnet();
     struct ieee80211_node *node = ieee80211_find_rxnode(ic, wh);
@@ -1008,7 +1014,7 @@ int RTWCore88::newstate(struct ieee80211com *ic,
         node && node->ni_chan && node->ni_chan != IEEE80211_CHAN_ANYC) {
         const uint16_t channel = ieee80211_chan2ieee(ic, node->ni_chan);
         __sync_fetch_and_add(&owner->scanChannelCount, 1);
-        RTW_LOG("RTWCore88: scan channel %u\n", channel);
+
         if (channel && !rtw88LinuxSetChannel(&owner->linuxContext, channel)) {
             if (beganScan) {
                 rtw88LinuxScanEnd(&owner->linuxContext);

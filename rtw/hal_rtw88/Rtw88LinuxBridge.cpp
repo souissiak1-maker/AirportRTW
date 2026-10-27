@@ -501,6 +501,8 @@ bool rtw88LinuxTransmit(Rtw88LinuxContext *context, const uint8_t *frame,
     const struct ieee80211_hdr *header =
         reinterpret_cast<const struct ieee80211_hdr *>(frame);
     const uint16_t frameControl = le16_to_cpu(header->frame_control);
+    RTW_DIAGNOSTIC(if ((frameControl & (IEEE80211_FCTL_FTYPE | IEEE80211_FCTL_STYPE)) == IEEE80211_STYPE_AUTH)
+        context->authTxSourceMatchesVif = !memcmp(header->addr2, vif->addr, ETH_ALEN));
     const bool data = (frameControl & IEEE80211_FCTL_FTYPE) ==
                       IEEE80211_FTYPE_DATA;
     if (data && memcmp(header->addr2, vif->addr, ETH_ALEN))
@@ -781,7 +783,7 @@ bool rtw88LinuxPrepareConnection(Rtw88LinuxContext *context,
     hw->conf.chandef.width = NL80211_CHAN_WIDTH_20;
     hw->conf.chandef.center_freq1 = target->center_freq;
     hw->conf.chandef.center_freq2 = 0;
-    rtw88_connect_hw_setup(hw, vif, bssid);
+    rtw88_connect_hw_setup(hw, vif, bssid, context->connectionDiagnostic);
     vif->bss_conf.bssid = vif->bss_conf.bssid_buf;
     memcpy(vif->bss_conf.bssid_buf, bssid, ETH_ALEN);
     return true;
@@ -914,7 +916,7 @@ bool rtw88LinuxAssociate(Rtw88LinuxContext *context,
     hw->conf.chandef.width = peer.widthMHz == 80 ? NL80211_CHAN_WIDTH_80 :
         peer.widthMHz == 40 ? NL80211_CHAN_WIDTH_40 : NL80211_CHAN_WIDTH_20;
     hw->conf.chandef.center_freq1 = peer.centerFrequency;
-    rtw88_connect_hw_setup(hw, vif, bssid);
+    rtw88_connect_hw_setup(hw, vif, bssid, context->connectionDiagnostic);
     context->stationAllocationSize = sizeof(struct ieee80211_sta) +
                                      hw->sta_data_size;
     auto *sta = static_cast<struct ieee80211_sta *>(

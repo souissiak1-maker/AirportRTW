@@ -34,3 +34,20 @@ Test: install the new Monterey Debug kext, reboot, make one manual join,
 wait for failure, run the supplied collector immediately, and return the ZIP
 with security type, band/channel if known, and approximate attempt time.
 No boot-arg changes are required. Restore the saved Release kext afterward.
+
+## Lighter follow-up diagnostic
+
+The hardware-read snapshot commit 5c84548 was reverted after reported hangs.
+The lighter follow-up copies only cached state inside connect_hw_setup's
+existing device-mutex scope. It adds no mutex acquisition or hardware read.
+SetupCachedRCR/Channel reflect software caches, not hardware read-back.
+SetupVifMACMatchesPort and SetupBSSIDMatchesPort compare software addresses.
+AuthTxSourceMatchesVif compares the outgoing authentication source with VIF
+address without a lock or MMIO access. SetupSnapshotValid must be 1 before
+interpreting setup fields. Association setup may overwrite the setup snapshot.
+Per-channel scan and per-beacon/probe logging were removed; other Debug
+startup/error diagnostics remain enabled. This is a reduced-logging Debug
+build, not a guarantee that all diagnostic overhead or hangs are eliminated.
+
+Use the same one-join test and collector. First verify Network Preferences
+and System Information respond normally. Stop testing if they freeze again.

@@ -1277,7 +1277,7 @@ void rtw88_force_wifi_only(void)
  */
 void rtw88_connect_hw_setup(struct ieee80211_hw *hw,
                              struct ieee80211_vif *vif,
-                             const uint8_t *bssid)
+                             const uint8_t *bssid, uint32_t *diagnostic)
 {
     if (!hw || !hw->priv || !vif || !bssid) return;
     struct rtw_dev *rtwdev = (struct rtw_dev *)hw->priv;
@@ -1330,6 +1330,20 @@ void rtw88_connect_hw_setup(struct ieee80211_hw *hw,
      */
     rtwdev->dm_info.fix_rate = 0xFF;
 
+    /* Cached state only, under the setup lock already held above.
+     * No extra lock or MMIO reads are added to authentication TX. */
+#if defined(DEBUG) && DEBUG
+    if (diagnostic && rtwvif) {
+        diagnostic[0] = rtwdev->hal.rcr;
+        diagnostic[1] = rtwdev->hal.current_channel;
+        diagnostic[2] = hw->conf.chandef.chan ? hw->conf.chandef.chan->hw_value : 0;
+        diagnostic[3] = !memcmp(vif->addr, rtwvif->mac_addr, ETH_ALEN);
+        diagnostic[4] = !memcmp(bssid, rtwvif->bssid, ETH_ALEN);
+        diagnostic[5] = 1;
+    }
+#else
+    (void)diagnostic;
+#endif
     mutex_unlock(&rtwdev->mutex);
 }
 
