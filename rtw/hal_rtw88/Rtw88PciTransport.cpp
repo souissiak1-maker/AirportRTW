@@ -109,11 +109,39 @@ bool Rtw88PciTransport::initWithDevice(IOPCIDevice *device, IOWorkLoop *loop)
     if (rtw88_compat_init() != 0)
         return false;
 
-    recordAttachStage("interrupt source creation/registration");
-    interruptSource = IOInterruptEventSource::interruptEventSource(
-        this, &Rtw88PciTransport::interruptOccurred, pciDevice, 0);
-    if (!interruptSource || workLoop->addEventSource(interruptSource) !=
-                                kIOReturnSuccess)
+    // Prefer PCI message-signalled interrupts; fall back to legacy INTx.
+    // PCI interrupt index zero is not necessarily the MSI vector.
+    for (int pass = 0; pass < 2 && !interruptSource; ++pass) {
+        for (int index = 0; ; ++index) {
+            int type = 0;
+            if (pciDevice->getInterruptType(index, &type) != kIOReturnSuccess)
+                break;
+            const bool isMSI = (type & kIOInterruptTypePCIMessaged) != 0;
+            if (isMSI != (pass == 0))
+                continue;
+            RTW_DIAGNOSTIC(pciDevice->setProperty("RTWInterruptIndex", index, 32));
+            RTW_DIAGNOSTIC(pciDevice->setProperty("RTWInterruptType", type, 32));
+            recordAttachStage("interrupt source creation");
+            auto *candidate = IOInterruptEventSource::interruptEventSource(
+                this, &Rtw88PciTransport::interruptOccurred, pciDevice, index);
+            if (!candidate) {
+                RTW_LOG("AirportRTW: interrupt source creation failed index=%d type=%d\n", index, type);
+                continue;
+            }
+            recordAttachStage("interrupt workloop registration");
+            const IOReturn result = workLoop->addEventSource(candidate);
+            RTW_DIAGNOSTIC(pciDevice->setProperty("RTWInterruptRegistrationResult", result, 32));
+            if (result != kIOReturnSuccess) {
+                RTW_LOG("AirportRTW: interrupt registration failed index=%d result=0x%x\n", index, result);
+                candidate->release();
+                continue;
+            }
+            interruptSource = candidate;
+            RTW_LOG("AirportRTW: selected interrupt index=%d type=%d\n", index, type);
+            break;
+        }
+    }
+    if (!interruptSource)
         return false;
     RTW_LOG("AirportRTW: transport ready; interrupt source held disabled\n");
     recordAttachStage("transport ready");

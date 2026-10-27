@@ -41,6 +41,7 @@ jobs:
           python3 tests/rtw89_os_country_test.py
           python3 tests/rtw_country_notification_test.py
           python3 tests/rtw88_country_test.py
+          python3 tests/rtw88_interrupt_selection_test.py
           python3 tests/rtw_locale_test.py
           python3 tests/rtw_locale_cache_test.py
           python3 tests/rtw_rate_frontend_test.py
