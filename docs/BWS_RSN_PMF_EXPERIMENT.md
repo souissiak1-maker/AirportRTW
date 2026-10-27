@@ -58,3 +58,14 @@ returned with zero loss (one reply had elevated latency). Country TN and Locale
 ETSI remained populated. These are successful connection/local-traffic tests
 for BWS_RDC and the WPA3 hotspot on one binary; sustained throughput/stability,
 hotspot WPA2 regression testing, and RTW88 hardware remain unverified.
+
+## WPA2 hotspot regression test: 2026-10-27
+
+The same UUID EFBD3BD1-2FA2-3FE6-BE63-FD0093099E2A successfully reconnected
+after the modern hotspot changed from WPA3 to WPA2-Personal. Native reporting
+showed WPA2 Personal, 802.11ax, channel 4 / 20 MHz, 286 Mbps / MCS 11, TN / ETSI.
+Diagnostics showed RSN selected, AES/CCMP TX cipher, PortValid=true, handshake
+stage=8/error=0 and acknowledged EAPOL TX. DHCP succeeded. This verifies WPA2
+and WPA3 hotspot association plus BWS_RDC on the same binary; switching between
+BWS_RDC and the hotspot, Wi-Fi power-cycle reconnect, sustained transfer and
+RTW88 hardware still require testing.
