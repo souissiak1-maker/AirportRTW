@@ -857,7 +857,7 @@ getLOCALE(struct apple80211_locale_data *ld)
     if (!ld)
         return kIOReturnError;
     ld->version = APPLE80211_VERSION;
-    ld->locale  = APPLE80211_LOCALE_FCC;
+    ld->locale = fHalService->getDriverInfo()->getRegulatoryLocale();
 
     return kIOReturnSuccess;
 }

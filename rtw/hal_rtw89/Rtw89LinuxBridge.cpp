@@ -8,6 +8,7 @@
 #include <IOKit/IOLib.h>
 
 extern "C" {
+unsigned int rtw89_macos_get_locale(struct ieee80211_hw *);
 #include "compat/rtw88_compat.h"
 #include "compat/linux/pci.h"
 #include "compat/net/mac80211.h"
@@ -883,6 +884,14 @@ bool rtw89LinuxSetCountry(Rtw89LinuxContext *context, const char cc[2])
         static_cast<ieee80211_hw *>(context->hardware), cc);
     if (applied) context->apCountryApplied = false;
     return applied;
+}
+
+unsigned int rtw89LinuxGetLocale(Rtw89LinuxContext *context)
+{
+    if (!context || !context->hardware) return 0;
+    auto *hw = static_cast<ieee80211_hw *>(context->hardware);
+    WiphyGuard guard(hw);
+    return rtw89_macos_get_locale(hw);
 }
 
 void rtw89LinuxGetCountry(Rtw89LinuxContext *context, char out[3])

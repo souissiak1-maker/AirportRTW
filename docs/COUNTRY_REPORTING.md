@@ -107,3 +107,18 @@ priority, malformed/unknown codes, programmed-domain protection and probe hints.
 RTW89 automatic AP application and native reporting were hardware verified with
 TN. RTW88 hardware has not been tested; testers should check both HAL and native
 country properties on association, switching APs, disconnect, and Wi-Fi toggle.
+
+## Regulatory Locale reporting
+
+Both HALs derive Apple's broad Locale category from the effective 2.4/5 GHz
+power-table domains. Matching FCC, ETSI/UK, MKK and KCC domains map respectively
+to FCC, ETSI, Japan and Korea. Mixed and other known domains use ROW; world or
+missing domains remain Unknown. RTW89 ignores a not-applicable 5 GHz domain when
+classifying a 2.4 GHz-only device. The 6 GHz domain is not used to label the
+legacy Locale field. This is reporting only and changes no RF configuration.
+
+All three Apple frontends query the optional shared HAL Locale getter instead
+of hardcoding FCC. Native country notifications update IO80211Locale alongside
+IO80211CountryCode from the effective HAL state. Hardware confirmation of the
+new Locale display is pending. tests/rtw_locale_test.py compiles both production
+readers with ASan/UBSan and verifies Apple's enum ABI values.

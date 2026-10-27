@@ -312,6 +312,11 @@ const char *RTWCore89::getFirmwareName()
     return sc.sc_fwname;
 }
 
+uint32_t RTWCore89::getRegulatoryLocale()
+{
+    return rtw89LinuxGetLocale(&linuxContext);
+}
+
 bool RTWCore89::setCountryCode(const char cc[2])
 {
     if (!cc) return false;

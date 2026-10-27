@@ -1,4 +1,5 @@
 #include <crypto/sha1.h>
+#include <HAL/RTWLocale.h>
 //
 //  WCL.cpp
 //  AirportRTW
@@ -139,6 +140,8 @@ IOReturn AirportRTWSkywalkInterface::wclCountryUpdateGated(
     // Reflect the already-applied HAL domain in the native interface cache.
     char effective[3] = {char(country.cc[0]), char(country.cc[1]), 0};
     update->interface->setProperty(APPLE80211_REGKEY_COUNTRY_CODE, effective);
+    const auto locale = update->interface->fHalService->getDriverInfo()->getRegulatoryLocale();
+    update->interface->setProperty(APPLE80211_REGKEY_LOCALE, rtw_locale_name(locale));
     update->interface->postMessage(APPLE80211_M_COUNTRY_CODE_CHANGED, nullptr, 0, false);
     return kIOReturnSuccess;
 }

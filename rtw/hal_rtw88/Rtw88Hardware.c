@@ -11,6 +11,24 @@ extern const struct rtw_chip_info rtw8814a_hw_spec;
 
 #include "Rtw88CountryCodes.h"
 
+#include "../../include/HAL/RTWLocale.h"
+
+unsigned int airportrtw88_get_locale(struct ieee80211_hw *hw)
+{
+    const struct rtw_dev *dev = hw ? hw->priv : NULL;
+    const struct rtw_regulatory *reg = dev ? dev->regd.regulatory : NULL;
+    if (!reg || (reg->alpha2[0] == '0' && reg->alpha2[1] == '0')) return RTW_LOCALE_UNKNOWN;
+    if (reg->txpwr_regd_2g != reg->txpwr_regd_5g) return RTW_LOCALE_ROW;
+    switch (reg->txpwr_regd_2g) {
+    case RTW_REGD_FCC: return RTW_LOCALE_FCC;
+    case RTW_REGD_ETSI: case RTW_REGD_UK: return RTW_LOCALE_ETSI;
+    case RTW_REGD_MKK: return RTW_LOCALE_JAPAN;
+    case RTW_REGD_KCC: return RTW_LOCALE_KOREA;
+    case RTW_REGD_WW: return RTW_LOCALE_UNKNOWN;
+    default: return RTW_LOCALE_ROW;
+    }
+}
+
 static bool country_known(const char cc[2])
 {
     unsigned int i;

@@ -288,6 +288,11 @@ const char *RTWCore88::getFirmwareName()
     return sc.sc_fwname;
 }
 
+uint32_t RTWCore88::getRegulatoryLocale()
+{
+    return rtw88LinuxGetLocale(&linuxContext);
+}
+
 bool RTWCore88::setCountryCode(const char cc[2])
 {
     if (!cc) return false;

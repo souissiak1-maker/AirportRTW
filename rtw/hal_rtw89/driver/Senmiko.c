@@ -684,6 +684,25 @@ bool rtw89_macos_set_country(struct ieee80211_hw *hw, const char *cc)
     return dev->regulatory.regd && !memcmp(dev->regulatory.regd->alpha2, cc, 2);
 }
 
+#include "../../../include/HAL/RTWLocale.h"
+
+unsigned int rtw89_macos_get_locale(struct ieee80211_hw *hw)
+{
+    const struct rtw89_dev *dev = hw ? hw->priv : NULL;
+    const struct rtw89_regd *reg = dev ? dev->regulatory.regd : NULL;
+    if (!reg || (reg->alpha2[0] == '0' && reg->alpha2[1] == '0')) return RTW_LOCALE_UNKNOWN;
+    if (reg->txpwr_regd[RTW89_BAND_5G] != RTW89_NA &&
+        reg->txpwr_regd[RTW89_BAND_2G] != reg->txpwr_regd[RTW89_BAND_5G]) return RTW_LOCALE_ROW;
+    switch (reg->txpwr_regd[RTW89_BAND_2G]) {
+    case RTW89_FCC: return RTW_LOCALE_FCC;
+    case RTW89_ETSI: case RTW89_UK: return RTW_LOCALE_ETSI;
+    case RTW89_MKK: return RTW_LOCALE_JAPAN;
+    case RTW89_KCC: return RTW_LOCALE_KOREA;
+    case RTW89_WW: case RTW89_NA: return RTW_LOCALE_UNKNOWN;
+    default: return RTW_LOCALE_ROW;
+    }
+}
+
 /* Report the effective driver domain, never infer it from the PCI identity. */
 bool rtw88_get_country_code(struct rtw_dev *opaque, char out[3])
 {

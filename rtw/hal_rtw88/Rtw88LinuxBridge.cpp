@@ -8,6 +8,7 @@
 #include <IOKit/IOLib.h>
 
 extern "C" {
+unsigned int airportrtw88_get_locale(struct ieee80211_hw *);
 #include "compat/rtw88_compat.h"
 #include "compat/linux/pci.h"
 #include "compat/net/mac80211.h"
@@ -837,6 +838,14 @@ bool rtw88LinuxSetCountry(Rtw88LinuxContext *context, const char cc[2])
     const bool applied = airportrtw88_apply_country(hw, cc, 2);
     if (applied) context->apCountryApplied = false;
     return applied;
+}
+
+unsigned int rtw88LinuxGetLocale(Rtw88LinuxContext *context)
+{
+    if (!context || !context->hardware) return 0;
+    auto *hw = static_cast<ieee80211_hw *>(context->hardware);
+    WiphyGuard guard(hw);
+    return airportrtw88_get_locale(hw);
 }
 
 void rtw88LinuxGetCountry(Rtw88LinuxContext *context, char out[3])

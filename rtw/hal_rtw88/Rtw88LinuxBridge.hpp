@@ -5,6 +5,7 @@
 #include <stddef.h>
 #include <stdint.h>
 bool rtw88LinuxSetCountry(struct Rtw88LinuxContext *, const char cc[2]);
+unsigned int rtw88LinuxGetLocale(struct Rtw88LinuxContext *);
 void rtw88LinuxGetCountry(struct Rtw88LinuxContext *, char out[3]);
 #include "../../include/HAL/RTWTxRate.h"
 
