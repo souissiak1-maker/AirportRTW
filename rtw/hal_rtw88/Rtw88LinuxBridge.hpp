@@ -68,6 +68,7 @@ struct Rtw88LinuxContext {
     volatile uint64_t assocTxAckCount;
     volatile uint64_t authBridgeCount;
     volatile uint64_t authBridgeBadCRCCount;
+    uint32_t authHardwareSnapshot[6];
     volatile uint64_t authRxCount;
     volatile uint64_t assocRxCount;
     volatile uint64_t actionTxCount;
