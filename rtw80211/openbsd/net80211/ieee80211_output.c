@@ -1002,6 +1002,14 @@ ieee80211_add_rsn_body(u_int8_t *frm, struct ieee80211com *ic,
 	const u_int8_t *oui = wpa ? MICROSOFT_OUI : IEEE80211_OUI;
 	u_int8_t *pcount;
     u_int16_t count, rsncaps;
+    // Preserve the pre-PMF RSN form for legacy TKIP-group APs that do not
+    // advertise PMF. Never suppress PMF required by policy or the SAE AKM.
+    const bool legacyNoPMF = !wpa &&
+        ni->ni_rsngroupcipher == IEEE80211_CIPHER_TKIP &&
+        !(ni->ni_rsncaps & IEEE80211_RSNCAP_MFPC) &&
+        !(ic->ic_flags & IEEE80211_F_MFPR) &&
+        !(ni->ni_rsnakms & IEEE80211_AKM_SAE);
+    const bool advertiseMFP = (ic->ic_caps & IEEE80211_C_MFP) && !legacyNoPMF;
 
 	/* write Version field */
     LE_WRITE_2(frm, 1); frm += 2;
@@ -1082,7 +1090,7 @@ ieee80211_add_rsn_body(u_int8_t *frm, struct ieee80211com *ic,
     /* write RSN Capabilities field */
     rsncaps = (ni->ni_rsncaps & (IEEE80211_RSNCAP_PTKSA_RCNT_MASK |
         IEEE80211_RSNCAP_GTKSA_RCNT_MASK));
-    if (ic->ic_caps & IEEE80211_C_MFP) {
+    if (advertiseMFP) {
         rsncaps |= IEEE80211_RSNCAP_MFPC;
         if (ic->ic_flags & IEEE80211_F_MFPR)
             rsncaps |= IEEE80211_RSNCAP_MFPR;
@@ -1099,7 +1107,7 @@ ieee80211_add_rsn_body(u_int8_t *frm, struct ieee80211com *ic,
         frm += IEEE80211_PMKID_LEN;
     }
 
-    if (!(ic->ic_caps & IEEE80211_C_MFP))
+    if (!advertiseMFP)
         return frm;
 
     if ((ni->ni_flags & IEEE80211_NODE_PMKID) == 0) {

@@ -32,6 +32,7 @@ jobs:
           python3 tests/rtw_identity_getter_test.py
           python3 tests/wifi_diagnostic_collector_test.py
           python3 tests/rtw_he_writer_test.py
+          python3 tests/rtw_legacy_rsn_pmf_test.py
           python3 tests/rtw89_channel_request_test.py
           python3 tests/rtw_rate_snapshot_test.py
           python3 tests/rtw89_rate_snapshot_test.py
