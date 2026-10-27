@@ -1,6 +1,6 @@
 # Legacy mixed-mode RSN / modern hotspot experiment
 
-Branch experiment/bws-rsn-pmf-compat, based on 95af8f0. BWS_RDC hardware testing passed; hotspot retest pending.
+Branch experiment/bws-rsn-pmf-compat, based on 95af8f0. BWS_RDC and WPA3 hotspot hardware tests passed on RTW89.
 The unsuccessful RF-refresh change from 18dc0fb is not included.
 
 The working 559c9e68 HAL did not advertise IEEE80211_C_MFP. Commit 35b664a
@@ -45,3 +45,16 @@ supports the RSN compatibility change for this AP, without proving the AP's
 internal reason. The AP supplied no accepted country in this run, so world
 country/Unknown Locale is expected. Internet throughput, sustained stability,
 the modern hotspot and RTW88 remain unverified for this patch.
+
+## Modern hotspot regression test: 2026-10-27
+
+The same loaded UUID EFBD3BD1-2FA2-3FE6-BE63-FD0093099E2A connected to the
+modern hotspot configured as WPA3-Personal with Wi-Fi 6 enabled. Native System
+Information reported WPA3 Personal, 802.11ax, channel 4 / 20 MHz, 286 Mbps and
+MCS 11. Diagnostics showed SAE-specific negotiated PHY=802.11ax, handshake
+stage=8/error=0, EAPOL RX and acknowledged TX, PortValid=true, and the node's
+MFP-negotiated flag set. DHCP succeeded and three assigned-gateway probes
+returned with zero loss (one reply had elevated latency). Country TN and Locale
+ETSI remained populated. These are successful connection/local-traffic tests
+for BWS_RDC and the WPA3 hotspot on one binary; sustained throughput/stability,
+hotspot WPA2 regression testing, and RTW88 hardware remain unverified.
