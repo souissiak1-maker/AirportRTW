@@ -16,7 +16,7 @@ RTW89:
 
 ## How to Use
 
-1- Copy AirportRTW.kext from the Ventura 13 build to EFI/OC/Kexts.
+1- Copy AirportRTW.kext to EFI/OC/Kexts.
 
 2- In OpenCore Kernel -> Add, load the kexts in this order: Lilu, AMFIPass, AirportRTW.
 
