@@ -28,3 +28,29 @@ Test with the same native Tahoe stack and known WPA2 AP. First confirm joining,
 DHCP and traffic. While running the collector, repeat the commands/API calls
 that report nil or not associated. Return the JSON, exact API/command used,
 loaded UUID and approximate time. Do not replace the working rollback EFI.
+
+## Local Tahoe root cause confirmed (2026-10-30)
+
+On RTL8852AE / Tahoe 25F71, networksetup GET SSID was rejected by airportd
+before reaching the driver. The debug log explicitly records:
+APP NOT AUTHORIZED FOR LOCATION SERVICES (status=0, proc=networksetup,
+req=GET SSID), followed by err=1. The tool then prints not associated.
+This proves the cause of this local networksetup failure; it does not prove
+that all other callers or the remote RTL8821CE report have the same cause.
+
+Disassembly of the local IO80211Family shows getSSID forwarding through
+IO80211Glue::sendIOUCToWcl and WCLConfigManager::getSSID, which queries Apple's
+BSS manager before falling back to the driver's interface getter. Absent
+custom getter counters are therefore not evidence of a broken getter.
+
+CoreWLAN's SDK header explicitly requires Location authorization for SSID,
+BSSID and countryCode. A normal app should request that permission; no kext
+patch should bypass it. tools/identity_check builds a small standalone app
+with a usage description and an explicit authorization button. It requests
+no coordinates, performs no scans, uploads nothing, and never changes the
+Wi-Fi connection. The user must accept the OS prompt. An authorized app
+returning nil still requires independent cache/driver investigation.
+
+The app does not grant permissions to networksetup or change that tool's
+wording. It provides an authorized way to inspect the same CoreWLAN identity.
+No new kext is necessary for the confirmed local permission failure.
