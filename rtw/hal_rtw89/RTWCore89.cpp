@@ -515,6 +515,13 @@ void RTWCore89::watchdog(struct _ifnet *ifp)
                             owner->transport ? owner->transport->getInterruptCount() : 0, 64));
     RTW_DIAGNOSTIC(controller->setProperty("RTW89StationState", owner->linuxContext.stationState, 32));
     RTW_DIAGNOSTIC(controller->setProperty("RTW89ScanChannelCount", owner->scanChannelCount, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTWAwdlValidActions", owner->awdlObserver.valid, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTWAwdlMalformedActions", owner->awdlObserver.malformed, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTWAwdlSyncEnvelopes", owner->awdlObserver.syncEnvelopes, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTWAwdlChannelEnvelopes", owner->awdlObserver.channelEnvelopes, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTWAwdlLastFrequency", owner->awdlObserver.lastFrequency, 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTWAwdlLastVersion", owner->awdlObserver.lastVersion, 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTWAwdlLastSubtype", owner->awdlObserver.lastSubtype, 32));
     RTW_DIAGNOSTIC(controller->setProperty("RTW89RawReceiveCount", owner->rawReceiveCount, 64));
     RTW_DIAGNOSTIC(controller->setProperty("RTW89AcceptedReceiveCount", owner->acceptedReceiveCount, 64));
     RTW_DIAGNOSTIC(controller->setProperty("RTW89BeaconProbeCount", owner->beaconProbeCount, 64));
@@ -922,6 +929,7 @@ void RTWCore89::receive(void *opaque, const uint8_t *frame, size_t length,
     if (!owner || !frame || length < sizeof(struct ieee80211_frame))
         return;
     __sync_fetch_and_add(&owner->rawReceiveCount, 1);
+    RTW_DIAGNOSTIC(owner->awdlObserver.observe(frame, length, frequency));
     struct ieee80211com *ic = &owner->sc.sc_ic;
     auto *wh = reinterpret_cast<const struct ieee80211_frame *>(frame);
     const uint8_t frameType = wh->i_fc[0] & IEEE80211_FC0_TYPE_MASK;

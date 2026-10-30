@@ -32,6 +32,11 @@ def filter_registry(tree):
                              'RTWIdentityNameResult', 'RTWIdentityPeerResult',
                              'RTWIdentityNameLength'} and isinstance(item, (int, bool)):
                     fields[key] = item
+                elif key in {'RTWAwdlValidActions', 'RTWAwdlMalformedActions',
+                             'RTWAwdlSyncEnvelopes', 'RTWAwdlChannelEnvelopes',
+                             'RTWAwdlLastFrequency', 'RTWAwdlLastVersion',
+                             'RTWAwdlLastSubtype'} and isinstance(item, (int, bool)):
+                    fields[key] = item
                 elif key in COUNTRY_KEYS and isinstance(item, str):
                     fields[key] = item
                 elif key in IDENTITY_KEYS and isinstance(item, (str, bytes)):

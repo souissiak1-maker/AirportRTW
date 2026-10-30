@@ -52,3 +52,41 @@ Measure and expose radio capabilities before introducing an active scheduler.
 RTL8814Native documents are a useful checklist, but its stage-1 scaffolding does
 not fill the missing protocol/data path. PMF audit work is isolated separately
 on experiment/rtw88-pmf-audit; neither project depends on enabling flags early.
+
+## Stage 1 implemented: passive shared action-envelope parser
+
+include/AWDL/RTWAwdlFrame.hpp now validates complete unencrypted, unfragmented
+802.11 vendor action frames with Apple OUI 00:17:f2, AWDL type 8 and nonzero
+version. It walks the 16-byte body header followed by u8/LE16 TLVs with bounded
+lengths and no allocation. Unknown/repeated/zero-length TLVs are accepted;
+malformed/truncated TLV envelopes are rejected. Contents are not yet decoded
+into synchronization, channel scheduling, election or trusted peer state.
+
+The two HAL receive callbacks invoke the same passive observer only in Debug
+builds. It adds no TX, off-channel operation, filter change, event-source lock,
+virtual interface or packet consumption. Frames retain their existing receive
+path. The observer stores no addresses or payloads. Watchdog publication uses
+existing controller properties; the sanitized collector explicitly whitelists:
+RTWAwdlValidActions, MalformedActions, SyncEnvelopes, ChannelEnvelopes,
+LastFrequency, LastVersion and LastSubtype (all prefixed RTWAwdl).
+
+Counters indicate framing only. SyncEnvelopes/ChannelEnvelopes mean a TLV type
+was present, not that its body or schedule was semantically valid. Last fields
+are best-effort metadata, not a synchronized packet trace. Existing hardware
+filters may discard AWDL frames; zero counters do not prove no nearby peer or
+lack of hardware support. No monitor/promiscuous mode is enabled for the test.
+
+Host tests cover prefix truncation, invalid envelope/version, oversized TLVs,
+unknown/duplicate/zero-length TLVs, protected/fragmented exclusions, observer
+counts and 20,000 deterministic randomized buffers under ASAN/UBSAN. Synthetic
+framing tests are not Apple-device interoperability or air-capture validation.
+
+References used for format research (no OWL code copied):
+- https://github.com/seemoo-lab/owl (GPL-3.0 user-space reference; Linux daemon
+  interfaces are not imported into this GPL-2.0/BSD kernel module).
+- Local RTL8814Native/Docs/AWDL_FRAME_WIRE_FORMAT.md and stage-1 interface notes.
+
+Next gates remain: independent on-air capture validation, per-HAL radio
+capability measurement, timing/election/channel handling, native role-6 queue
+integration, and bidirectional Apple-device traffic. Stage 1 does not enable
+AirDrop, create awdl0, or justify advertising AWDL support.

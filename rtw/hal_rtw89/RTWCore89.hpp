@@ -3,6 +3,7 @@
 #define RTWCore89_hpp
 
 #include <compat.h>
+#include <AWDL/RTWAwdlObserver.hpp>
 #include <IOKit/network/IOEthernetInterface.h>
 #include <IOKit/pci/IOPCIDevice.h>
 #include <IOKit/IOTimerEventSource.h>
@@ -84,6 +85,7 @@ private:
     IOTimerEventSource *associationRecoveryTimer {nullptr};
     Rtw89LinuxContext linuxContext {};
     volatile UInt64 scanChannelCount {0};
+    RTWAwdl::Observer awdlObserver;
     volatile UInt64 rawReceiveCount {0};
     volatile UInt64 acceptedReceiveCount {0};
     volatile UInt64 beaconProbeCount {0};
