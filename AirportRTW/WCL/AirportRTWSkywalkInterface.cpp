@@ -309,6 +309,11 @@ IOReturn AirportRTWSkywalkInterface::
 getSSID(struct apple80211_ssid_data *sd)
 {
     if (!sd) return kIOReturnBadArgument;
+    memset(sd, 0, sizeof(*sd));
+    sd->version = APPLE80211_VERSION;
+    RTW_DIAGNOSTIC(instance->setProperty("RTWIdentityNameCalls",
+        __sync_add_and_fetch(&wclIdentityNameRequests, 1), 64));
+    RTW_DIAGNOSTIC(instance->setProperty("RTWIdentityNameResult", 6, 32));
     struct ieee80211com * ic = fHalService->get80211Controller();
     if (ic && ic->ic_bss && ic->ic_state == IEEE80211_S_RUN) {
         memset(sd, 0, sizeof(*sd));
@@ -320,6 +325,8 @@ getSSID(struct apple80211_ssid_data *sd)
         memcpy(sd->ssid_bytes, ic->ic_des_essid, strlen((const char*)ic->ic_des_essid));
         sd->ssid_len = (uint32_t)strlen((const char*)ic->ic_des_essid);
 #endif
+        RTW_DIAGNOSTIC(instance->setProperty("RTWIdentityNameResult", uint64_t(0), 32));
+        RTW_DIAGNOSTIC(instance->setProperty("RTWIdentityNameLength", sd->ssid_len, 32));
         return kIOReturnSuccess;
     }
     return 6;
@@ -648,11 +655,17 @@ IOReturn AirportRTWSkywalkInterface::
 getBSSID(struct apple80211_bssid_data *bd)
 {
     if (!bd) return kIOReturnBadArgument;
+    memset(bd, 0, sizeof(*bd));
+    bd->version = APPLE80211_VERSION;
+    RTW_DIAGNOSTIC(instance->setProperty("RTWIdentityPeerCalls",
+        __sync_add_and_fetch(&wclIdentityPeerRequests, 1), 64));
+    RTW_DIAGNOSTIC(instance->setProperty("RTWIdentityPeerResult", 6, 32));
     struct ieee80211com *ic = fHalService->get80211Controller();
     if (ic && ic->ic_bss && ic->ic_state == IEEE80211_S_RUN) {
         memset(bd, 0, sizeof(*bd));
         bd->version = APPLE80211_VERSION;
         memcpy(bd->bssid.octet, ic->ic_bss->ni_bssid, APPLE80211_ADDR_LEN);
+        RTW_DIAGNOSTIC(instance->setProperty("RTWIdentityPeerResult", uint64_t(0), 32));
         return kIOReturnSuccess;
     }
     return 6;

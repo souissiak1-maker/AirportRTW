@@ -449,6 +449,8 @@ private:
     void publishWCLBeacon(const ieee80211_node *, const uint8_t *, size_t);
     IOTimerEventSource *joinTimer;
     uint8_t joinBSSID[6];
+    uint64_t wclIdentityNameRequests = 0;
+    uint64_t wclIdentityPeerRequests = 0;
     uint64_t wclScanRequestCount = 0;
     uint64_t wclBeaconEventCount = 0;
     uint64_t wclScanPublishCount = 0;
