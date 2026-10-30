@@ -6,9 +6,18 @@ namespace RTWAwdl {
 // Passive Debug-only observer. Never consumes frames or changes radio state.
 // No peer addresses, payloads or key material are retained.
 struct Observer {
+    volatile uint64_t actionFrames {0}, vendorActions {0}, appleVendorActions {0};
     volatile uint64_t valid {0}, malformed {0}, syncEnvelopes {0}, channelEnvelopes {0};
     volatile uint32_t lastFrequency {0}, lastVersion {0}, lastSubtype {0};
     void observe(const uint8_t *frame, size_t length, uint16_t frequency) {
+        if (frame && length >= 24 && frame[0] == 0xd0) {
+            __sync_fetch_and_add(&actionFrames, 1);
+            if (!(frame[1] & 0x40) && length >= 25 && frame[24] == 127) {
+                __sync_fetch_and_add(&vendorActions, 1);
+                if (length >= 28 && frame[25] == 0 && frame[26] == 0x17 && frame[27] == 0xf2)
+                    __sync_fetch_and_add(&appleVendorActions, 1);
+            }
+        }
         ActionInfo info;
         const auto result = parseFrame(frame, length, info);
         if (result == ParseResult::Malformed) {

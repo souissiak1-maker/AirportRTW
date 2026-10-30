@@ -32,7 +32,7 @@ def filter_registry(tree):
                              'RTWIdentityNameResult', 'RTWIdentityPeerResult',
                              'RTWIdentityNameLength'} and isinstance(item, (int, bool)):
                     fields[key] = item
-                elif key in {'RTWAwdlValidActions', 'RTWAwdlMalformedActions',
+                elif key in {'RTWAwdlActionFrames', 'RTWAwdlVendorActions', 'RTWAwdlAppleVendorActions', 'RTWAwdlFilterRequested', 'RTWAwdlFilterAccepted', 'RTWAwdlValidActions', 'RTWAwdlMalformedActions',
                              'RTWAwdlSyncEnvelopes', 'RTWAwdlChannelEnvelopes',
                              'RTWAwdlLastFrequency', 'RTWAwdlLastVersion',
                              'RTWAwdlLastSubtype'} and isinstance(item, (int, bool)):

@@ -246,6 +246,11 @@ IOReturn RTWCore89::enable(IONetworkInterface *interface)
         RTW_LOG("AirportRTW-RTW89: Wi-Fi enable failed during power-up\n");
         return kIOReturnIOError;
     }
+#if RTW_DIAGNOSTICS
+    const auto *discovery = OSDynamicCast(OSBoolean,
+        getController()->getProperty("RTWAwdlDiscovery"));
+    rtw89LinuxSetAwdlDiscovery(&linuxContext, discovery && discovery->isTrue());
+#endif
     sc.sc_flags |= RTW89_FLAG_ENABLED | RTW89_FLAG_FW_RUNNING |
                    RTW89_FLAG_INTERFACE;
     sc.sc_ic.ic_if.if_flags |= IFF_UP | IFF_RUNNING;
@@ -515,6 +520,11 @@ void RTWCore89::watchdog(struct _ifnet *ifp)
                             owner->transport ? owner->transport->getInterruptCount() : 0, 64));
     RTW_DIAGNOSTIC(controller->setProperty("RTW89StationState", owner->linuxContext.stationState, 32));
     RTW_DIAGNOSTIC(controller->setProperty("RTW89ScanChannelCount", owner->scanChannelCount, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTWAwdlFilterRequested", owner->linuxContext.awdlDiscovery));
+    RTW_DIAGNOSTIC(controller->setProperty("RTWAwdlFilterAccepted", owner->linuxContext.awdlDiscoveryApplied));
+    RTW_DIAGNOSTIC(controller->setProperty("RTWAwdlActionFrames", owner->awdlObserver.actionFrames, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTWAwdlVendorActions", owner->awdlObserver.vendorActions, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTWAwdlAppleVendorActions", owner->awdlObserver.appleVendorActions, 64));
     RTW_DIAGNOSTIC(controller->setProperty("RTWAwdlValidActions", owner->awdlObserver.valid, 64));
     RTW_DIAGNOSTIC(controller->setProperty("RTWAwdlMalformedActions", owner->awdlObserver.malformed, 64));
     RTW_DIAGNOSTIC(controller->setProperty("RTWAwdlSyncEnvelopes", owner->awdlObserver.syncEnvelopes, 64));

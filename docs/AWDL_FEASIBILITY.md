@@ -90,3 +90,40 @@ Next gates remain: independent on-air capture validation, per-HAL radio
 capability measurement, timing/election/channel handling, native role-6 queue
 integration, and bidirectional Apple-device traffic. Stage 1 does not enable
 AirDrop, create awdl0, or justify advertising AWDL support.
+
+## Stage 1 receive-filter experiment
+
+The initial passive test returned zero AWDL counters on the local RTW89 system.
+That alone is not a parser bug or proof that the AP radio channel carries AWDL.
+The driver configure_filter callbacks reveal other-BSS/address and multicast
+filtering separate from the observer. A new Debug-only opt-in property,
+RTWAwdlDiscovery (boolean on the AirportRTW controller personality), requests
+FIF_OTHER_BSS, FIF_BCN_PRBRESP_PROMISC and FIF_ALLMULTI via normal HAL callbacks.
+It does not request bad-CRC reception or alter TX/channel/regulatory settings.
+The source default is off; the dedicated test package enables the property on
+NetworkController. It is ignored by Release builds.
+
+A shared policy combines discovery, scanning and ordinary multicast settings.
+Both bridges retain discovery after scan completion and multicast updates;
+when disabled they restore the current ordinary multicast/scan policy.
+Existing wiphy-lock ownership is preserved without nested acquisition. The
+power-down path marks the applied state false; enable reapplies the opt-in.
+
+RTWAwdlFilterRequested and RTWAwdlFilterAccepted report requested policy and
+flags accepted by the callback, not a hardware register read-back. New counters
+ActionFrames, VendorActions and AppleVendorActions show earlier classification
+boundaries without retaining addresses or payload. All have RTWAwdl prefix.
+Existing receive validation remains in place. Broader reception can increase
+interrupt/CPU load and must be tested for normal AP traffic and sleep behavior.
+
+The host test executes both production helper functions with simulated driver
+callbacks to verify filter transitions, multicast coexistence, rejected flags,
+power-off/missing-ops guards and single wiphy-lock ownership. It does not prove
+hardware filtering, timing, power transitions or AWDL interoperability.
+
+Capture with a nearby Apple device actively showing AirDrop. Same-channel RX
+is a prerequisite; common discovery channels include 6/44/149 (reference:
+RTL8814Native/Docs/AWDL_ETAPAS_2_A_4.md), but no automatic hop/scheduler is added.
+If counters stay zero, first check channel and boundary counters; do not infer
+that enabling a support flag or creating awdl0 would solve it. Full AWDL/AirDrop
+remains unavailable.

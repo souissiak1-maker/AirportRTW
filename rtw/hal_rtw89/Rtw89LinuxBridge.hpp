@@ -6,6 +6,7 @@
 #include <stdint.h>
 bool rtw89LinuxSetCountry(struct Rtw89LinuxContext *, const char cc[2]);
 unsigned int rtw89LinuxGetLocale(struct Rtw89LinuxContext *);
+void rtw89LinuxSetAwdlDiscovery(struct Rtw89LinuxContext *, bool);
 void rtw89LinuxGetCountry(struct Rtw89LinuxContext *, char out[3]);
 #include "../../include/HAL/RTWTxRate.h"
 
@@ -58,6 +59,8 @@ struct Rtw89LinuxContext {
     bool started;
     bool interfaceAdded;
     bool allMulticast;
+    bool awdlDiscovery;
+    bool awdlDiscoveryApplied;
     bool scanning;
     uint16_t txAmpduMask;
     volatile uint64_t ampduTxStartCount;

@@ -6,6 +6,7 @@
 #include "Rtw88LinkPolicy.hpp"
 
 #include <IOKit/IOLib.h>
+#include <AWDL/RTWAwdlRxPolicy.hpp>
 
 extern "C" {
 unsigned int airportrtw88_get_locale(struct ieee80211_hw *);
@@ -484,6 +485,7 @@ void rtw88LinuxPowerDown(Rtw88LinuxContext *context)
         hw->ops->stop(hw, false);
         context->started = false;
     }
+    context->awdlDiscoveryApplied = false;
 }
 
 bool rtw88LinuxTransmit(Rtw88LinuxContext *context, const uint8_t *frame,
@@ -736,17 +738,35 @@ void rtw88LinuxUpdateSlot(Rtw88LinuxContext *context, bool shortSlot)
                                   BSS_CHANGED_ERP_SLOT);
 }
 
+static void applyReceiveFilter(Rtw88LinuxContext *context, bool scanning)
+{
+    auto *hw = static_cast<struct ieee80211_hw *>(context->hardware);
+    context->awdlDiscoveryApplied = false;
+    if (!context->started || !context->interfaceAdded || !hw ||
+        !hw->ops || !hw->ops->configure_filter)
+        return;
+    const unsigned mask = FIF_ALLMULTI | FIF_OTHER_BSS | FIF_BCN_PRBRESP_PROMISC;
+    unsigned flags = RTWAwdl::receiveFlags(scanning, context->awdlDiscovery,
+        context->allMulticast, FIF_OTHER_BSS, FIF_BCN_PRBRESP_PROMISC, FIF_ALLMULTI);
+    WiphyGuard guard(hw);
+    hw->ops->configure_filter(hw, mask, &flags, 0);
+    const unsigned discoveryMask = FIF_ALLMULTI | FIF_OTHER_BSS | FIF_BCN_PRBRESP_PROMISC;
+    context->awdlDiscoveryApplied = context->awdlDiscovery &&
+        (flags & discoveryMask) == discoveryMask;
+}
+
+void rtw88LinuxSetAwdlDiscovery(Rtw88LinuxContext *context, bool enabled)
+{
+    if (!context) return;
+    context->awdlDiscovery = enabled;
+    applyReceiveFilter(context, context->scanning);
+}
+
 void rtw88LinuxSetAllMulticast(Rtw88LinuxContext *context, bool enabled)
 {
-    if (!context)
-        return;
+    if (!context) return;
     context->allMulticast = enabled;
-    auto *hw = static_cast<struct ieee80211_hw *>(context->hardware);
-    if (!hw || !hw->ops || !hw->ops->configure_filter)
-        return;
-    unsigned int flags = enabled ? FIF_ALLMULTI : 0;
-    WiphyGuard guard(hw);
-    hw->ops->configure_filter(hw, FIF_ALLMULTI, &flags, 0);
+    applyReceiveFilter(context, context->scanning);
 }
 
 bool rtw88LinuxSetChannel(Rtw88LinuxContext *context, uint16_t channel)
@@ -797,16 +817,13 @@ void rtw88LinuxScanBegin(Rtw88LinuxContext *context)
     auto *vif = static_cast<struct ieee80211_vif *>(context->vif);
     if (!hw || !vif)
         return;
-    WiphyGuard guard(hw);
-    if (hw->ops && hw->ops->configure_filter) {
-        unsigned int flags = FIF_OTHER_BSS | FIF_BCN_PRBRESP_PROMISC |
-                             (context->allMulticast ? FIF_ALLMULTI : 0);
-        hw->ops->configure_filter(hw,
-                                  FIF_OTHER_BSS | FIF_BCN_PRBRESP_PROMISC,
-                                  &flags, 0);
+    applyReceiveFilter(context, true);
+    {
+        WiphyGuard guard(hw);
+
+        rtw88_sw_scan_start(hw, vif);
+        context->scanning = true;
     }
-    rtw88_sw_scan_start(hw, vif);
-    context->scanning = true;
 }
 
 void rtw88LinuxScanEnd(Rtw88LinuxContext *context)
@@ -817,15 +834,13 @@ void rtw88LinuxScanEnd(Rtw88LinuxContext *context)
     auto *vif = static_cast<struct ieee80211_vif *>(context->vif);
     if (!hw || !vif || !context->scanning)
         return;
-    WiphyGuard guard(hw);
-    rtw88_sw_scan_complete(hw, vif);
-    if (hw->ops && hw->ops->configure_filter) {
-        unsigned int flags = context->allMulticast ? FIF_ALLMULTI : 0;
-        hw->ops->configure_filter(hw,
-                                  FIF_OTHER_BSS | FIF_BCN_PRBRESP_PROMISC,
-                                  &flags, 0);
+    {
+        WiphyGuard guard(hw);
+        rtw88_sw_scan_complete(hw, vif);
+
+        context->scanning = false;
     }
-    context->scanning = false;
+    applyReceiveFilter(context, false);
 }
 
 bool rtw88LinuxIsScanning(Rtw88LinuxContext *context)

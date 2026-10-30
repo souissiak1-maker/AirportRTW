@@ -26,7 +26,7 @@ int main() {
     }
     b[17] = 255; b[18] = 255;
     assert(parseFrame(frame, 48, out) == ParseResult::Malformed && out.tlvCount == 0);
-    observer.observe(frame, 48, 2437); assert(observer.malformed == 1 && observer.valid == 1);
+    observer.observe(frame, 48, 2437); assert(observer.malformed == 1 && observer.valid == 1 && observer.actionFrames == 2 && observer.vendorActions == 2 && observer.appleVendorActions == 2);
     b[17] = 2; b[18] = 0;
     // Unknown and repeated TLVs are safely skipped, including zero-length TLVs.
     b[21] = 255; assert(parseFrame(frame, 48, out) == ParseResult::Valid && out.tlvCount == 2);
