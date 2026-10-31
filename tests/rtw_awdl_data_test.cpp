@@ -65,6 +65,42 @@ int main() {
         wrapped[0]=0x08;
         assert(!DataCodec::decode(wrapped,n+8,decoded,sizeof(decoded),m,seq));
     }
+    // Mixed plain/wrapped aggregate. Reject malformed tails before exposing
+    // any prefix, including a source-spoofed second MSDU.
+    eth[18]=eth[19]=0;
+    assert(DataCodec::encode(eth,54,wire,sizeof(wire),1,42,n));
+    uint8_t aggregate[256]{};
+    memcpy(aggregate,wire,26); aggregate[24]=0x80;
+    size_t end=26;
+    for (unsigned sub=0;sub<2;++sub) {
+        memcpy(aggregate+end,eth,12);
+        size_t body=56+(sub ? 8:0);
+        aggregate[end+12]=uint8_t(body>>8); aggregate[end+13]=uint8_t(body);
+        size_t at=end+14;
+        if(sub) {
+            const uint8_t prefix[8]={0xaa,0xaa,3,0,0,0,0,56};
+            memcpy(aggregate+at,prefix,8); at+=8;
+        }
+        memcpy(aggregate+at,wire+26,56);
+        end+=14+body;
+        if(!sub) end+=(4-((14+body)&3))&3;
+    }
+    DataCodec::View views[2]{}; size_t count=99;
+    assert(DataCodec::inspectAggregate(aggregate,end,views,2,count) && count==2);
+    assert(views[0].sequence==42 && views[1].sequence==42);
+    assert(views[0].payloadLength==40 && views[1].payloadLength==40);
+    assert(!DataCodec::inspectAggregate(aggregate,end,views,1,count) && count==0);
+    views[0]={};
+    aggregate[end-1]^=1; // IPv6 payload length mismatch needs a header edit.
+    aggregate[end-40+5]=1;
+    assert(!DataCodec::inspectAggregate(aggregate,end,views,2,count) && count==0);
+    assert(views[0].payload==nullptr);
+    aggregate[end-40+5]=0; aggregate[end-1]^=1;
+    const size_t second=26+72;
+    aggregate[second+6]^=2;
+    assert(!DataCodec::inspectAggregate(aggregate,end,views,2,count) && count==0);
+    aggregate[second+6]^=2;
+    assert(!DataCodec::inspectAggregate(aggregate,end+1,views,2,count) && count==0);
     // Deterministic malformed input stress under address/undefined sanitizers.
     uint32_t r=0x7823;
     for (unsigned iteration=0;iteration<20000;++iteration) {

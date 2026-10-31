@@ -34,8 +34,12 @@ registration and native datapath tests also pass.
 
 ## Remaining integration
 
-A-MSDU parsing still needs a bounded, whole-aggregate validation pass before any
-subframe delivery. The current decoder deliberately rejects aggregates.
+The shared codec now provides a separate two-pass A-MSDU inspection API:
+all subframes, source addresses, declared lengths, envelopes and IPv6 bodies
+must validate before any views are exposed. Single-frame inspection continues
+to reject aggregates. Radio delivery and peer duplicate-window integration of
+this API remain pending. Tests cover mixed wrapped/plain subframes, capacity,
+malformed tails, source spoofing and trailing padding without a next subframe.
 Native control-provider binding, hardware-confirmed channel scheduling, peer
 admission/teardown, clock integration and end-to-end hardware verification are
 still incomplete. MediaTek firmware ROC commands cannot be used on Realtek.
