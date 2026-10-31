@@ -1211,6 +1211,8 @@
 		83A2AC34A4C79456EF00A9C8 = {isa = PBXBuildFile; fileRef = 4EC218A429C0D44F88933AAA; };
 		55CE93417624514489E53E5C = {isa = PBXBuildFile; fileRef = 4EC218A429C0D44F88933AAA; };
 		71364CC896DF7F6554F1C119 = {isa = PBXBuildFile; fileRef = 4EC218A429C0D44F88933AAA; };
+		FF4DD01C60B0B5021D351646 /* AirportRTWAwdlDatapath.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 1B3318FB182330B71FDE681F; };
+		C099FADF2F390AD3758AA39E /* AirportRTWAwdlActionInput.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A8C8175392980D8E90CA5604; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -1548,6 +1550,8 @@
 		F4EECB33D3633F2837E58459 = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = "rtw/RTWCore.cpp"; sourceTree = SOURCE_ROOT; };
 		4EC218A429C0D44F88933AAA = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = "rtw80211/openbsd/net80211/ieee80211_sae.c"; sourceTree = SOURCE_ROOT; };
 		B62DC19B24447AD44E3C60BF = {isa = PBXFileReference; lastKnownFileType = text; path = "rtw80211/sae/NOTICE.txt"; sourceTree = SOURCE_ROOT; };
+		1B3318FB182330B71FDE681F /* AirportRTWAwdlDatapath.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = AirportRTW/WCL/AirportRTWAwdlDatapath.cpp; sourceTree = SOURCE_ROOT; };
+		A8C8175392980D8E90CA5604 /* AirportRTWAwdlActionInput.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = AirportRTW/WCL/AirportRTWAwdlActionInput.cpp; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -1629,6 +1633,8 @@
 		024A07A223FCBC3C009FBA6C = {
 			isa = PBXGroup;
 			children = (
+				A8C8175392980D8E90CA5604 /* AirportRTWAwdlActionInput.cpp */,
+				1B3318FB182330B71FDE681F /* AirportRTWAwdlDatapath.cpp */,
 				4EC218A429C0D44F88933AAA,
 				B62DC19B24447AD44E3C60BF,
 				F4EECB33D3633F2837E58459,
@@ -3698,6 +3704,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C099FADF2F390AD3758AA39E /* AirportRTWAwdlActionInput.cpp in Sources */,
+				FF4DD01C60B0B5021D351646 /* AirportRTWAwdlDatapath.cpp in Sources */,
 				71364CC896DF7F6554F1C119,
 				31CCB9C53494AF82C3A99AA0,
 				68A78AA0A52D7B7856066ABC,

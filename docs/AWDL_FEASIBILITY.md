@@ -305,3 +305,54 @@ thread_call_cancel_wait shim uses a fixed delay; timer cancellation/barrier and
 wiphy-work serialization require separate work before enabling the AWDL ROC
 scheduler. This milestone must not be described as making all timer teardown
 safe or providing functional AWDL.
+
+## Native packet resources and action ingress
+
+The Tahoe target now compiles AirportRTWAwdlDatapath.cpp. This resource layer
+creates real native TX submission/completion and RX completion queues with one
+pool per direction, disabled until its owner enables them. The concrete role-6
+interface still must register the queues and attach the radio runtime. No current
+controller path constructs the resource layer or advertises AWDL support.
+
+TX borrows native packet bytes only for the synchronous sender callback. The
+sender must copy before reporting acceptance; busy leaves the unconsumed suffix
+owned by the native submission queue. Invalid/unsupported Ethernet frames are
+consumed as drops, so an IPv4/malformed head cannot indefinitely block IPv6.
+Completions are batched below queue capacity, and failed completion hands packets
+back to the correct pool exactly once. Native view bounds include buffer count,
+offset, length and address-addition overflow.
+
+RX copies validated IPv6 Ethernet frames into a 64-slot staging ring under an
+interrupt-safe lock and signals a software interrupt source. Family pool/queue
+operations happen on the native workqueue, outside radio locks. Allocation,
+preparation and enqueue failures release the packet through its own pool. Radio
+TX-ready notification also signals the workqueue rather than entering its gate.
+The parent must keep the sender alive and quiesce its callbacks before final
+release; the sender cannot reentrantly tear down the native datapath. Stop is
+idempotent. Factory failures explicitly stop partial resources before release to
+break potential queue/pool owner-reference cycles.
+
+Host tests execute the actual transport source with family/IOKit adapters and
+ASAN/UBSAN: every allocation and addEventSource failure, owner-retaining pool
+cycles, staged RX, overflow, allocation/prepare/length/enqueue failure, TX busy,
+invalid TX, completion failure and repeated teardown. These adapters are not
+hardware or real-family lifetime tests. The combined-HAL Tahoe build passes;
+all 17 imported packet APIs were found in the installed IOSkywalkFamily.
+Local enqueuePackets disassembly confirms TX completes packets directly and RX
+routes them to networking; the idle completion actions take no packet ownership.
+
+AirportRTWAwdlActionInput.cpp implements native action-buffer ownership transfer.
+It rejects malformed/protected/fragmented actions, mismatched source metadata and
+any metadata size other than 72, before allocating. It uses the family's concrete
+IO80211MallocBuffer factory (48-byte options, capacity first), copies the action
+body and hands it to VirtualInterface::bpfTapInput as DLT 12. The native family
+owns the buffer after handoff, including rejection paths. The metadata clock
+must already be calibrated by the future radio/native event adapter; this helper
+does not invent timestamps or report peer acceptance. Host tests cover header
+bounds, malformed input, allocation failure and asynchronous ownership. Buffer
+factory, options and returnBuffer semantics were checked in the local family's
+MallocBuffer/Pool disassembly. No vtable indices or fabricated IO80211Buffer
+objects are used by this helper.
+
+Both components are inactive until role-6 lifecycle and radio integration are
+implemented. Their presence in the binary is not working AWDL/AirDrop.

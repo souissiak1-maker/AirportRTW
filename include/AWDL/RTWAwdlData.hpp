@@ -13,14 +13,16 @@ class DataCodec {
 public:
     static constexpr size_t mtu = 1428;
     static constexpr size_t maximumFrame = 26 + 16 + mtu;
+    static bool validEthernet(const uint8_t *ethernet, size_t length) {
+        return ethernet && length >= 14 && length <= 14 + mtu &&
+            ethernet[12] == 0x86 && ethernet[13] == 0xdd &&
+            validSource(ethernet + 6) && ipv6(ethernet + 14, length - 14);
+    }
     static bool encode(const uint8_t *ethernet, size_t length, uint8_t *out,
                        size_t capacity, uint16_t sequence, uint16_t dataSequence,
                        size_t &written) {
         written = 0;
-        if (!ethernet || !out || length < 14 || length > 14 + mtu ||
-            ethernet[12] != 0x86 || ethernet[13] != 0xdd ||
-            !validSource(ethernet + 6) || !ipv6(ethernet + 14, length - 14) ||
-            capacity < length + 28) return false;
+        if (!out || !validEthernet(ethernet, length) || capacity < length + 28) return false;
         for (size_t i = 0; i < 42; ++i) out[i] = 0;
         out[0] = 0x88; // QoS data, neither ToDS nor FromDS.
         for (size_t i = 0; i < 6; ++i) {
