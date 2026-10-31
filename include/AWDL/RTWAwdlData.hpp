@@ -13,6 +13,7 @@ class DataCodec {
 public:
     static constexpr size_t mtu = 1428;
     static constexpr size_t maximumFrame = 26 + 16 + mtu;
+    static constexpr size_t maximumReceiveFrame = maximumFrame + 8;
     static bool validEthernet(const uint8_t *ethernet, size_t length) {
         return ethernet && length >= 14 && length <= 14 + mtu &&
             ethernet[12] == 0x86 && ethernet[13] == 0xdd &&
@@ -61,10 +62,24 @@ public:
         const size_t header = frame[0] == 0x88 ? 26 : 24;
         if (length < header + 16 || (header == 26 && (frame[24] & 0x80))) return false;
         const uint8_t *body = frame + header;
+        size_t bodyLength = length - header;
+        // Newer iOS QoS MSDUs may carry an RFC1042 length envelope before
+        // the Apple SNAP. Accept only an exact bounded envelope, never search
+        // for an inner signature. Non-QoS and A-MSDU remain unsupported here.
+        const uint8_t envelope[6] {0xaa,0xaa,3,0,0,0};
+        bool wrapped = header == 26 && bodyLength >= 8;
+        for (size_t i = 0; wrapped && i < 6; ++i)
+            wrapped = body[i] == envelope[i];
+        if (wrapped) {
+            if (size_t((uint16_t(body[6]) << 8) | body[7]) != bodyLength - 8)
+                return false;
+            body += 8; bodyLength -= 8;
+        }
+        if (bodyLength < 16) return false;
         const uint8_t fixed[10] {0xaa,0xaa,3,0,0x17,0xf2,8,0,3,4};
         for (size_t i = 0; i < 10; ++i) if (body[i] != fixed[i]) return false;
         if (body[12] || body[13] || body[14] != 0x86 || body[15] != 0xdd) return false;
-        const size_t payload = length - header - 16;
+        const size_t payload = bodyLength - 16;
         if (payload > mtu || !ipv6(body + 16, payload)) return false;
         out.destination = frame + 4; out.source = frame + 10;
         out.payload = body + 16; out.payloadLength = payload;

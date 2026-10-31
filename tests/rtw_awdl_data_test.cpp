@@ -40,9 +40,31 @@ int main() {
     eth[18]=uint8_t(ipPayload>>8); eth[19]=uint8_t(ipPayload);
     for(size_t i=54;i<sizeof(eth);++i) eth[i]=uint8_t(i);
     assert(DataCodec::encode(eth,sizeof(eth),wire,sizeof(wire),1,0xffff,n));
-    assert(n==sizeof(wire));
+    assert(n==DataCodec::maximumFrame);
     assert(DataCodec::decode(wire,n,decoded,sizeof(decoded),m,seq) && seq==0xffff);
     assert(m==sizeof(eth) && memcmp(decoded,eth,m)==0);
+    // Exact RFC1042 envelopes at every supported IPv6 length. The format
+    // observation comes from MtkWireless's iOS 27 capture; no parser imported.
+    uint8_t wrapped[DataCodec::maximumReceiveFrame] {};
+    for (size_t ipLength=40; ipLength<=DataCodec::mtu; ++ipLength) {
+        eth[18]=uint8_t((ipLength-40)>>8); eth[19]=uint8_t(ipLength-40);
+        assert(DataCodec::encode(eth,14+ipLength,wire,sizeof(wire),1,77,n));
+        memcpy(wrapped,wire,26);
+        const uint8_t envelope[6]={0xaa,0xaa,3,0,0,0};
+        memcpy(wrapped+26,envelope,6);
+        wrapped[32]=uint8_t((n-26)>>8); wrapped[33]=uint8_t(n-26);
+        memcpy(wrapped+34,wire+26,n-26);
+        assert(DataCodec::decode(wrapped,n+8,decoded,sizeof(decoded),m,seq));
+        assert(m==14+ipLength && seq==77 && !memcmp(decoded,eth,m));
+        wrapped[33]^=1;
+        assert(!DataCodec::decode(wrapped,n+8,decoded,sizeof(decoded),m,seq));
+        wrapped[33]^=1;
+        for (size_t cut=26;cut<42;++cut)
+            assert(!DataCodec::decode(wrapped,cut,decoded,sizeof(decoded),m,seq));
+        // Envelope is restricted to QoS; do not discover signatures by scanning.
+        wrapped[0]=0x08;
+        assert(!DataCodec::decode(wrapped,n+8,decoded,sizeof(decoded),m,seq));
+    }
     // Deterministic malformed input stress under address/undefined sanitizers.
     uint32_t r=0x7823;
     for (unsigned iteration=0;iteration<20000;++iteration) {
