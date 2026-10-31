@@ -10,6 +10,9 @@
 #define AirportRTWV2_hpp
 
 #include "Apple80211.h"
+#if defined(AIRPORT_WCL) && __IO80211_TARGET == __MAC_26_0
+#include <Airport/macOS26/IO80211AWDLProtocol.h>
+#endif
 #ifdef AIRPORT_WCL
 #if __IO80211_TARGET == __MAC_15_2
 #include <Airport/macOS15/FaultReporter.h>

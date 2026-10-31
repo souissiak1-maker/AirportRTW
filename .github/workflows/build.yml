@@ -47,6 +47,8 @@ jobs:
           python3 tests/rtw_awdl_filter_test.py
           xcrun clang++ -std=c++14 -Wall -Wextra -Werror -fsanitize=address,undefined -Iinclude tests/rtw_awdl_runtime_test.cpp -o /tmp/rtw_awdl_runtime_test
           /tmp/rtw_awdl_runtime_test
+          xcrun clang++ -std=c++14 -Wall -Wextra -Werror -fsanitize=address,undefined -Iinclude tests/rtw_awdl_data_test.cpp -o /tmp/rtw_awdl_data_test
+          /tmp/rtw_awdl_data_test
           python3 tests/rtw_awdl_discovery_guard_test.py
           python3 tests/rtw_locale_test.py
           python3 tests/rtw_locale_cache_test.py
@@ -100,6 +102,9 @@ jobs:
             tail -100 logs/build.log
             exit 1
           }
+      - name: Check native AWDL ABI declarations
+        if: matrix.platform == 'Tahoe'
+        run: python3 tests/rtw_awdl_native_abi_test.py
       - name: Check bundle
         env:
           PLATFORM: ${{ matrix.platform }}

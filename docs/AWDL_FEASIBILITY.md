@@ -188,3 +188,44 @@ incorrect virtual slots. A matching native AWDL class/queue/peer-manager contrac
 must be established before instantiation; no guessed vtable offsets or synthetic
 AWDL support bits are introduced here. Election/synchronization, native queues,
 radio operations and AWDL IPv6 data transport remain unimplemented.
+
+## Native Tahoe ABI and IPv6 wire codec implementation
+
+The native Tahoe controller now includes a separate Skywalk-derived virtual/AWDL
+protocol declaration. It preserves the older frontend's class declaration and
+adds no global header replacement. The new declaration adapts GPL-2.0
+RTL8814Native AWDLInterface.h (DrogaBox, 2026), with return types matched to our
+existing native base declarations and opaque ABI aliases retained for inherited
+slots whose parameter types are not modeled. Opaque uintptr_t declarations are
+not approved callable APIs. No concrete AWDL interface is instantiated yet.
+
+`rtw_awdl_native_abi_test.py` compiles a virtual-call probe with the Tahoe target
+response file, validates class-size assertions, the virtual-interface boundary,
+setMacAddress pure slot and all 63 consecutive AWDL request slots. An optional
+`--family` argument inspects the x86_64 Mach-O slice, symbols and external
+relocations from an on-disk family binary. It verifies the actual pure slots and
+init/setLinkState boundary. This optional check passed against the local Darwin
+25.5 IO80211Family; it is not blanket verification of every method signature,
+queue ownership rule or future Tahoe release. The combined-HAL Debug Tahoe build
+passed after including the declaration in the real native controller.
+
+`RTWAwdlData.hpp` independently implements unencrypted, unfragmented single-MPDU
+AWDL IPv6 framing, both QoS and ordinary-data receive forms, explicit AWDL BSSID,
+Apple LLC/SNAP and sequence handling. It bounds the IPv6 MTU to 1428, validates
+IPv6 lengths, and rejects unsupported protected/HT-control/aggregate frames.
+It does not handle A-MSDU, choose admitted peers, deduplicate, transmit or deliver
+Skywalk packets. It is not yet wired into the HAL receive/transmit paths.
+Tests cover round trips, maximum MTU, invalid headers, truncated prefixes and
+20,000 randomized buffers under ASAN/UBSAN. They do not establish on-air interop.
+Wire-format research references (protocol facts only; no GPL-3.0 code imported):
+https://github.com/seemoo-lab/owl/blob/master/src/frame.h
+https://github.com/seemoo-lab/owl/blob/master/src/tx.c
+
+Remaining radio integration finding: RTW89 exposes Linux remain_on_channel and
+cancel_remain_on_channel, but compat ieee80211_ready_on_channel and
+ieee80211_remain_on_channel_expired are currently no-ops. The latter notification
+occurs before the driver's restore sequence, so it must not be treated as proof
+that RF has returned home. RTW88 does not provide equivalent ops in its current
+mac80211 callback table. Neither existing software scan path supplies a safe
+associated AWDL scheduler. These differences need actual per-HAL implementations,
+not a shared capability flag or an unconditional success return.
