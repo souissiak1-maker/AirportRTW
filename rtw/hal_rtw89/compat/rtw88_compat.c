@@ -155,11 +155,16 @@ static void wq_thread_fn(void *arg, wait_result_t wr)
         }
         struct work_struct *work = container_of(wq->queue.next,
                                                 struct work_struct, entry);
-        list_del(&work->entry);
+        list_del_init(&work->entry);
         work->pending = 0;
+        wq->current_work = work;
         IOLockUnlock(wq->lock);
         if (work->func) work->func(work);
         IOLockLock(wq->lock);
+        /* The callback may free its enclosing object. Do not dereference
+         * work after it returns; execution state belongs to the queue. */
+        wq->current_work = NULL;
+        IOLockWakeup(wq->lock, &wq->queue, false);
     }
 
     wq->done = 1;
@@ -215,10 +220,12 @@ bool queue_work(struct workqueue_struct *wq, struct work_struct *work)
 {
     if (!wq || !work) return false;
     IOLockLock(wq->lock);
-    if (work->pending) {
+    if (!wq->running || work->pending ||
+        __sync_fetch_and_add(&work->canceling, 0)) {
         IOLockUnlock(wq->lock);
         return false;
     }
+    __atomic_store_n(&work->owner, wq, __ATOMIC_RELEASE);
     work->pending = 1;
     list_add_tail(&work->entry, &wq->queue);
     IOLockWakeup(wq->lock, &wq->queue, false);
@@ -235,16 +242,21 @@ bool schedule_work(struct work_struct *work)
 static void delayed_work_timer_fn(struct timer_list *t)
 {
     struct delayed_work *dwork = from_timer(dwork, t, timer);
-    queue_work(system_wq, &dwork->work);
+    queue_work(dwork->target_queue, &dwork->work);
 }
 
 bool queue_delayed_work(struct workqueue_struct *wq,
                          struct delayed_work *dwork, unsigned long delay)
 {
-    if (!wq || !dwork) return false;
+    if (!wq || !dwork || __sync_fetch_and_add(&dwork->work.canceling, 0))
+        return false;
+    dwork->target_queue = wq;
     if (delay == 0)
         return queue_work(wq, &dwork->work);
-    timer_setup(&dwork->timer, delayed_work_timer_fn, 0);
+    if (!dwork->timer_initialized) {
+        timer_setup(&dwork->timer, delayed_work_timer_fn, 0);
+        dwork->timer_initialized = true;
+    }
     mod_timer(&dwork->timer, jiffies + delay);
     return true;
 }
@@ -254,41 +266,78 @@ bool schedule_delayed_work(struct delayed_work *dwork, unsigned long delay)
     return queue_delayed_work(system_wq, dwork, delay);
 }
 
+/* Producers must be stopped before draining/destroying a queue. As with
+ * Linux workqueues, a synchronous waiter must not hold a callback's lock.
+ * Work is owned by one queue while queued/running; callers must serialize
+ * migration to another queue and keep the owner alive through cancellation. */
 void flush_workqueue(struct workqueue_struct *wq)
 {
-    if (!wq) return;
-    for (int i = 0; i < 1000; i++) {
+    if (!wq || current_thread() == wq->thread) return;
+    IOLockLock(wq->lock);
+    while (!list_empty(&wq->queue) || wq->current_work)
+        IOLockSleep(wq->lock, &wq->queue, THREAD_UNINT);
+    IOLockUnlock(wq->lock);
+}
+
+static bool cancel_work_pending(struct work_struct *work, bool wait)
+{
+    if (!work) return false;
+    __sync_fetch_and_add(&work->canceling, 1);
+    struct workqueue_struct *wq = __atomic_load_n(&work->owner, __ATOMIC_ACQUIRE);
+    bool removed = false;
+    if (wq) {
         IOLockLock(wq->lock);
-        int empty = list_empty(&wq->queue);
+        if (work->pending) {
+            list_del_init(&work->entry);
+            work->pending = 0;
+            removed = true;
+            IOLockWakeup(wq->lock, &wq->queue, false);
+        }
+        while (wait && wq->current_work == work &&
+               current_thread() != wq->thread)
+            IOLockSleep(wq->lock, &wq->queue, THREAD_UNINT);
         IOLockUnlock(wq->lock);
-        if (empty) break;
-        IOSleep(5);
     }
+    __sync_fetch_and_sub(&work->canceling, 1);
+    return removed;
 }
 
 bool cancel_work_sync(struct work_struct *work)
 {
-    work->pending = 0;
-    return true;
+    return cancel_work_pending(work, true);
 }
 
 bool cancel_delayed_work_sync(struct delayed_work *dwork)
 {
-    del_timer_sync(&dwork->timer);
-    return cancel_work_sync(&dwork->work);
+    if (!dwork) return false;
+    /* Keep the cancellation gate raised through timer cancellation too. */
+    __sync_fetch_and_add(&dwork->work.canceling, 1);
+    bool timer_pending = dwork->timer_initialized && del_timer_sync(&dwork->timer);
+    bool work_pending = cancel_work_pending(&dwork->work, true);
+    __sync_fetch_and_sub(&dwork->work.canceling, 1);
+    return timer_pending || work_pending;
 }
 
 bool cancel_delayed_work(struct delayed_work *dwork)
 {
-    del_timer(&dwork->timer);
-    dwork->work.pending = 0;
-    return true;
+    if (!dwork) return false;
+    __sync_fetch_and_add(&dwork->work.canceling, 1);
+    bool timer_pending = dwork->timer_initialized && del_timer(&dwork->timer);
+    bool work_pending = cancel_work_pending(&dwork->work, false);
+    __sync_fetch_and_sub(&dwork->work.canceling, 1);
+    return timer_pending || work_pending;
 }
 
 void flush_work(struct work_struct *work)
 {
-    for (int i = 0; i < 200 && work->pending; i++)
-        IOSleep(5);
+    if (!work) return;
+    struct workqueue_struct *wq = __atomic_load_n(&work->owner, __ATOMIC_ACQUIRE);
+    if (!wq) return;
+    if (current_thread() == wq->thread) return;
+    IOLockLock(wq->lock);
+    while (work->pending || wq->current_work == work)
+        IOLockSleep(wq->lock, &wq->queue, THREAD_UNINT);
+    IOLockUnlock(wq->lock);
 }
 
 void flush_scheduled_work(void)

@@ -45,6 +45,7 @@ jobs:
           xcrun clang++ -std=c++14 -Wall -Wextra -Werror -fsanitize=address,undefined -Iinclude tests/rtw_awdl_frame_test.cpp -o /tmp/rtw_awdl_frame_test
           /tmp/rtw_awdl_frame_test
           python3 tests/rtw_awdl_filter_test.py
+          python3 tests/rtw_workqueue_test.py
           xcrun clang++ -std=c++14 -Wall -Wextra -Werror -fsanitize=address,undefined -Iinclude tests/rtw_awdl_runtime_test.cpp -o /tmp/rtw_awdl_runtime_test
           /tmp/rtw_awdl_runtime_test
           xcrun clang++ -std=c++14 -Wall -Wextra -Werror -fsanitize=address,undefined -Iinclude tests/rtw_awdl_clock_test.cpp -o /tmp/rtw_awdl_clock_test

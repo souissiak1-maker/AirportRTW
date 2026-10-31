@@ -273,3 +273,35 @@ This adapter is not a native setter implementation or an action transmitter;
 dynamic synchronization parameters still require the radio-side engine.
 Research disassembly: `/tmp/awdl-native-template-contract.txt` (local-only,
 reproducible using lldb disassemble by the function's exported symbol).
+
+## Workqueue cancellation prerequisite
+
+Both HAL compatibility queues previously implemented cancel_work_sync by setting
+pending=0 without unlinking queued entries or waiting for a running callback.
+Requeue after such cancellation could insert a still-linked node twice. Queue
+flush also checked only list emptiness, so a callback already removed from the
+list could continue after a caller believed the queue was drained.
+
+The queue now tracks its currently executing work independently of the work
+object. Pending cancellation unlinks under the owning queue lock; synchronous
+cancellation waits for a running callback and blocks its requeue during the wait.
+Queue drain waits for execution as well as queued entries. A worker does not
+access work memory after calling its function, permitting self-freeing work.
+Delayed work remembers its requested queue instead of always dispatching to
+system_wq and initializes its reusable timer once.
+
+Contracts: stop producers before draining/destroying a queue; keep the owning
+queue alive during cancellation; serialize migration of a work object between
+queues; never synchronously wait while holding a callback's required lock.
+Self-waits do not block the single worker. Work owner publication uses atomic
+release/acquire operations. These are prerequisites, not AWDL radio operations.
+
+The threaded host test executes both production implementations with IOLock and
+kernel-thread adapters under ASAN/UBSAN. It checks queued cancel/requeue list
+integrity, running drain, cancellation's requeue gate, delayed target routing,
+self-requeue and self-free. The host timer is manually fired: these tests do not
+validate XNU thread-call cancellation. In particular, the existing RTW89 local
+thread_call_cancel_wait shim uses a fixed delay; timer cancellation/barrier and
+wiphy-work serialization require separate work before enabling the AWDL ROC
+scheduler. This milestone must not be described as making all timer teardown
+safe or providing functional AWDL.
