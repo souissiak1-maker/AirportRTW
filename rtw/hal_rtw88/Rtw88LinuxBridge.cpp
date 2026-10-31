@@ -25,6 +25,8 @@ void rtw88_register_vif(struct ieee80211_vif *);
 void rtw88_unregister_vif(void);
 }
 
+#include <AWDL/RTWAwdlLinuxInterface.hpp>
+
 namespace {
 static Rtw88LinuxContext *activeContext;
 static const size_t managementHeaderLength = 24;
@@ -465,12 +467,34 @@ bool rtw88LinuxPowerUp(Rtw88LinuxContext *context)
     return true;
 }
 
+bool rtw88LinuxAwdlAddInterface(Rtw88LinuxContext *context,
+                                      const uint8_t mac[6])
+{
+    if (!context) return false;
+    auto *hw = static_cast<ieee80211_hw *>(context->hardware);
+    WiphyGuard guard(hw);
+    if (!context->started || !context->interfaceAdded || context->scanning)
+        return false;
+    auto *primary = static_cast<ieee80211_vif *>(context->vif);
+    return primary && RTWAwdl::addLinuxInterface(hw, context->awdlInterface,
+                                               mac, primary->addr, true);
+}
+
+void rtw88LinuxAwdlRemoveInterface(Rtw88LinuxContext *context)
+{
+    if (!context || !context->awdlInterface.vif) return;
+    auto *hw = static_cast<ieee80211_hw *>(context->hardware);
+    WiphyGuard guard(hw);
+    RTWAwdl::removeLinuxInterface(hw, context->awdlInterface);
+}
+
 void rtw88LinuxPowerDown(Rtw88LinuxContext *context)
 {
     if (!context)
         return;
     auto *hw = static_cast<struct ieee80211_hw *>(context->hardware);
     auto *vif = static_cast<struct ieee80211_vif *>(context->vif);
+    rtw88LinuxAwdlRemoveInterface(context);
     if (context->scanning)
         rtw88LinuxScanEnd(context);
     rtw88LinuxDisassociate(context);

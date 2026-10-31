@@ -4,6 +4,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include "../../include/HAL/RTWAwdlInterfaceState.hpp"
 bool rtw89LinuxSetCountry(struct Rtw89LinuxContext *, const char cc[2]);
 unsigned int rtw89LinuxGetLocale(struct Rtw89LinuxContext *);
 void rtw89LinuxSetAwdlDiscovery(struct Rtw89LinuxContext *, bool);
@@ -46,6 +47,7 @@ struct Rtw89LinuxContext {
     void *hardware;
     void *device;
     void *vif;
+    RTWAwdl::InterfaceState awdlInterface;
     void *station;
     size_t vifAllocationSize;
     size_t stationAllocationSize;
@@ -137,6 +139,10 @@ void rtw89LinuxDetach(Rtw89PciTransport *transport,
 bool rtw89LinuxPowerUp(Rtw89LinuxContext *context);
 bool rtw89LinuxSetMacAddress(Rtw89LinuxContext *context, const uint8_t address[6]);
 void rtw89LinuxPowerDown(Rtw89LinuxContext *context);
+// Serialized hardware lifecycle only; protocol provider must quiesce producers.
+bool rtw89LinuxAwdlAddInterface(Rtw89LinuxContext *, const uint8_t mac[6]);
+void rtw89LinuxAwdlRemoveInterface(Rtw89LinuxContext *);
+
 
 bool rtw89LinuxSetChannel(Rtw89LinuxContext *context, uint16_t channel);
 bool rtw89LinuxPrepareConnection(Rtw89LinuxContext *context,

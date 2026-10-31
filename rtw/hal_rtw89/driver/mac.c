@@ -4609,6 +4609,9 @@ static void rtw89_mac_port_cfg_rx_sync_by_nettype(struct rtw89_dev *rtwdev,
 	bool en = rtwvif_link->net_type == RTW89_NET_TYPE_INFRA ||
 		  rtwvif_link->net_type == RTW89_NET_TYPE_AD_HOC;
 
+	if (rtwvif_link_to_vif(rtwvif_link)->no_beacon)
+		en = false;
+
 	rtw89_mac_port_cfg_rx_sync(rtwdev, rtwvif_link, en);
 }
 
@@ -4629,6 +4632,9 @@ static void rtw89_mac_port_cfg_tx_sw_by_nettype(struct rtw89_dev *rtwdev,
 {
 	bool en = rtwvif_link->net_type == RTW89_NET_TYPE_AP_MODE ||
 		  rtwvif_link->net_type == RTW89_NET_TYPE_AD_HOC;
+
+	if (rtwvif_link_to_vif(rtwvif_link)->no_beacon)
+		en = false;
 
 	rtw89_mac_port_cfg_tx_sw(rtwdev, rtwvif_link, en);
 }

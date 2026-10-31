@@ -426,3 +426,37 @@ reset and removal waiting for a live iterator under ASan/UBSan. The new API is
 namespaced for the RTW88 archive to preserve combined-HAL linkage. No secondary
 hardware VIF or peer is created yet; this removes a compatibility-layer blocker,
 not the remaining radio/protocol implementation.
+
+## Secondary hardware interface lifecycle
+
+The RTW88 and RTW89 bridges now expose add/remove operations for a separate
+AWDL MAC identity. They allocate their own ad-hoc VIF/private area, link-0 BSS
+record, canonical AWDL BSSID and (RTW88) driver-private TX queue, then invoke the
+real driver add-interface callback. Registration occurs only after hardware
+setup succeeds. BSSID programming uses the driver's link/BSS update callback;
+missing lifecycle or BSSID callbacks reject creation. Allocation, hardware-add
+and registry failures unwind in reverse order. Power-down removes the secondary
+interface before infrastructure teardown or hardware stop. Invalid/duplicate MACs,
+repeated creation, stopped hardware and active scanning reject creation.
+
+This interface explicitly requests no ordinary IBSS beacon. RTW88 skips the
+reserved beacon page and beacon-function enable while keeping automatic beacon
+TSF updates disabled. RTW89 clears beacon TX and beacon RX clock synchronization
+for this mode. Infrastructure and ordinary ad-hoc interfaces retain their previous
+policy. RTW88 also releases the allocated MAC ID on exhausted-port and unsupported
+interface-type failures, which matter when a second hardware port is requested.
+The donor provenance record documents these intentional changes.
+
+Host tests execute the shared lifecycle against allocation/driver adapters,
+checking exact allocation/free sizes, failure cleanup, registration ordering,
+BSSID notification and idempotent removal. Separate tests execute production
+RTW88 add-interface code and RTW89 register policy functions to check ordinary
+modes, non-beaconing mode and failed-add MAC-ID cleanup. These are software tests,
+not proof of firmware acceptance or RF behavior on every chip.
+
+The protocol provider does not call these entry points yet. They allocate a radio
+identity only: no peer is admitted, no channel is changed, no packet is transmitted,
+and no native AWDL capability is advertised. The eventual caller must serialize
+operations and quiesce TX, ROC and receive producers before removal; this helper
+does not provide a DMA/ROC completion barrier. Timed channel scheduling, peer
+hardware admission and native protocol control remain unfinished.

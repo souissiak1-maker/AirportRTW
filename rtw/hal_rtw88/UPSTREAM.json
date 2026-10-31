@@ -1,7 +1,7 @@
 {
   "source": "Local Realtek88LegacyAirport/rtw88-stable archive",
   "comparison_revision": "thegwchr/rtw88-stable d029a677c49266fad86750714eb5612becd134d3",
-  "local_changes": "main.c watchdog/power policy and pci.c teardown differ from comparison revision; copied as supplied; AirportRTW log branding in driver/pci.c; Release logging calls in driver/pci.c compile out through RTW_LOG",
+  "local_changes": "main.c watchdog/power policy and pci.c teardown differ from comparison revision; copied as supplied; AirportRTW log branding in driver/pci.c; Release logging calls in driver/pci.c compile out through RTW_LOG; driver/mac80211.c supports explicitly non-beaconing ad-hoc interfaces and releases MAC IDs on add-interface failures",
   "firmware_source": "Local Airport_RTW88/firmware; Realtek redistribution notice retained",
   "files": {
     "driver/COPYING": "fb5a425bd3b3cd6071a3a9aff9909a859e7c1158d54d32e07658398cd67eb6a0",
@@ -18,7 +18,7 @@
     "driver/led.h": "49eeb6f3fa6229047bbf0c49ff81bea43751b0b4eb9cb8128b0c7941a3304c26",
     "driver/mac.c": "df03d3957767e926a5a7493024bbdd90f50af35362518147761d49641980c6d8",
     "driver/mac.h": "006c62b0d7b7a6dee95cc27172c0452bcfa6b05f80a1a91610c4750f42f4c91a",
-    "driver/mac80211.c": "c72a38098dddf4f4ae447bb60cd0c2a6842df250714bd58fa8be0aa0471bebcc",
+    "driver/mac80211.c": "d12fcbd5b242a792bb4a8da8f3e7cc3a0c317cf121c099e44211e69720ac2a87",
     "driver/main.c": "5c124d43c6251186b9d7edaddac1051057e910010ed8f9e9eee839fc18be8acb",
     "driver/main.h": "f7681400b4762612a5382a762f1200def7312da3c45dc2000bd9d0cac7d709a4",
     "driver/pci.c": "9d812ed82fefb7c71fe40c2d213ee324c303c05dae3fc26509a822e27715ddcf",

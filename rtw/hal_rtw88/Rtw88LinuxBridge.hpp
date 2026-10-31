@@ -4,6 +4,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include "../../include/HAL/RTWAwdlInterfaceState.hpp"
 bool rtw88LinuxSetCountry(struct Rtw88LinuxContext *, const char cc[2]);
 unsigned int rtw88LinuxGetLocale(struct Rtw88LinuxContext *);
 void rtw88LinuxSetAwdlDiscovery(struct Rtw88LinuxContext *, bool);
@@ -40,6 +41,7 @@ struct Rtw88LinuxContext {
     void *hardware;
     void *device;
     void *vif;
+    RTWAwdl::InterfaceState awdlInterface;
     void *station;
     size_t vifAllocationSize;
     size_t stationAllocationSize;
@@ -131,6 +133,10 @@ void rtw88LinuxDetach(Rtw88PciTransport *transport,
 bool rtw88LinuxPowerUp(Rtw88LinuxContext *context);
 bool rtw88LinuxSetMacAddress(Rtw88LinuxContext *context, const uint8_t address[6]);
 void rtw88LinuxPowerDown(Rtw88LinuxContext *context);
+// Serialized hardware lifecycle only; protocol provider must quiesce producers.
+bool rtw88LinuxAwdlAddInterface(Rtw88LinuxContext *, const uint8_t mac[6]);
+void rtw88LinuxAwdlRemoveInterface(Rtw88LinuxContext *);
+
 
 bool rtw88LinuxSetChannel(Rtw88LinuxContext *context, uint16_t channel);
 bool rtw88LinuxPrepareConnection(Rtw88LinuxContext *context,

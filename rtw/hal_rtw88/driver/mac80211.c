@@ -175,6 +175,7 @@ static int rtw_ops_add_interface(struct ieee80211_hw *hw,
 
 	port = find_first_zero_bit(rtwdev->hw_port, RTW_PORT_NUM);
 	if (port >= RTW_PORT_NUM) {
+		rtw_release_macid(rtwdev, rtwvif->mac_id);
 		mutex_unlock(&rtwdev->mutex);
 		return -EINVAL;
 	}
@@ -192,9 +193,12 @@ static int rtw_ops_add_interface(struct ieee80211_hw *hw,
 		bcn_ctrl = BIT_EN_BCN_FUNCTION | BIT_DIS_TSF_UDT;
 		break;
 	case NL80211_IFTYPE_ADHOC:
-		rtw_add_rsvd_page_bcn(rtwdev, rtwvif);
+		if (!vif->no_beacon)
+			rtw_add_rsvd_page_bcn(rtwdev, rtwvif);
 		net_type = RTW_NET_AD_HOC;
-		bcn_ctrl = BIT_EN_BCN_FUNCTION | BIT_DIS_TSF_UDT;
+		bcn_ctrl = BIT_DIS_TSF_UDT;
+		if (!vif->no_beacon)
+			bcn_ctrl |= BIT_EN_BCN_FUNCTION;
 		break;
 	case NL80211_IFTYPE_STATION:
 		rtw_add_rsvd_page_sta(rtwdev, rtwvif);
@@ -204,6 +208,7 @@ static int rtw_ops_add_interface(struct ieee80211_hw *hw,
 	default:
 		WARN_ON(1);
 		clear_bit(rtwvif->port, rtwdev->hw_port);
+		rtw_release_macid(rtwdev, rtwvif->mac_id);
 		mutex_unlock(&rtwdev->mutex);
 		return -EINVAL;
 	}

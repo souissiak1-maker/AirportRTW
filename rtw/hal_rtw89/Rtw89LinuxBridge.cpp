@@ -26,6 +26,8 @@ void rtw89_macos_get_tx_rate(struct ieee80211_hw *, struct RTWTxRate *);
 void rtw89_macos_peer_audit(struct ieee80211_hw *, struct ieee80211_vif *, uint32_t *);
 }
 
+#include <AWDL/RTWAwdlLinuxInterface.hpp>
+
 namespace {
 static Rtw89LinuxContext *activeContext;
 static const size_t managementHeaderLength = 24;
@@ -460,12 +462,34 @@ bool rtw89LinuxPowerUp(Rtw89LinuxContext *context)
     return true;
 }
 
+bool rtw89LinuxAwdlAddInterface(Rtw89LinuxContext *context,
+                                      const uint8_t mac[6])
+{
+    if (!context) return false;
+    auto *hw = static_cast<ieee80211_hw *>(context->hardware);
+    WiphyGuard guard(hw);
+    if (!context->started || !context->interfaceAdded || context->scanning)
+        return false;
+    auto *primary = static_cast<ieee80211_vif *>(context->vif);
+    return primary && RTWAwdl::addLinuxInterface(hw, context->awdlInterface,
+                                               mac, primary->addr, false);
+}
+
+void rtw89LinuxAwdlRemoveInterface(Rtw89LinuxContext *context)
+{
+    if (!context || !context->awdlInterface.vif) return;
+    auto *hw = static_cast<ieee80211_hw *>(context->hardware);
+    WiphyGuard guard(hw);
+    RTWAwdl::removeLinuxInterface(hw, context->awdlInterface);
+}
+
 void rtw89LinuxPowerDown(Rtw89LinuxContext *context)
 {
     if (!context)
         return;
     auto *hw = static_cast<struct ieee80211_hw *>(context->hardware);
     auto *vif = static_cast<struct ieee80211_vif *>(context->vif);
+    rtw89LinuxAwdlRemoveInterface(context);
     if (context->scanning)
         rtw89LinuxScanEnd(context);
     rtw89LinuxDisassociate(context);

@@ -897,6 +897,7 @@ struct ieee80211_vif {
     struct ieee80211_txq *txq;
     u8   addr[ETH_ALEN];
     bool p2p;
+    bool no_beacon; /* Explicit non-beaconing ad-hoc radio identity (AWDL). */
     u32  driver_flags;
     u8   drv_priv[0] __attribute__((aligned(sizeof(void *))));
 };
