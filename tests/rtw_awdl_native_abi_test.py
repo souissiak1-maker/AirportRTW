@@ -77,7 +77,20 @@ def main():
         p.error('Build the Tahoe target first, or specify --response')
     with tempfile.TemporaryDirectory(prefix='rtw-awdl-abi-') as directory:
         source = Path(directory) / 'probe.cpp'
-        source.write_text('#include <Airport/macOS26/IO80211AWDLProtocol.h>\n'
+        source.write_text('#include <Airport/apple80211_var.h>\n'
+                          '#include <Airport/apple80211_ioctl.h>\n'
+                          'static_assert(sizeof(apple80211_awdl_sync_state)==24, "sync state");\n'
+                          'static_assert(__builtin_offsetof(apple80211_awdl_sync_state,master)==8, "parent address");\n'
+                          'static_assert(__builtin_offsetof(apple80211_awdl_sync_state,mode_flags)==20, "mode flags");\n'
+                          'static_assert(sizeof(apple80211_awdl_sync_params)==24, "sync params");\n'
+                          'static_assert(sizeof(apple80211_awdl_election_rssi_thresholds)==20, "RSSI thresholds");\n'
+                          'static_assert(sizeof(apple80211_awdl_af_tx_mode)==8, "TX mode");\n'
+                          'static_assert(sizeof(apple80211_awdl_oob_request)==56, "borrowed OOB request");\n'
+                          'static_assert(__builtin_offsetof(apple80211_awdl_oob_request,data)==48, "OOB pointer");\n'
+                          'static_assert(sizeof(apple80211_awdl_sync_channel_sequence)==400, "channel sequence");\n'
+                          'static_assert(__builtin_offsetof(apple80211_awdl_sync_channel_sequence,seqs)==12, "channel descriptors");\n'
+                          'static_assert(sizeof(((apple80211_awdl_sync_channel_sequence*)0)->seqs[0])==12, "channel descriptor stride");\n'
+                          '#include <Airport/macOS26/IO80211AWDLProtocol.h>\n'
                           '#include \"' + str(ROOT/'AirportRTW/WCL/AirportRTWAwdlInterface.hpp') + '\"\n'
                           'IOReturn probe(IO80211AWDLProtocol *p, apple80211_channel_data *c) { return p->getCHANNEL(c); }\n'
                           'IOReturn nativeProbe(AirportRTWAwdlInterface *p, apple80211_channel_data *c) { return p->getCHANNEL(c); }\n')
@@ -104,7 +117,22 @@ def main():
         concrete_slots = {int(n): v for n,v in re.findall(r'^\s*(\d+) \| (.*)$', concrete[1], re.M)}
         for index,name in enumerate(methods,507):
             assert 'AirportRTWAwdlInterface::'+name+'(' in concrete_slots[index] and '[pure]' not in concrete_slots[index], (index,name)
-        print('PASS: native Tahoe class sizes, virtual-interface boundary and all 63 concrete AWDL slots')
+        # The shared header must retain old layouts for older targets.
+        source.write_text('#include <Availability.h>\n#undef __IO80211_TARGET\n'
+                          '#define __IO80211_TARGET __MAC_12_0\n'
+                          '#include <Airport/apple80211_var.h>\n'
+                          '#include <Airport/apple80211_ioctl.h>\n'
+                          'static_assert(sizeof(apple80211_awdl_sync_state)==8, "legacy sync state");\n'
+                          'static_assert(sizeof(apple80211_awdl_sync_params)==20, "legacy sync params");\n'
+                          'static_assert(sizeof(apple80211_awdl_election_rssi_thresholds)==16, "legacy RSSI");\n'
+                          'static_assert(sizeof(apple80211_awdl_af_tx_mode)==12, "legacy TX mode");\n'
+                          'static_assert(sizeof(apple80211_awdl_oob_request)==1830, "legacy inline OOB");\n'
+                          'static_assert(__builtin_offsetof(apple80211_awdl_sync_channel_sequence,seqs)==16, "legacy channel sequence");\n')
+        result = subprocess.run(['xcrun','clang++','@'+str(response.resolve()),
+            '-fsyntax-only',str(source)], cwd=ROOT,capture_output=True,text=True)
+        if result.returncode:
+            raise RuntimeError(result.stderr)
+        print('PASS: native Tahoe payloads and 63 AWDL slots; legacy payload layouts preserved')
     if args.family:
         verify_family(args.family)
 

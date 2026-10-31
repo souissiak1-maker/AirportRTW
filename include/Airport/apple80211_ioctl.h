@@ -1000,6 +1000,9 @@ struct apple80211_awdl_election_rssi_thresholds {
     uint32_t    unk1;
     uint32_t    unk2;
     uint32_t    unk3;
+#if __IO80211_TARGET == __MAC_26_0
+    int32_t     peer_rssi_threshold;
+#endif
 } __attribute__((packed));
 
 struct apple80211_channel_sequence {
@@ -1015,11 +1018,21 @@ struct apple80211_awdl_sync_channel_sequence {
     uint8_t     step_count;         // 7
     uint8_t     duplicate_count;    // 8
     uint8_t     fill_channel;       // 9
+#if __IO80211_TARGET == __MAC_26_0
+    uint8_t     pad2[2];
+    struct apple80211_channel seqs[32];
+    uint8_t     reserved_tail[4];
+#else
     uint8_t     pad2[6];
     struct apple80211_channel_sequence seqs[APPLE80211_MAX_CHANNELS];
+#endif
 } __attribute__((packed));
 
+#if __IO80211_TARGET == __MAC_26_0
+static_assert(__offsetof(apple80211_awdl_sync_channel_sequence, seqs) == 12, "Tahoe sequence descriptor offset");
+#else
 static_assert(__offsetof(apple80211_awdl_sync_channel_sequence, seqs) == 16, "seqs offset error");
+#endif
 
 static_assert(sizeof(struct apple80211_awdl_sync_channel_sequence) == 0x190, "apple80211_awdl_sync_channel_sequence struct corrupt");
 
@@ -1039,6 +1052,11 @@ struct apple80211_awdl_extension_state_machine_parameter {
 struct apple80211_awdl_sync_state {
     uint32_t    version;
     uint32_t    state;
+#if __IO80211_TARGET == __MAC_26_0
+    uint8_t     master[6], reserved[2];
+    uint32_t    flags;
+    uint8_t     mode_flags, reserved2[3];
+#endif
 } __attribute__((packed));
 
 struct apple80211_awdl_sync_params {
@@ -1047,6 +1065,9 @@ struct apple80211_awdl_sync_params {
     uint32_t    availability_window_period;
     uint32_t    extension_length;
     uint32_t    synchronization_frame_period;
+#if __IO80211_TARGET == __MAC_26_0
+    uint32_t    non_election_master;
+#endif
 } __attribute__((packed));
 
 struct apple80211_awdl_cap {
@@ -1056,7 +1077,11 @@ struct apple80211_awdl_cap {
 
 struct apple80211_awdl_af_tx_mode {
     uint32_t    version;
+#if __IO80211_TARGET == __MAC_26_0
+    uint32_t    mode;
+#else
     uint64_t    mode;
+#endif
 } __attribute__((packed));
 
 #define AWDL_OOB_AF_PARAMS_SIZE 38
@@ -1076,7 +1101,11 @@ struct apple80211_awdl_oob_request {
     uint16_t    data_len;           // 40
     uint32_t    pad4;
     uint16_t    unk9;               // 44
+#if __IO80211_TARGET == __MAC_26_0
+    uint8_t    *data;               // 48: borrowed synchronous payload
+#else
     uint8_t     data[1782];         // 48
+#endif
 } __attribute__((packed));
 
 //Roam: <airport[565]> DISABLED, 2.4GHz on awdl0 => {
