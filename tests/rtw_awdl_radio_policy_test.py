@@ -139,3 +139,43 @@ for family, shim, code, cases in [('88',shim88,code88,cases88),('89',shim89,code
             '-Wno-unused-parameter','-fsanitize=address,undefined',str(path),'-o',str(binary)],check=True)
         subprocess.run([str(binary)],check=True)
     print(f'PASS: RTW{family} production non-beaconing radio policy')
+
+# Execute the real RTW88 management-rate selector, including force-lowest mode.
+source=(ROOT/'rtw/hal_rtw88/driver/tx.c').read_text()
+a=source.index('static u8 rtw_get_mgmt_rate(')
+b=source.index('static void rtw_tx_pkt_info_update_rate(',a)
+rate_shim=r'''
+#include <cassert>
+#include <initializer_list>
+using u8=unsigned char;
+enum {NL80211_IFTYPE_ADHOC,NL80211_IFTYPE_STATION,DESC_RATE1M=0,DESC_RATE6M=4,RTW_FLAG_FORCE_LOWEST_RATE=0};
+struct ieee80211_vif { int type; bool no_beacon; struct { unsigned basic_rates; } bss_conf; };
+struct ieee80211_tx_info { struct { ieee80211_vif *vif; } control; };
+struct sk_buff { ieee80211_tx_info info; };
+struct rtw_dev { unsigned long flags[1]; };
+static ieee80211_tx_info *IEEE80211_SKB_CB(sk_buff *s) { return &s->info; }
+static bool test_bit(unsigned n,unsigned long *p) { return (*p & (1UL<<n))!=0; }
+static unsigned __ffs(unsigned n) { assert(n); return __builtin_ctz(n); }
+'''
+rate_cases=r'''
+int main() {
+    rtw_dev dev={}; ieee80211_vif vif={NL80211_IFTYPE_ADHOC,true,{16}};
+    sk_buff skb={{{&vif}}};
+    for(bool forced : {false,true}) for(bool ignore : {false,true}) {
+        dev.flags[0]=forced;
+        assert(rtw_get_mgmt_rate(&dev,&skb,DESC_RATE1M,ignore)==DESC_RATE6M);
+        assert(rtw_get_mgmt_rate(&dev,&skb,DESC_RATE6M,ignore)==DESC_RATE6M);
+    }
+    vif.type=NL80211_IFTYPE_STATION; vif.no_beacon=false; dev.flags[0]=1;
+    assert(rtw_get_mgmt_rate(&dev,&skb,DESC_RATE1M,false)==DESC_RATE1M);
+    dev.flags[0]=0;
+    assert(rtw_get_mgmt_rate(&dev,&skb,DESC_RATE1M,false)==DESC_RATE6M);
+}
+'''
+with tempfile.TemporaryDirectory(prefix='rtw-awdl-rate-') as tmp:
+    path=Path(tmp)/'test.cpp';binary=Path(tmp)/'test'
+    path.write_text(rate_shim+source[a:b]+rate_cases)
+    subprocess.run(['xcrun','clang++','-std=c++14','-Wall','-Wextra','-Werror',
+        '-Wno-unused-parameter','-fsanitize=address,undefined',str(path),'-o',str(binary)],check=True)
+    subprocess.run([str(binary)],check=True)
+print('PASS: production RTW88 AWDL OFDM management-rate selection')

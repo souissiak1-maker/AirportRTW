@@ -27,6 +27,7 @@ void rtw89_macos_peer_audit(struct ieee80211_hw *, struct ieee80211_vif *, uint3
 }
 
 #include <AWDL/RTWAwdlLinuxInterface.hpp>
+#include <AWDL/RTWAwdlLinuxActionTx.hpp>
 
 namespace {
 static Rtw89LinuxContext *activeContext;
@@ -473,6 +474,21 @@ bool rtw89LinuxAwdlAddInterface(Rtw89LinuxContext *context,
     auto *primary = static_cast<ieee80211_vif *>(context->vif);
     return primary && RTWAwdl::addLinuxInterface(hw, context->awdlInterface,
                                                mac, primary->addr, false);
+}
+
+bool rtw89LinuxAwdlTransmitAction(Rtw89LinuxContext *context,
+                                       const uint8_t *frame, size_t length,
+                                       uint16_t expectedFrequency)
+{
+    if (!context) return false;
+    auto *hw = static_cast<ieee80211_hw *>(context->hardware);
+    WiphyGuard guard(hw);
+    if (!context->started || context->scanning ||
+        !context->awdlInterface.hardwareAdded || !context->awdlInterface.registered)
+        return false;
+    return RTWAwdl::submitLinuxAction(hw,
+        static_cast<ieee80211_vif *>(context->awdlInterface.vif),
+        frame, length, expectedFrequency) == RTWAwdl::ActionSubmission::Submitted;
 }
 
 void rtw89LinuxAwdlRemoveInterface(Rtw89LinuxContext *context)

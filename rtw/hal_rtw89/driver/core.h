@@ -7053,6 +7053,15 @@ enum nl80211_he_ru_alloc rtw89_he_rua_to_ru_alloc(u16 rua)
 	}
 }
 
+/* Non-beaconing ad-hoc peers own separate firmware MAC IDs and address CAM
+ * entries, like AP peers. They share the VIF's canonical BSSID CAM and are not
+ * TDLS peers; do not borrow the infrastructure station's MAC/CAM context. */
+static inline bool rtw89_vif_has_peer_context(const struct ieee80211_vif *vif)
+{
+	return vif->type == NL80211_IFTYPE_AP ||
+	       (vif->type == NL80211_IFTYPE_ADHOC && vif->no_beacon);
+}
+
 static inline
 struct rtw89_addr_cam_entry *rtw89_get_addr_cam_of(struct rtw89_vif_link *rtwvif_link,
 						   struct rtw89_sta_link *rtwsta_link)
@@ -7060,7 +7069,10 @@ struct rtw89_addr_cam_entry *rtw89_get_addr_cam_of(struct rtw89_vif_link *rtwvif
 	if (rtwsta_link) {
 		struct ieee80211_sta *sta = rtwsta_link_to_sta(rtwsta_link);
 
-		if (rtwvif_link->net_type == RTW89_NET_TYPE_AP_MODE || sta->tdls)
+		const struct ieee80211_vif *vif = rtwvif_link_to_vif(rtwvif_link);
+
+		if (rtwvif_link->net_type == RTW89_NET_TYPE_AP_MODE ||
+		    (vif->type == NL80211_IFTYPE_ADHOC && vif->no_beacon) || sta->tdls)
 			return &rtwsta_link->addr_cam;
 	}
 	return &rtwvif_link->addr_cam;

@@ -51,6 +51,11 @@ jobs:
           xcrun clang++ -std=c++14 -Wall -Wextra -Werror -fsanitize=address,undefined -Iinclude tests/rtw_awdl_linux_interface_test.cpp -o /tmp/rtw_awdl_linux_interface_test
           /tmp/rtw_awdl_linux_interface_test
           python3 tests/rtw_awdl_radio_policy_test.py
+          python3 tests/rtw_awdl_peer_context_test.py
+          python3 tests/rtw_awdl_peer_role_test.py
+          python3 tests/rtw_awdl_hal_isolation_test.py
+          xcrun clang++ -std=c++14 -Wall -Wextra -Werror -fsanitize=address,undefined -Iinclude tests/rtw_awdl_linux_action_tx_test.cpp -o /tmp/rtw_awdl_linux_action_tx_test
+          /tmp/rtw_awdl_linux_action_tx_test
           python3 tests/rtw_awdl_datapath_test.py
           python3 tests/rtw_awdl_action_input_test.py
           python3 tests/rtw_awdl_interface_test.py

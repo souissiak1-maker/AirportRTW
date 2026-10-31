@@ -136,6 +136,10 @@ void rtw88LinuxPowerDown(Rtw88LinuxContext *context);
 // Serialized hardware lifecycle only; protocol provider must quiesce producers.
 bool rtw88LinuxAwdlAddInterface(Rtw88LinuxContext *, const uint8_t mac[6]);
 void rtw88LinuxAwdlRemoveInterface(Rtw88LinuxContext *);
+// true transfers a copied frame to the driver; it does not report an RF ACK.
+bool rtw88LinuxAwdlTransmitAction(Rtw88LinuxContext *, const uint8_t *,
+                                       size_t, uint16_t expectedFrequency);
+
 
 
 bool rtw88LinuxSetChannel(Rtw88LinuxContext *context, uint16_t channel);

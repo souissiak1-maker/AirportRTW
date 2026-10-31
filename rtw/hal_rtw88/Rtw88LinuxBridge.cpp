@@ -26,6 +26,7 @@ void rtw88_unregister_vif(void);
 }
 
 #include <AWDL/RTWAwdlLinuxInterface.hpp>
+#include <AWDL/RTWAwdlLinuxActionTx.hpp>
 
 namespace {
 static Rtw88LinuxContext *activeContext;
@@ -478,6 +479,21 @@ bool rtw88LinuxAwdlAddInterface(Rtw88LinuxContext *context,
     auto *primary = static_cast<ieee80211_vif *>(context->vif);
     return primary && RTWAwdl::addLinuxInterface(hw, context->awdlInterface,
                                                mac, primary->addr, true);
+}
+
+bool rtw88LinuxAwdlTransmitAction(Rtw88LinuxContext *context,
+                                       const uint8_t *frame, size_t length,
+                                       uint16_t expectedFrequency)
+{
+    if (!context) return false;
+    auto *hw = static_cast<ieee80211_hw *>(context->hardware);
+    WiphyGuard guard(hw);
+    if (!context->started || context->scanning ||
+        !context->awdlInterface.hardwareAdded || !context->awdlInterface.registered)
+        return false;
+    return RTWAwdl::submitLinuxAction(hw,
+        static_cast<ieee80211_vif *>(context->awdlInterface.vif),
+        frame, length, expectedFrequency) == RTWAwdl::ActionSubmission::Submitted;
 }
 
 void rtw88LinuxAwdlRemoveInterface(Rtw88LinuxContext *context)

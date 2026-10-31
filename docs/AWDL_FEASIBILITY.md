@@ -460,3 +460,52 @@ and no native AWDL capability is advertised. The eventual caller must serialize
 operations and quiesce TX, ROC and receive producers before removal; this helper
 does not provide a DMA/ROC completion barrier. Timed channel scheduling, peer
 hardware admission and native protocol control remain unfinished.
+
+## Action TX and RTW89 peer hardware contexts
+
+Both bridges now have a serialized action-frame submission entry point using
+only the secondary hardware VIF. It requires running hardware, a registered
+non-beaconing ad-hoc interface and no scan. The shared implementation validates
+the complete action/TLV envelope, supported PSF/MIF subtype, local source MAC,
+canonical BSSID and unicast or broadcast destination before allocation. The
+requested frequency must match both current hardware channel state and the
+secondary interface channel record. Disabled, no-IR, radar and no-OFDM channels
+are rejected; channel 14 and non-2.4/5 GHz bands are excluded. This does not
+relax regulatory flags or perform channel switching.
+
+The skb owns a copy before the driver TX callback runs. It has no station/key,
+no aggregation and no protected payload; unicast requests real TX status and
+broadcast disables ACK. RTW89 uses an injected legacy rate descriptor for OFDM
+6 Mbps. RTW88's management selector explicitly uses OFDM 6 Mbps for this mode,
+including on 2.4 GHz; ordinary interfaces retain their previous rate selection.
+Submission success transfers ownership to the driver and is not an RF ACK or
+proof that the driver transmitted a frame rather than dropping a full queue.
+Future scheduling must establish the actual RF lease and bounded submission
+rate before calling; the software channel record is not an RF readback.
+
+The RTW89 peer audit found that mapping a VIF to ad-hoc MAC mode was insufficient:
+firmware role create/remove, per-peer address-CAM allocation and MAC-ID release
+were conditional on AP/TDLS mode. Explicit non-beaconing ad-hoc mode now follows
+the separate-peer context path. Each peer owns an address CAM and firmware MAC
+ID but uses the interface's canonical BSSID CAM. It is not mislabeled TDLS and
+does not borrow the infrastructure station context. Station and ordinary ad-hoc
+predicates are unchanged. Hardware peer admission/lifetime and partial firmware
+failure recovery still need integration before enabling any native capability.
+
+Host tests execute the action submission implementation, including malformed
+input, source/BSSID identity, channel/regulatory rejection, band-specific rate
+indices, allocation failure, descriptor flags and ownership after caller-buffer
+reuse. Production RTW89 selectors and role add/remove functions run against host
+adapters for all station/AP/ad-hoc/TDLS combinations and firmware command errors.
+Production RTW88 management-rate selection is tested with force-lowest mode.
+These tests do not emulate firmware or prove on-air timing. The native provider,
+RX dispatch, peer admission and synchronized radio scheduling remain unfinished;
+there is still no production caller and no AWDL/AirDrop support advertisement.
+
+The Linux-specific shared C++ helpers use internal linkage per translation unit.
+Although their source is shared, RTW88 calls namespaced compatibility functions
+and RTW89 calls its own compatibility functions; ordinary external inline
+coalescing can select the wrong backend. A two-translation-unit host link test
+checks that interface creation, registry updates and cleanup stay with the
+calling HAL. Existing AP-mode address-CAM selection is preserved independently
+of the new non-beaconing ad-hoc predicate, including other AP-mode roles.

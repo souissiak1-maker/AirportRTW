@@ -16,7 +16,7 @@ static void IOFree(void *p,size_t n) { assert(p && n && allocations.at(p)==n); a
 enum { NL80211_IFTYPE_ADHOC=1, BSS_CHANGED_BSSID=2 };
 struct ieee80211_vif;
 struct ieee80211_txq { ieee80211_vif *vif; unsigned tid,ac; };
-struct Conf { uint8_t addr[6], bssid_buf[6]; const uint8_t *bssid; };
+struct Conf { uint8_t addr[6], bssid_buf[6]; const uint8_t *bssid; void *chandef_chan; unsigned chandef_width; };
 struct ieee80211_vif {
     int type; bool no_beacon; uint8_t addr[6];
     Conf bss_conf; Conf *link_conf[1]; ieee80211_txq *txq;
@@ -28,7 +28,8 @@ struct Ops {
     void (*link_info_changed)(ieee80211_hw *,ieee80211_vif *,Conf *,uint64_t);
     void (*bss_info_changed)(ieee80211_hw *,ieee80211_vif *,Conf *,uint64_t);
 };
-struct ieee80211_hw { Ops *ops; size_t vif_data_size,txq_data_size; };
+struct ieee80211_hw { Ops *ops; size_t vif_data_size,txq_data_size;
+    struct { struct { void *chan; unsigned width; } chandef; } conf; };
 static bool rtw88_add_vif(ieee80211_vif *) {
     ++registrations; assert(hardwareLive); if(failRegistration) return false;
     registryLive=true; return true;
@@ -51,7 +52,7 @@ static void bssid(ieee80211_hw *,ieee80211_vif *,Conf *,uint64_t flags) {
     assert(hardwareLive && registryLive && flags==BSS_CHANGED_BSSID); ++bssidChanges;
 }
 int main() {
-    Ops ops={add,remove,bssid,nullptr}; ieee80211_hw hw={&ops,128,64};
+    Ops ops={add,remove,bssid,nullptr}; ieee80211_hw hw={&ops,128,64,{}};
     uint8_t primary[]={2,1,2,3,4,5}, mac[]={2,1,2,3,4,6};
     RTWAwdl::InterfaceState state={};
     assert(!RTWAwdl::addLinuxInterface(nullptr,state,mac,primary,true));

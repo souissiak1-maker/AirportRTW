@@ -5095,7 +5095,7 @@ int rtw89_core_sta_link_add(struct rtw89_dev *rtwdev,
 			rtw89_mac_set_tx_retry_limit(rtwdev, rtwsta_link, false, 60);
 		}
 		rtw89_phy_dig_suspend(rtwdev);
-	} else if (vif->type == NL80211_IFTYPE_AP || sta->tdls) {
+	} else if (rtw89_vif_has_peer_context(vif) || sta->tdls) {
 		ret = rtw89_mac_set_macid_pause(rtwdev, rtwsta_link->mac_id, false);
 		if (ret) {
 			rtw89_warn(rtwdev, "failed to send h2c macid pause\n");
@@ -5151,7 +5151,7 @@ int rtw89_core_sta_link_disconnect(struct rtw89_dev *rtwdev,
 	rtw89_mac_bf_monitor_calc(rtwdev, rtwsta_link, true);
 	rtw89_mac_bf_disassoc(rtwdev, rtwvif_link, rtwsta_link);
 
-	if (vif->type == NL80211_IFTYPE_AP || sta->tdls)
+	if (rtw89_vif_has_peer_context(vif) || sta->tdls)
 		rtw89_cam_deinit_addr_cam(rtwdev, &rtwsta_link->addr_cam);
 	if (sta->tdls)
 		rtw89_cam_deinit_bssid_cam(rtwdev, &rtwsta_link->bssid_cam);
@@ -5213,7 +5213,7 @@ int rtw89_core_sta_link_assoc(struct rtw89_dev *rtwdev,
 	struct ieee80211_link_sta *link_sta;
 	int ret;
 
-	if (vif->type == NL80211_IFTYPE_AP || sta->tdls) {
+	if (rtw89_vif_has_peer_context(vif) || sta->tdls) {
 		if (sta->tdls) {
 			rcu_read_lock();
 
@@ -5314,7 +5314,7 @@ int rtw89_core_sta_link_remove(struct rtw89_dev *rtwdev,
 		if (vif->p2p)
 			rtw89_mac_set_tx_retry_limit(rtwdev, rtwsta_link, false,
 						     rtwsta_link->tx_retry);
-	} else if (vif->type == NL80211_IFTYPE_AP || sta->tdls) {
+	} else if (rtw89_vif_has_peer_context(vif) || sta->tdls) {
 		ret = rtw89_fw_h2c_role_maintain(rtwdev, rtwvif_link, rtwsta_link,
 						 RTW89_ROLE_REMOVE);
 		if (ret) {

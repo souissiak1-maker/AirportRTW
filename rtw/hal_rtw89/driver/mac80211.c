@@ -543,7 +543,7 @@ static int __rtw89_ops_sta_add(struct rtw89_dev *rtwdev,
 	if (ret)
 		goto unset_link;
 
-	if (vif->type == NL80211_IFTYPE_AP || sta->tdls)
+	if (rtw89_vif_has_peer_context(vif) || sta->tdls)
 		rtw89_queue_chanctx_change(rtwdev, RTW89_CHANCTX_REMOTE_STA_CHANGE);
 
 	return 0;
@@ -658,7 +658,7 @@ static int __rtw89_ops_sta_remove(struct rtw89_dev *rtwdev,
 		rtw89_sta_unset_link(rtwsta, link_id);
 	}
 
-	if (vif->type == NL80211_IFTYPE_AP || sta->tdls) {
+	if (rtw89_vif_has_peer_context(vif) || sta->tdls) {
 		rtw89_release_mac_id(rtwdev, macid);
 		rtw89_queue_chanctx_change(rtwdev, RTW89_CHANCTX_REMOTE_STA_CHANGE);
 	}

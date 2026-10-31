@@ -264,6 +264,10 @@ static u8 rtw_get_mgmt_rate(struct rtw_dev *rtwdev, struct sk_buff *skb,
 	struct ieee80211_vif *vif = tx_info->control.vif;
 	bool force_lowest = test_bit(RTW_FLAG_FORCE_LOWEST_RATE, rtwdev->flags);
 
+	/* AWDL action frames use OFDM even on a 2.4 GHz discovery channel. */
+	if (vif && vif->type == NL80211_IFTYPE_ADHOC && vif->no_beacon)
+		return DESC_RATE6M;
+
 	if (!vif || !vif->bss_conf.basic_rates || ignore_rate || force_lowest)
 		return lowest_rate;
 

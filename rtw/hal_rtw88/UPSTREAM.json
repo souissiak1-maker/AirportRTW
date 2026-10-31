@@ -1,7 +1,7 @@
 {
   "source": "Local Realtek88LegacyAirport/rtw88-stable archive",
   "comparison_revision": "thegwchr/rtw88-stable d029a677c49266fad86750714eb5612becd134d3",
-  "local_changes": "main.c watchdog/power policy and pci.c teardown differ from comparison revision; copied as supplied; AirportRTW log branding in driver/pci.c; Release logging calls in driver/pci.c compile out through RTW_LOG; driver/mac80211.c supports explicitly non-beaconing ad-hoc interfaces and releases MAC IDs on add-interface failures",
+  "local_changes": "main.c watchdog/power policy and pci.c teardown differ from comparison revision; copied as supplied; AirportRTW log branding in driver/pci.c; Release logging calls in driver/pci.c compile out through RTW_LOG; driver/mac80211.c supports explicitly non-beaconing ad-hoc interfaces and releases MAC IDs on add-interface failures; driver/tx.c selects mandatory OFDM 6 Mbps for explicitly non-beaconing ad-hoc management frames",
   "firmware_source": "Local Airport_RTW88/firmware; Realtek redistribution notice retained",
   "files": {
     "driver/COPYING": "fb5a425bd3b3cd6071a3a9aff9909a859e7c1158d54d32e07658398cd67eb6a0",
@@ -64,7 +64,7 @@
     "driver/sdio.h": "9684d8b68266d0bd70fb59fd81605ca90c548f1aca30c5a38502203829f488cd",
     "driver/sec.c": "cad22a56ede19a42b3a29a260cdb8400ae901a19b34c86ad5dd173d2b6eebebc",
     "driver/sec.h": "78d112a2f089487d4e2221b3217c36df0694b3db8e1147acaa53204ce10004a8",
-    "driver/tx.c": "a4c4361d262a077b58b39452d3f4314deca5b098597983c7d6d08c8bf3b69154",
+    "driver/tx.c": "c8ba5598e0e9db64c38dfe02bc1a78acffaa65b80c07eb95ab7cab3e358177e2",
     "driver/tx.h": "5f0c1dc2c8e9dbcdfece4e34c264bd24731ab6a3ff28011f9ddb09cb695aaa46",
     "driver/usb.h": "eb30ffd421bbc4e8bc4234dc094a2f3fc9156dfd3e7f8027cb1116a51693797e",
     "driver/util.c": "f5b17292be0028da0b5296caa4bb062f879a8b92161ccc299e092bb64d39a8a8",

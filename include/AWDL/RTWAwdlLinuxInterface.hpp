@@ -3,10 +3,12 @@
 #define RTW_AWDL_LINUX_INTERFACE_HPP
 #include <HAL/RTWAwdlInterfaceState.hpp>
 namespace RTWAwdl {
+// Internal linkage is required: each HAL compiles different compat functions
+// (RTW88 is namespaced). Cross-HAL weak-inline coalescing would be incorrect.
 // Included after the HAL's Linux compat headers. Call under WiphyGuard; hardware
 // must be running. The caller must stop all producers before remove. In
 // particular this helper does not make outstanding TX/ROC callbacks safe.
-inline void removeLinuxInterface(ieee80211_hw *hw, InterfaceState &state)
+static inline void removeLinuxInterface(ieee80211_hw *hw, InterfaceState &state)
 {
     auto *vif = static_cast<ieee80211_vif *>(state.vif);
     if (!vif) return;
@@ -18,7 +20,7 @@ inline void removeLinuxInterface(ieee80211_hw *hw, InterfaceState &state)
     IOFree(vif, state.allocationSize);
     state = {};
 }
-inline bool addLinuxInterface(ieee80211_hw *hw, InterfaceState &state,
+static inline bool addLinuxInterface(ieee80211_hw *hw, InterfaceState &state,
                              const uint8_t mac[6], const uint8_t primary[6],
                              bool needsTxq)
 {
@@ -48,6 +50,8 @@ inline bool addLinuxInterface(ieee80211_hw *hw, InterfaceState &state,
     memcpy(vif->bss_conf.bssid_buf, bssid, 6);
     vif->bss_conf.bssid = vif->bss_conf.bssid_buf;
     vif->link_conf[0] = &vif->bss_conf;
+    vif->bss_conf.chandef_chan = hw->conf.chandef.chan;
+    vif->bss_conf.chandef_width = hw->conf.chandef.width;
     if (needsTxq) {
         vif->txq = static_cast<ieee80211_txq *>(IOMallocZero(pending.txqAllocationSize));
         if (!vif->txq) { removeLinuxInterface(hw, pending); return false; }
