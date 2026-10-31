@@ -127,3 +127,29 @@ RTL8814Native/Docs/AWDL_ETAPAS_2_A_4.md), but no automatic hop/scheduler is adde
 If counters stay zero, first check channel and boundary counters; do not infer
 that enabling a support flag or creating awdl0 would solve it. Full AWDL/AirDrop
 remains unavailable.
+
+## Bounded multi-channel discovery test
+
+The filter test received ordinary action frames but no Apple vendor actions on
+local RTW89. This does not yet justify an associated off-channel scheduler:
+the existing net80211 scan transition explicitly disassociates its station.
+Using that transition while claiming STA coexistence would regress connectivity.
+
+`tools/awdl_discovery/run.py` instead runs up to three ordinary CoreWLAN scans
+only after the user disconnects. It requires known INIT/SCAN state, no valid
+port and the accepted discovery filter before compilation and before each scan.
+The OS/driver owns channel selection and regulatory restrictions; there is no
+hardcoded RF channel or forced disconnection/reconnection. Each scan has a
+20-second timeout and a concurrent bounded sanitized registry capture. Scan
+results and addresses are never printed. An auto-join can race the precheck:
+disable automatic joining for the test; this tool is not a kernel channel arbiter.
+A scan is not synchronized AWDL listening and can miss peer transmissions.
+
+Run with the current discovery-filter test kext, a nearby Apple device actively
+showing AirDrop, and Wi-Fi powered on but disconnected:
+
+    python3 tools/awdl_discovery/run.py --interface en2 --output /tmp/awdl-discovery.json
+
+Use the actual Wi-Fi interface name. Xcode command-line tools are required.
+This is a diagnostic companion to the existing kext, not a new AWDL/AirDrop
+implementation. No automatic hardware scan is run during development checks.
