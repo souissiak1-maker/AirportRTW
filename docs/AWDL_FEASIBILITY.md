@@ -153,3 +153,38 @@ showing AirDrop, and Wi-Fi powered on but disconnected:
 Use the actual Wi-Fi interface name. Xcode command-line tools are required.
 This is a diagnostic companion to the existing kext, not a new AWDL/AirDrop
 implementation. No automatic hardware scan is run during development checks.
+
+## Shared transmit template and radio ownership foundation
+
+`RTWAwdlTxTemplate.hpp` owns and validates up to 4096 bytes of action body,
+retaining the previous template if a replacement is invalid. It builds a complete
+24-byte management header with explicit AWDL source/destination/BSSID, a 12-bit
+sequence number and per-transmission LE32 time fields. It does not borrow ioctl
+memory, allocate, send, select channels, or infer the radio clock's units. Template
+subtypes are restricted to 0/3. Native template request layout and clock-domain
+conversion still need integration; this class is not yet called by the HALs.
+
+`RTWAwdlRadioCoordinator.hpp` models exclusive asynchronous channel leases,
+explicit switch completion, bounded deadlines, return-home retries and stale
+callback invalidation after shutdown. It denies associated excursions unless
+concurrent-station support is explicitly supplied. It is bookkeeping only:
+providers must implement regulatory checks, serialize/quiesce physical switches,
+restore the entire home channel definition (including width and center frequency),
+and handle cancellation and suspend. A generation token prevents stale software
+callbacks from advancing state; it cannot undo an in-flight hardware command.
+The coordinator is not yet attached to either HAL and creates no radio timer.
+
+Host tests exercise template ownership, replacement failure, bounds, maximum
+length, sequence/timestamp serialization, invalid addresses, lease exclusivity,
+unsupported coexistence, timeout, restoration failures/retry, overflow and stale
+completions with ASAN/UBSAN. These tests are not interoperability validation.
+
+Native integration audit: the repository's common IO80211VirtualInterface header
+is the older IOService-derived class. The local RTL8814Native reference instead
+declares Tahoe's Skywalk-derived virtual/AWDL protocol chain and 63 AWDL methods,
+with declarations researched against Darwin 25.6. The local running kernel is
+25.5. Reusing the old class declaration for native Tahoe would dispatch through
+incorrect virtual slots. A matching native AWDL class/queue/peer-manager contract
+must be established before instantiation; no guessed vtable offsets or synthetic
+AWDL support bits are introduced here. Election/synchronization, native queues,
+radio operations and AWDL IPv6 data transport remain unimplemented.
