@@ -7823,7 +7823,7 @@ void rtw89_core_csa_beacon_work(struct wiphy *wiphy, struct wiphy_work *work);
 int rtw89_core_send_nullfunc(struct rtw89_dev *rtwdev, struct rtw89_vif_link *rtwvif_link,
 			     bool qos, bool ps, int timeout);
 void rtw89_roc_work(struct wiphy *wiphy, struct wiphy_work *work);
-void rtw89_roc_start(struct rtw89_dev *rtwdev, struct rtw89_vif *rtwvif);
+int rtw89_roc_start(struct rtw89_dev *rtwdev, struct rtw89_vif *rtwvif);
 void rtw89_roc_end(struct rtw89_dev *rtwdev, struct rtw89_vif *rtwvif);
 void rtw89_core_scan_start(struct rtw89_dev *rtwdev, struct rtw89_vif_link *rtwvif_link,
 			   const u8 *mac_addr, bool hw_scan);

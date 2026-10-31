@@ -1473,12 +1473,14 @@ static int rtw89_ops_remain_on_channel(struct ieee80211_hw *hw,
 {
 	struct rtw89_dev *rtwdev = hw->priv;
 	struct rtw89_vif *rtwvif = vif_to_rtwvif_safe(vif);
-	struct rtw89_roc *roc = &rtwvif->roc;
+	struct rtw89_roc *roc;
 
 	lockdep_assert_wiphy(hw->wiphy);
 
 	if (!rtwvif)
 		return -EINVAL;
+
+	roc = &rtwvif->roc;
 
 	if (roc->state != RTW89_ROC_IDLE) {
 		return -EBUSY;
@@ -1496,9 +1498,7 @@ static int rtw89_ops_remain_on_channel(struct ieee80211_hw *hw,
 	roc->chan = *chan;
 	roc->type = type;
 
-	rtw89_roc_start(rtwdev, rtwvif);
-
-	return 0;
+	return rtw89_roc_start(rtwdev, rtwvif);
 }
 
 static int rtw89_ops_cancel_remain_on_channel(struct ieee80211_hw *hw,

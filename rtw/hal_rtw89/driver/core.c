@@ -4521,7 +4521,45 @@ out:
 	return ret;
 }
 
-void rtw89_roc_start(struct rtw89_dev *rtwdev, struct rtw89_vif *rtwvif)
+/* AWDL uses a non-station secondary VIF. Its own nullfunc is a no-op:
+ * notify the associated infrastructure station(s) sharing this radio context.
+ * The caller holds the wiphy serialization lock. A successful PS=1 TX report
+ * is required before retuning; PS=0 attempts every station even after a failure.
+ */
+static int rtw89_roc_station_ps(struct rtw89_dev *rtwdev, unsigned int chanctx_idx,
+                              bool ps)
+{
+    struct rtw89_vif *vif;
+    int first_error = 0;
+
+    rtw89_for_each_rtwvif(rtwdev, vif) {
+        struct ieee80211_vif *native_vif = rtwvif_to_vif(vif);
+        struct rtw89_vif_link *link;
+        unsigned int link_id;
+        bool have_link = false;
+
+        if (native_vif->type != NL80211_IFTYPE_STATION || !native_vif->cfg.assoc)
+            continue;
+        rtw89_vif_for_each_link(vif, link, link_id) {
+            int ret;
+
+            have_link = true;
+            if (link->chanctx_idx != chanctx_idx)
+                continue;
+            ret = rtw89_core_send_nullfunc(rtwdev, link, true, ps,
+                                          RTW89_ROC_TX_TIMEOUT);
+            if (ret && !first_error)
+                first_error = ret;
+            if (ret && ps)
+                return ret;
+        }
+        if (!have_link && ps)
+            return -ENOLINK;
+    }
+    return first_error;
+}
+
+int rtw89_roc_start(struct rtw89_dev *rtwdev, struct rtw89_vif *rtwvif)
 {
 	const struct rtw89_mac_gen_def *mac = rtwdev->chip->mac_def;
 	struct rtw89_chanctx_pause_parm pause_parm = {
@@ -4537,13 +4575,22 @@ void rtw89_roc_start(struct rtw89_dev *rtwdev, struct rtw89_vif *rtwvif)
 
 	lockdep_assert_wiphy(hw->wiphy);
 
+	/* The hardware radio cannot service overlapping ROC owners. */
+	rtw89_for_each_rtwvif(rtwdev, tmp_vif) {
+		if (tmp_vif != rtwvif && tmp_vif->roc.state != RTW89_ROC_IDLE) {
+			roc->state = RTW89_ROC_IDLE;
+			return -EBUSY;
+		}
+	}
+
 	rtw89_leave_ips_by_hwflags(rtwdev);
 	rtw89_leave_lps(rtwdev);
 
 	rtwvif_link = rtw89_get_designated_link(rtwvif);
 	if (unlikely(!rtwvif_link)) {
 		rtw89_err(rtwdev, "roc start: find no designated link\n");
-		return;
+		roc->state = RTW89_ROC_IDLE;
+		return -ENOLINK;
 	}
 
 	roc->link_id = rtwvif_link->link_id;
@@ -4551,11 +4598,16 @@ void rtw89_roc_start(struct rtw89_dev *rtwdev, struct rtw89_vif *rtwvif)
 	pause_parm.trigger = rtwvif_link;
 	rtw89_chanctx_pause(rtwdev, &pause_parm);
 
-	ret = rtw89_core_send_nullfunc(rtwdev, rtwvif_link, true, true,
-				       RTW89_ROC_TX_TIMEOUT);
-	if (ret)
-		rtw89_debug(rtwdev, RTW89_DBG_TXRX,
-			    "roc send null-1 failed: %d\n", ret);
+	ret = rtw89_roc_station_ps(rtwdev, rtwvif_link->chanctx_idx, true);
+	if (ret) {
+		/* An ACK can be lost after the AP accepted PM=1. Undo it on the
+		 * home channel, including stations notified before this failure.
+		 */
+		rtw89_roc_station_ps(rtwdev, rtwvif_link->chanctx_idx, false);
+		rtw89_chanctx_proceed(rtwdev, NULL);
+		roc->state = RTW89_ROC_IDLE;
+		return ret;
+	}
 
 	rtw89_for_each_rtwvif(rtwdev, tmp_vif) {
 		struct rtw89_vif_link *tmp_link;
@@ -4580,6 +4632,7 @@ void rtw89_roc_start(struct rtw89_dev *rtwdev, struct rtw89_vif *rtwvif)
 	wiphy_delayed_work_cancel(hw->wiphy, &rtwvif->roc.roc_work);
 	wiphy_delayed_work_queue(hw->wiphy, &rtwvif->roc.roc_work,
 				 msecs_to_jiffies(rtwvif->roc.duration));
+	return 0;
 }
 
 void rtw89_roc_end(struct rtw89_dev *rtwdev, struct rtw89_vif *rtwvif)
@@ -4591,8 +4644,6 @@ void rtw89_roc_end(struct rtw89_dev *rtwdev, struct rtw89_vif *rtwvif)
 	int ret;
 
 	lockdep_assert_wiphy(hw->wiphy);
-
-	ieee80211_remain_on_channel_expired(hw);
 
 	rtw89_leave_ips_by_hwflags(rtwdev);
 	rtw89_leave_lps(rtwdev);
@@ -4609,8 +4660,7 @@ void rtw89_roc_end(struct rtw89_dev *rtwdev, struct rtw89_vif *rtwvif)
 	roc->state = RTW89_ROC_IDLE;
 	rtw89_config_roc_chandef(rtwdev, rtwvif_link, NULL);
 	rtw89_chanctx_proceed(rtwdev, NULL);
-	ret = rtw89_core_send_nullfunc(rtwdev, rtwvif_link, true, false,
-				       RTW89_ROC_TX_TIMEOUT);
+	ret = rtw89_roc_station_ps(rtwdev, rtwvif_link->chanctx_idx, false);
 	if (ret)
 		rtw89_debug(rtwdev, RTW89_DBG_TXRX,
 			    "roc send null-0 failed: %d\n", ret);
@@ -4620,6 +4670,9 @@ void rtw89_roc_end(struct rtw89_dev *rtwdev, struct rtw89_vif *rtwvif)
 
 	rtw89_core_handle_sta_pending_tx(rtwdev, rtwvif_link);
 	queue_work(rtwdev->txq_wq, &rtwdev->txq_work);
+
+	/* Do not signal expiry while channel restoration is still pending. */
+	ieee80211_remain_on_channel_expired(hw);
 
 	if (hw->conf.flags & IEEE80211_CONF_IDLE)
 		wiphy_delayed_work_queue(hw->wiphy, &roc->roc_work,

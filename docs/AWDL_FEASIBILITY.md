@@ -614,3 +614,33 @@ behavior or constitute AirDrop interoperability evidence.
 Combined-HAL Tahoe Debug and Release builds pass with the control adapter
 header included by the native interface translation unit. Nothing was
 installed to EFI or published.
+
+
+## RTW89 secondary-interface ROC power-save admission
+
+The driver ROC path previously sent its nullfunc through the requesting VIF.
+For AWDL's quiet ADHOC VIF, `rtw89_core_send_nullfunc` deliberately returns
+without transmitting: only associated station VIFs have an AP to notify.
+It therefore provided no infrastructure power-save handshake.
+
+ROC admission now finds associated station links sharing the requesting
+channel context, sends PS=1 through those links and requires successful TX
+completion before the retune sequence. Missing station links, missing request
+links and another live ROC owner reject admission. Failure attempts PS=0 for
+all affected stations on the home channel, resumes the paused context and
+returns the error through the mac80211 ROC operation. The secondary VIF is
+never used to fabricate a successful AP notification. ROC end likewise sends
+PS=0 through the associated stations. Expiry notification now occurs after
+restoration/wake calls, rather than before them.
+
+The regression executes the production admission/end functions with radio/TX
+adapters under ASan/UBSan. It covers a secondary requester, multiple station
+links, unrelated channel contexts, disconnected stations, a failed second
+PS notification, failed rollback wake, concurrent ownership and missing links.
+Backend source-isolation/provenance checks also pass.
+
+This change is RTW89-only and does not implement RuntimeBackend or an RTW88
+radio scheduler. It does not resolve the remaining compat wiphy-work
+serialization/cancellation problem, establish timestamp calibration, propagate
+all retune/restore hardware errors, or constitute on-air AP/AWDL validation.
+The native provider is still not installed and no support flags were enabled.
