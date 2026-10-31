@@ -13,9 +13,11 @@ struct Control:AirportRTWAwdl::Control{
     bool online=true;uint32_t caps=requiredCapabilities;unsigned prepares=0,shutdowns=0,enables=0,disables=0,requests=0,sends=0;
     IOReturn addressResult=0,enableResult=0;
     AirportRTWAwdl::Request last=AirportRTWAwdl::Request::SSID;bool lastSet=false;void*lastPayload=nullptr;
+    unsigned ticks=0;void*context=nullptr;IO80211VirtualInterface*bound=nullptr;void(*onTick)(Control*)=nullptr;
+    void timerFired()override{++ticks;if(onTick)onTick(this);}
     uint32_t capabilities()const override{return caps;}
     bool ready()const override{return online;}
-    IOReturn prepare(IO80211VirtualInterface*,const uint8_t*)override{++prepares;return failAt==4?kIOReturnError:0;}
+    IOReturn prepare(IO80211VirtualInterface*i,const uint8_t*)override{bound=i;++prepares;return failAt==4?kIOReturnError:0;}
     IOReturn enable(bool value)override{if(value){++enables;return enableResult;}++disables;return 0;}
     void shutdown()override{++shutdowns;}
     IOReturn request(AirportRTWAwdl::Request r,bool set,void*p)override{++requests;last=r;lastSet=set;lastPayload=p;return 42;}

@@ -730,3 +730,31 @@ The final combined-HAL Tahoe Debug and Release builds pass with no compiler
 errors. The Release executable contains the new reservation/restore symbols.
 Both backend validators and the radio, submission-gate, failure-propagation
 and cross-HAL helper tests pass. No EFI was changed and nothing was published.
+
+
+## Shared window scheduler and native event/timer transport
+
+RTWAwdlWindowScheduler now coordinates the election engine with checked radio
+visits and an explicit integration driver. It validates full window coverage,
+suppresses start events after late/failed/wrong-channel visits, freezes native
+controls while a window is open, balances end events across cancellation and
+reentrant callbacks, and preserves recovery ownership when restoration fails.
+Clock loss or a failed end handoff requires native reset; it does not invent
+clock values or continue a broken timeline. TX opportunity checks enforce edge
+guards and multicast slots independently of peer authorization.
+
+AirportRTWAwdlInterface supplies the timer lifecycle and real native event
+handoff. The Tahoe start-event ID is corrected from 42 to 41 based on the native
+binary's jump table. RX metadata can now carry an explicitly valid big-endian
+clock at +48, separate from signed RSSI +44. The actual clock mapping remains
+an integration contract rather than a cast of raw radio timestamps.
+
+Host tests compose the actual scheduler with the actual interface timer/event
+methods and fault-injected radio behavior; they also test timer/resource errors,
+shutdown from a callback, counter wrap, failed restores and lost clocks. Native
+header compilation verifies existing slots and per-target event IDs. Details
+and pinned native evidence are in AWDL_NATIVE_WINDOW_EVENTS.md.
+
+No production RuntimeBackend or controller factory caller was installed. The
+HAL adapter, peer/data binding, scan/join arbitration and reset/teardown recovery
+still need completion. No AWDL capability was advertised or AirDrop claimed.

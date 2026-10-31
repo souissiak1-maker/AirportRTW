@@ -9,6 +9,7 @@
 #include <net/ethernet.h>
 #include <Airport/apple80211_var.h>
 #include <AWDL/RTWAwdlNativeRxMetadata.hpp>
+#include <AWDL/RTWAwdlNativeEvents.hpp>
 
 extern "C" {
 IOWorkLoop *rtw_awdl_interface_workloop(void *)
@@ -114,8 +115,8 @@ IOReturn AirportRTWAwdlInterface::enable(unsigned int)
         return kIOReturnNotReady;
     if (enabled_) return kIOReturnSuccess;
     const IOReturn result = control_->enable(true);
-    if (result != kIOReturnSuccess) return result;
-    if (!datapath_->setEnabled(true)) { control_->enable(false); return kIOReturnError; }
+    if (result != kIOReturnSuccess) { cancelWindowTimer(); return result; }
+    if (!datapath_->setEnabled(true)) { cancelWindowTimer(); control_->enable(false); return kIOReturnError; }
     enabled_ = true;
     setLinkState(static_cast<IO80211LinkState>(2),1);
     return kIOReturnSuccess;
@@ -124,6 +125,7 @@ IOReturn AirportRTWAwdlInterface::enable(unsigned int)
 IOReturn AirportRTWAwdlInterface::disable(unsigned int)
 {
     enabled_ = false;
+    cancelWindowTimer();
     if (baseStarted_) setLinkState(static_cast<IO80211LinkState>(1),1);
     if (datapath_) datapath_->setEnabled(false);
     return prepared_ && control_ ? control_->enable(false) : kIOReturnSuccess;
@@ -150,6 +152,8 @@ void AirportRTWAwdlInterface::stopImpl(IOService *provider)
     stopping_ = true;
     disable(0);
     if (prepareAttempted_ && control_) { control_->shutdown(); prepareAttempted_ = false; prepared_ = false; }
+    releaseWindowTimer();
+    windowOpen_ = false;
     if (datapath_) datapath_->stop();
     if (controllerPublished_) {
         if (rtw_awdl_controller_interface(controller_) == this)
@@ -162,6 +166,7 @@ void AirportRTWAwdlInterface::stopImpl(IOService *provider)
 
 void AirportRTWAwdlInterface::free()
 {
+    releaseWindowTimer();
     if (datapath_) { datapath_->stop(); datapath_->release(); datapath_ = nullptr; }
     if (virtualInitAttempted_) IO80211VirtualInterface::free();
     else IO80211SkywalkInterface::free();
@@ -223,7 +228,8 @@ bool AirportRTWAwdlInterface::queueAction(const uint8_t *frame, size_t length,
 
 bool AirportRTWAwdlInterface::queueRadioAction(const uint8_t *frame, size_t length,
                                               const apple80211_channel &channel,
-                                              int32_t rssi)
+                                              int32_t rssi, uint32_t wireRxTime,
+                                              bool wireRxTimeValid)
 {
     static_assert(sizeof(apple80211_channel) == RTWAwdl::NativeRxMetadata::channelSize,
                   "native action channel descriptor layout");
@@ -231,8 +237,84 @@ bool AirportRTWAwdlInterface::queueRadioAction(const uint8_t *frame, size_t leng
     uint8_t metadata[RTWAwdl::NativeRxMetadata::size];
     if (!RTWAwdl::NativeRxMetadata::build(frame + 10,
             reinterpret_cast<const uint8_t *>(&channel), sizeof(channel), rssi,
-            metadata, sizeof(metadata))) return false;
+            metadata, sizeof(metadata), wireRxTime, wireRxTimeValid)) return false;
     return queueAction(frame,length,metadata,sizeof(metadata));
+}
+
+bool AirportRTWAwdlInterface::postWindowStart(uint16_t counter,uint32_t role,
+    const uint8_t parent[6],const uint8_t root[6],const apple80211_channel &channel,uint32_t wireTime)
+{
+    static_assert(APPLE80211_M_AWDL_AVAILABILITY_WINDOW_START==RTWAwdl::NativeEvents::startEvent,
+                  "native AWDL start event ID");
+    if (!enabled_ || stopping_ || !registered_ || windowOpen_) return false;
+    uint8_t payload[RTWAwdl::NativeEvents::startSize];
+    if (!RTWAwdl::NativeEvents::start(counter,role,parent,root,
+            reinterpret_cast<const uint8_t *>(&channel),sizeof(channel),wireTime,payload,sizeof(payload)))
+        return false;
+    // Publish state before synchronous/reentrant native dispatch.
+    windowOpen_=true;
+    retain();
+    postMessage(APPLE80211_M_AWDL_AVAILABILITY_WINDOW_START,payload,sizeof(payload),true);
+    release();
+    return true;
+}
+
+bool AirportRTWAwdlInterface::postWindowEnd(uint32_t wireTime)
+{
+    static_assert(APPLE80211_M_AWDL_AVAILABILITY_WINDOW_EXTENSIONS_END==RTWAwdl::NativeEvents::endEvent,
+                  "native AWDL end event ID");
+    // Disable/stop may balance an existing start before the native base stops.
+    if (!windowOpen_ || !baseStarted_ || !registered_) return false;
+    uint8_t payload[RTWAwdl::NativeEvents::endSize];
+    if (!RTWAwdl::NativeEvents::end(wireTime,payload,sizeof(payload))) return false;
+    windowOpen_=false;
+    retain();
+    postMessage(APPLE80211_M_AWDL_AVAILABILITY_WINDOW_EXTENSIONS_END,payload,sizeof(payload),true);
+    release();
+    return true;
+}
+
+bool AirportRTWAwdlInterface::armWindowTimer(uint64_t deadlineUs,uint64_t nowUs)
+{
+    if (!loop_ || !registered_ || !prepared_ || stopping_) return false;
+    if (!windowTimer_) {
+        windowTimer_=IOTimerEventSource::timerEventSource(this,windowTimerFired);
+        if (!windowTimer_) return false;
+        if (loop_->addEventSource(windowTimer_)!=kIOReturnSuccess) {
+            auto *timer=windowTimer_;windowTimer_=nullptr;timer->release();return false;
+        }
+        windowTimerAdded_=true;
+    }
+    uint64_t delay=deadlineUs>nowUs ? deadlineUs-nowUs : 1;
+    if (delay>UINT32_MAX) delay=UINT32_MAX;
+    const bool armed=windowTimer_->setTimeoutUS(static_cast<uint32_t>(delay))==kIOReturnSuccess;
+    if (!armed) windowTimer_->cancelTimeout();
+    return armed;
+}
+
+void AirportRTWAwdlInterface::cancelWindowTimer()
+{
+    if (windowTimer_) windowTimer_->cancelTimeout();
+}
+
+void AirportRTWAwdlInterface::releaseWindowTimer()
+{
+    auto *timer=windowTimer_;
+    if (!timer) return;
+    windowTimer_=nullptr;
+    timer->cancelTimeout();
+    if (windowTimerAdded_ && loop_) loop_->removeEventSource(timer);
+    windowTimerAdded_=false;
+    timer->release();
+}
+
+void AirportRTWAwdlInterface::windowTimerFired(OSObject *owner,IOTimerEventSource *timer)
+{
+    auto *me=static_cast<AirportRTWAwdlInterface *>(owner);
+    if (timer!=me->windowTimer_ || !me->enabled_ || me->stopping_ || !me->control_) return;
+    timer->retain();me->retain();
+    me->control_->timerFired();
+    me->release();timer->release();
 }
 
 bool AirportRTWAwdlInterface::deliverAction(OSObject *owner, const uint8_t *frame,

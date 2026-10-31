@@ -6,6 +6,7 @@
 #include <Airport/macOS26/IO80211AWDLProtocol.h>
 #include "AirportRTWAwdlControl.hpp"
 #include "AirportRTWAwdlDatapath.hpp"
+#include <IOKit/IOTimerEventSource.h>
 
 struct apple80211_channel;
 
@@ -42,7 +43,14 @@ public:
     // Provider keeps this interface alive and stops producers before shutdown.
     bool queueAction(const uint8_t *, size_t, const uint8_t *, size_t);
     // Source is taken from the frame; provider supplies the actual channel and RSSI.
-    bool queueRadioAction(const uint8_t *, size_t, const apple80211_channel &, int32_t);
+    bool queueRadioAction(const uint8_t *, size_t, const apple80211_channel &, int32_t,
+                          uint32_t wireRxTime = 0, bool wireRxTimeValid = false);
+    // Native-workloop only. Returns handoff/arming status, not peer-manager ACK.
+    bool postWindowStart(uint16_t counter,uint32_t role,const uint8_t parent[6],
+                         const uint8_t root[6],const apple80211_channel &,uint32_t wireTime);
+    bool postWindowEnd(uint32_t wireTime);
+    bool armWindowTimer(uint64_t deadlineUs,uint64_t nowUs);
+    void cancelWindowTimer();
     IOWorkLoop *nativeWorkLoop() const { return loop_; }
     IOReturn getSSID(apple80211_ssid_data *) override;
     IOReturn getCHANNEL(apple80211_channel_data *) override;
@@ -113,6 +121,8 @@ private:
     bool publish();
     static IOReturn stopGated(OSObject *, void *, void *, void *, void *);
     void stopImpl(IOService *);
+    static void windowTimerFired(OSObject *,IOTimerEventSource *);
+    void releaseWindowTimer();
     IOReturn dispatch(AirportRTWAwdl::Request, bool, void *);
     static bool transmit(OSObject *, const uint8_t *, size_t);
     static bool deliverAction(OSObject *, const uint8_t *, size_t, const uint8_t *, size_t);
@@ -120,6 +130,8 @@ private:
     AirportRTWAwdl::Control *control_ {nullptr}; // Controller-owned.
     AirportRTWAwdlDatapath *datapath_ {nullptr};
     IOWorkLoop *loop_ {nullptr};
+    IOTimerEventSource *windowTimer_ {nullptr};
+    bool windowTimerAdded_ {false}, windowOpen_ {false};
     uint8_t mac_[6] {};
     uint8_t registration_[0x130] {};
     bool attached_ {false}, baseStarted_ {false}, prepareAttempted_ {false};

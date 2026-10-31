@@ -38,7 +38,8 @@ struct apple80211_channel { uint32_t version,channel,flags; };
 scenario=r'''
 using namespace AirportRTWAwdl;
 struct Backend : RuntimeBackend {
-    unsigned opens=0,closes=0,activations=0,configures=0,templates=0,sends=0;
+    unsigned opens=0,closes=0,activations=0,configures=0,templates=0,sends=0,ticks=0;
+    void timerFired()override{++ticks;}
     uint32_t caps=Control::requiredCapabilities;
     int openResult=0,activateResult=0,configureResult=0,templateResult=0;
     bool online=true,hasChannel=true,hasConfiguration=true;
@@ -73,6 +74,7 @@ int main(){
     {Backend b;Runtime r(b);b.hasConfiguration=false;
      assert(r.prepare(&interface,mac)==kIOReturnNotReady && b.closes==1);}
     Backend b;Runtime r(b);
+    r.timerFired();assert(!b.ticks);
     assert(r.enable(true)==kIOReturnNotReady);
     assert(r.prepare(nullptr,mac)==kIOReturnBadArgument);
     assert(r.prepare(&interface,mac)==0 && b.opens==1);
@@ -121,6 +123,7 @@ int main(){
     b.hasChannel=true;assert(!r.request(Request::CHANNEL,false,&channel) && channel.channel.channel==6);
     b.activateResult=kIOReturnError;assert(r.enable(true)==kIOReturnError);
     b.activateResult=0;assert(!r.enable(true));unsigned changes=b.activations;
+    r.timerFired();assert(b.ticks==1);
     assert(!r.enable(true) && b.activations==changes);
     assert(r.setAddress(mac)==kIOReturnBusy);
     uint8_t eth[54]{};eth[0]=0x33;eth[6]=2;eth[12]=0x86;eth[13]=0xdd;eth[14]=0x60;
@@ -129,6 +132,7 @@ int main(){
     eth[12]=8;assert(!r.transmitEthernet(eth,sizeof(eth)) && b.sends==1);
     assert(!r.enable(false) && !r.transmitEthernet(eth,sizeof(eth)));
     assert(!r.setAddress(mac));r.shutdown();r.shutdown();
+    r.timerFired();assert(b.ticks==1);
     assert(b.closes==1 && !r.ready() && r.enable(true)==kIOReturnNotReady);
     assert(r.request(Request::AWDL_SYNC_PARAMS,false,&sync)==kIOReturnNotReady);
     puts("PASS: native runtime lifecycle, atomic configuration, owned templates and backend failures");

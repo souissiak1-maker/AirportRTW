@@ -13,6 +13,11 @@ int main() {
     int32_t rssi=0;memcpy(&rssi,out+44,4);assert(rssi==-41);
     for(unsigned i=0;i<72;++i)
         if(i>=6 && !(i>=12 && i<24) && !(i>=44 && i<48)) assert(out[i]==0);
+    assert(NativeRxMetadata::build(source,channel,12,-41,out,72,0x12345678,true));
+    assert(out[48]==0x12&&out[49]==0x34&&out[50]==0x56&&out[51]==0x78);
+    memcpy(&rssi,out+44,4);assert(rssi==-41);
+    assert(NativeRxMetadata::build(source,channel,12,-41,out,72,0x12345678,false));
+    assert(!out[48]&&!out[49]&&!out[50]&&!out[51]);
     for(int32_t value : {-127,-70,-1}) {
         assert(NativeRxMetadata::build(source,channel,12,value,out,72));
         memcpy(&rssi,out+44,4);assert(rssi==value);

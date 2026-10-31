@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <mutex>
 #include <vector>
+#include <algorithm>
 using IOReturn=int;using UInt=unsigned;using UInt64=uint64_t;
 constexpr int kIOReturnSuccess=0,kIOReturnNotReady=1,kIOReturnError=2,kIOReturnBadArgument=3;
 constexpr unsigned kIOServiceRequired=1,kIOServiceSynchronous=2;
@@ -28,11 +29,35 @@ struct IOService:OSObject{
     void registerService(unsigned){++services;}
     bool terminate(unsigned){auto*p=parent;stop(p);if(parent)detach(p);return true;}
 };
+struct IOTimerEventSource;
 struct IOWorkLoop:OSObject{
+    std::vector<IOTimerEventSource*>timers;
+    IOReturn addEventSource(IOTimerEventSource*);
+    void removeEventSource(IOTimerEventSource*);
     std::recursive_mutex gate;
     using Action=IOReturn(*)(OSObject*,void*,void*,void*,void*);
     IOReturn runAction(Action action,OSObject*owner,void*a=nullptr){std::lock_guard<std::recursive_mutex>lock(gate);return action(owner,a,nullptr,nullptr,nullptr);}
 };
+struct IOTimerEventSource:OSObject{
+    using Action=void(*)(OSObject*,IOTimerEventSource*);
+    OSObject*owner;Action action;bool armed=false;uint32_t delay=0;
+    static IOTimerEventSource*last;
+    IOTimerEventSource(OSObject*o,Action a):owner(o),action(a){owner->retain();last=this;}
+    ~IOTimerEventSource()override{last=nullptr;owner->release();}
+    static IOTimerEventSource*timerEventSource(OSObject*o,Action a){return failAt==12?nullptr:new IOTimerEventSource(o,a);}
+    IOReturn setTimeoutUS(uint32_t us){if(failAt==14)return kIOReturnError;delay=us;armed=true;return 0;}
+    void cancelTimeout(){armed=false;}
+    void fire(){if(!armed)return;retain();auto*o=owner;o->retain();armed=false;action(o,this);o->release();release();}
+};
+IOTimerEventSource*IOTimerEventSource::last=nullptr;
+IOReturn IOWorkLoop::addEventSource(IOTimerEventSource*t){if(failAt==13)return kIOReturnError;t->retain();timers.push_back(t);return 0;}
+void IOWorkLoop::removeEventSource(IOTimerEventSource*t){
+    auto i=std::find(timers.begin(),timers.end(),t);assert(i!=timers.end());timers.erase(i);t->release();}
+struct PostedEvent{unsigned id;std::vector<uint8_t>bytes;};
+static std::vector<PostedEvent>messages;
+static void(*eventHook)(OSObject*,unsigned)=nullptr;
+#define APPLE80211_M_AWDL_AVAILABILITY_WINDOW_START 41
+#define APPLE80211_M_AWDL_AVAILABILITY_WINDOW_EXTENSIONS_END 43
 struct IO80211VirtualInterface;
 struct IO80211Controller:IOService{IO80211VirtualInterface*current=nullptr;};
 struct IOSkywalkEthernetInterface{struct RegistrationInfo{uint8_t bytes[0x130];};};
@@ -51,6 +76,9 @@ struct IO80211SkywalkInterface:IOService{
     virtual int getNumTxQueues(){return 0;}virtual int getTxHeadroom(){return 0;}
     virtual UInt64 getRxQueueCapacity(){return 0;}
     virtual void enableDatapath(){}virtual void disableDatapath(){}
+    virtual void postMessage(unsigned id,void*p,unsigned long n,bool wcl){
+        assert(wcl);messages.push_back({id,std::vector<uint8_t>((uint8_t*)p,(uint8_t*)p+n)});
+        if(eventHook)eventHook(this,id);}
     void setLinkLayerAddress(ether_addr*){++addressUpdates;}
     bool initRegistrationInfo(IOSkywalkEthernetInterface::RegistrationInfo*p,unsigned version,size_t n){assert(version==1&&n==0x130);memset(p,0,n);return failAt!=8;}
     void setInterfaceId(unsigned id){assert(id==2);}

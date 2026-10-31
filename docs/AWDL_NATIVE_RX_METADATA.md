@@ -72,3 +72,13 @@ No native Control provider currently binds the HAL receiver to this interface.
 The provider, peer policy, native synchronization controls and timed radio
 scheduler are still required. There is no end-to-end discovery test and no
 AWDL/AirDrop capability advertisement.
+
+
+## Additional explicit event-clock field
+
+A subsequent native audit confirms that actionFrameReport loads/byte-swaps
+metadata +48 independently of RSSI +44. The packer can now copy an explicitly
+valid RX clock into +48 in big-endian order. It leaves the field zero otherwise;
+it never treats the HAL's raw device clock as interchangeable with the native
+event domain. See AWDL_NATIVE_WINDOW_EVENTS.md for the audited instructions,
+window event layouts and remaining backend clock responsibilities.

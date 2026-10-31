@@ -84,6 +84,8 @@ public:
     virtual IOReturn setAddress(const uint8_t mac[6]) = 0;
     // Copy before true; false is backpressure. Do not tear down reentrantly.
     virtual bool transmitEthernet(const uint8_t *, size_t) = 0;
+    // Native-workloop timer dispatch; scheduler implementations rearm explicitly.
+    virtual void timerFired() {}
 };
 }
 #endif

@@ -9,6 +9,7 @@
 #include <AWDL/RTWAwdlTxTemplate.hpp>
 #include <AWDL/RTWAwdlData.hpp>
 #include <AWDL/RTWAwdlElection.hpp>
+#include <AWDL/RTWAwdlWindowScheduler.hpp>
 
 namespace AirportRTWAwdl {
 // Owning configuration snapshot: no pointers into native request storage.
@@ -48,6 +49,7 @@ public:
     virtual IOReturn installTemplate(const RTWAwdl::TxTemplate &) = 0;
     virtual IOReturn setAddress(const uint8_t mac[6]) = 0;
     virtual bool transmitEthernet(const uint8_t *, size_t) = 0;
+    virtual void timerFired() {}
 };
 
 // Concrete native control provider. Publication still requires a complete,
@@ -97,6 +99,9 @@ public:
     bool transmitEthernet(const uint8_t *bytes, size_t length) override {
         return opened_ && enabled_ && !stopped_ && backend_.ready() && RTWAwdl::DataCodec::validEthernet(bytes,length) &&
             backend_.transmitEthernet(bytes,length);
+    }
+    void timerFired() override {
+        if (opened_ && enabled_ && !stopped_) backend_.timerFired();
     }
     IOReturn request(Request request, bool set, void *payload) override {
         if (!payload) return kIOReturnBadArgument;
