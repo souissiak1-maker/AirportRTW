@@ -644,3 +644,29 @@ radio scheduler. It does not resolve the remaining compat wiphy-work
 serialization/cancellation problem, establish timestamp calibration, propagate
 all retune/restore hardware errors, or constitute on-air AP/AWDL validation.
 The native provider is still not installed and no support flags were enabled.
+
+## Shared election engine and captured synchronization regressions
+
+The shared decoder previously rejected both retained iPhone synchronization
+captures from MtkWireless. It now separates synchronization-source and election
+root identities, and uses the explicit operating-class channel list when an
+embedded legacy list describes center channels. Shape conflicts remain invalid;
+6 GHz operating classes are rejected by the supported profile. Sanitized
+fixtures/provenance are documented in AWDL_CAPTURE_FIXTURES.md.
+
+RTWAwdlElection.hpp now supplies a hardware-independent peer/election/software
+clock engine adapted from the reference C++ implementation, using our decoder.
+It requires a caller-provided initial plan, defaults to native-controlled peer
+selection, maintains bounded peer ownership, freezes controls during an open
+window, and accepts explicit wire clocks when serializing synchronization.
+The reference's older replay implementation and MediaTek ROC code were omitted.
+
+The engine is not yet bound to native availability-window events or a concrete
+RTW88/RTW89 RuntimeBackend. Radio timestamp/event-domain integration and channel
+ownership remain gates. No AirDrop capability was enabled or end-to-end behavior
+claimed. Host tests and actual native-header compilation cover this component;
+they do not establish on-air interoperability.
+
+Both combined-HAL Tahoe Debug and Release builds pass with the shared engine
+header compiled through the native runtime. Runtime/interface/datapath/action
+regressions and both backend validators also pass.

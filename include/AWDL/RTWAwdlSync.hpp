@@ -23,7 +23,7 @@ struct SyncMessage {
     uint16_t periodTu {0}, actionPeriodTu {0}, countdownTu {0};
     uint16_t commonTu {0}, counter {0}, remainingTu {0}, apAlignment {0};
     uint8_t subtype {0}, presence {0}, guardTu {0};
-    uint8_t nextChannel {0}, masterChannel {0}, master[6] {}, syncAddress[6] {};
+    uint8_t nextChannel {0}, masterChannel {0}, master[6] {}, syncMaster[6] {}, syncAddress[6] {};
     uint32_t masterCounter {0}, selfCounter {0}, masterMetric {0}, selfMetric {0}, height {0};
     bool electionPresent {false}, versionPresent {false};
     uint8_t version {0}, deviceClass {0};
@@ -53,7 +53,9 @@ inline SyncDecode decodeChannelSequence(const uint8_t *p, size_t n, ChannelSeque
     const unsigned width = p[1] == 0 ? 1 : (p[1] == 1 || p[1] == 3 ? 2 : 0);
     if (!width || p[0] != 15 || p[2] != 0 || p[3] > 15 ||
         SyncDetail::le16(p + 4) != 0xffff) return SyncDecode::Unsupported;
-    if (n < 6 + 16 * width) return SyncDecode::Malformed;
+    const size_t used = 6 + 16 * width;
+    if (n < used || n - used > 3) return SyncDecode::Malformed;
+    for (size_t i=used;i<n;++i) if (p[i]) return SyncDecode::Malformed;
     ChannelSequence decoded;
     decoded.count = 16; decoded.encoding = p[1]; decoded.stride = uint8_t(p[3] + 1);
     for (unsigned i = 0; i < 16; ++i) {
@@ -62,6 +64,15 @@ inline SyncDecode decodeChannelSequence(const uint8_t *p, size_t n, ChannelSeque
         if (channel > 196) return SyncDecode::Unsupported; // No channel-255 retune.
         decoded.channel[i] = channel; // Zero is an unavailable slot.
         if (width == 2) decoded.auxiliary[i] = entry[p[1] == 1 ? 0 : 1];
+        if (p[1] == 3 && channel) {
+            const uint8_t opclass=decoded.auxiliary[i];
+            // Do not reinterpret a 6 GHz operating class as a 2/5 GHz
+            // channel with the same numeric value. HAL authorization remains
+            // separate from this wire-format check.
+            if (channel<=14 ? (opclass<81 || opclass>84) :
+                              (opclass<115 || opclass>130))
+                return SyncDecode::Unsupported;
+        }
     }
     out = decoded;
     return SyncDecode::Valid;
@@ -97,7 +108,8 @@ inline SyncDecode decodeSyncAction(const uint8_t *body, size_t length, SyncMessa
             decoded.actionPeriodTu = SyncDetail::le16(p + 7);
             decoded.commonTu = SyncDetail::le16(p + 13);
             decoded.remainingTu = SyncDetail::le16(p + 15);
-            for (unsigned i = 0; i < 6; ++i) decoded.master[i] = p[21 + i];
+            for (unsigned i = 0; i < 6; ++i)
+                decoded.syncMaster[i] = decoded.master[i] = p[21 + i];
             decoded.presence = p[27]; decoded.counter = SyncDetail::le16(p + 29);
             decoded.apAlignment = SyncDetail::le16(p + 31);
             if (!decoded.periodTu || !decoded.actionPeriodTu ||
@@ -138,12 +150,22 @@ inline SyncDecode decodeSyncAction(const uint8_t *body, size_t length, SyncMessa
     }
     if (cursor.failed()) return SyncDecode::Malformed;
     if (!haveSync) return SyncDecode::NotSynchronization;
+    // The clock advertisement and election root may differ during a tree
+    // transition. Preserve both; election/admission must reject loops rather
+    // than discarding the complete synchronization observation here.
     if (decoded.electionPresent)
-        for (unsigned i = 0; i < 6; ++i)
-            if (electedMaster[i] != decoded.master[i]) return SyncDecode::Malformed;
+        for (unsigned i = 0; i < 6; ++i) decoded.master[i] = electedMaster[i];
     if (!haveSequence && !haveEmbedded) return SyncDecode::Unsupported;
-    if (haveSequence && haveEmbedded && !SyncDetail::sameSequence(decoded.sequence, embedded))
-        return SyncDecode::Malformed;
+    if (haveSequence && haveEmbedded) {
+        if (decoded.sequence.count != embedded.count || decoded.sequence.stride != embedded.stride)
+            return SyncDecode::Malformed;
+        // Captured iPhone PSFs carry legacy center-channel 151 in the
+        // embedded encoding-1 list and primary 149/opclass 128 in TLV 18.
+        // Prefer the explicit operating-class list for this pairing only.
+        if (!(embedded.encoding == 1 && decoded.sequence.encoding == 3) &&
+            !SyncDetail::sameSequence(decoded.sequence, embedded))
+            return SyncDecode::Malformed;
+    }
     if (!haveSequence) decoded.sequence = embedded;
     if (decoded.sequence.stride != decoded.presence) return SyncDecode::Malformed;
     out = decoded;

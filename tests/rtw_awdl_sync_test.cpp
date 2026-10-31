@@ -88,8 +88,9 @@ int main() {
     assert(decodeSyncAction(onlyEmbedded.data(),onlyEmbedded.size(),decoded)==SyncDecode::Valid);
     auto noSequence=envelope();tlv(noSequence,4,fixed());
     assert(decodeSyncAction(noSequence.data(),noSequence.size(),decoded)==SyncDecode::Unsupported);
-    auto wrongMaster=envelope();tlv(wrongMaster,4,sync);election[5]=3;tlv(wrongMaster,24,election);
-    assert(decodeSyncAction(wrongMaster.data(),wrongMaster.size(),decoded)==SyncDecode::Malformed);
+    auto transition=envelope();tlv(transition,4,sync);election[5]=3;tlv(transition,24,election);
+    assert(decodeSyncAction(transition.data(),transition.size(),decoded)==SyncDecode::Valid);
+    assert(decoded.master[5]==3 && decoded.syncMaster[5]==1);
     for(unsigned presence : {0U,3U,17U}) {
         auto bad=sync;bad[27]=presence;auto msg=envelope();tlv(msg,4,bad);
         assert(decodeSyncAction(msg.data(),msg.size(),decoded)==SyncDecode::Malformed);
@@ -99,6 +100,29 @@ int main() {
         if(parseAction(body.data(),n,info)==ParseResult::Malformed)
             assert(decodeSyncAction(body.data(),n,decoded)!=SyncDecode::Valid);
     }
+    // Sanitized real iPhone frames: retain independent clock/election
+    // identities and prefer explicit opclass over embedded legacy centers.
+    for (const char *name : {"iphone-election-transition.bin","iphone-v9-psf.bin"}) {
+        char path[256];snprintf(path,sizeof(path),"tests/fixtures/awdl/%s",name);
+        FILE *file=fopen(path,"rb");assert(file);
+        std::vector<uint8_t> bytes;int c;
+        while((c=fgetc(file))!=EOF)bytes.push_back(uint8_t(c));
+        fclose(file);
+        assert(bytes.size()>40);
+        assert(decodeSyncAction(bytes.data()+24,bytes.size()-24,decoded)==SyncDecode::Valid);
+        assert(decoded.sequence.encoding==3 && decoded.presence==4);
+        if(!strcmp(name,"iphone-election-transition.bin")) {
+            assert(decoded.sequence.channel[0]==149);
+            assert(memcmp(decoded.master,decoded.syncMaster,6));
+        } else assert(decoded.sequence.channel[0]==11);
+    }
+    auto withPadding=sequence();withPadding.resize(withPadding.size()+3);
+    ChannelSequence padded;
+    assert(decodeChannelSequence(withPadding.data(),withPadding.size(),padded)==SyncDecode::Valid);
+    withPadding.back()=1;
+    assert(decodeChannelSequence(withPadding.data(),withPadding.size(),padded)==SyncDecode::Malformed);
+    auto sixGhz=sequence();sixGhz[6]=6;sixGhz[7]=131;
+    assert(decodeChannelSequence(sixGhz.data(),sixGhz.size(),padded)==SyncDecode::Unsupported);
     uint32_t random=17;
     for(unsigned trial=0;trial<20000;++trial) {
         random=random*1664525+1013904223;std::vector<uint8_t> fuzz(random%512);

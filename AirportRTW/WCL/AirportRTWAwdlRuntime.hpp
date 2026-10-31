@@ -8,6 +8,7 @@
 #include <Airport/apple80211_ioctl.h>
 #include <AWDL/RTWAwdlTxTemplate.hpp>
 #include <AWDL/RTWAwdlData.hpp>
+#include <AWDL/RTWAwdlElection.hpp>
 
 namespace AirportRTWAwdl {
 // Owning configuration snapshot: no pointers into native request storage.
