@@ -2,6 +2,7 @@
 #ifndef RTW_AWDL_OBSERVER_HPP
 #define RTW_AWDL_OBSERVER_HPP
 #include "RTWAwdlFrame.hpp"
+#include "RTWAwdlSync.hpp"
 namespace RTWAwdl {
 // Passive Debug-only observer. Never consumes frames or changes radio state.
 // No peer addresses, payloads or key material are retained.
@@ -9,6 +10,7 @@ struct Observer {
     volatile uint64_t actionFrames {0}, vendorActions {0}, appleVendorActions {0};
     volatile uint64_t valid {0}, malformed {0}, syncEnvelopes {0}, channelEnvelopes {0};
     volatile uint64_t timedActions {0};
+    volatile uint64_t syncDecoded {0}, syncDecodeFailures {0};
     volatile uint32_t lastRadioTimestamp {0};
     volatile uint32_t lastFrequency {0}, lastVersion {0}, lastSubtype {0};
     void observe(const uint8_t *frame, size_t length, uint16_t frequency,
@@ -31,7 +33,14 @@ struct Observer {
                 __sync_fetch_and_add(&timedActions, 1);
                 lastRadioTimestamp = radioTimestamp;
             }
-            if (info.tlvTypes & (uint64_t(1) << 4)) __sync_fetch_and_add(&syncEnvelopes, 1);
+            if (info.tlvTypes & (uint64_t(1) << 4)) {
+                __sync_fetch_and_add(&syncEnvelopes, 1);
+                SyncMessage decoded;
+                if (decodeSyncAction(frame + 24, length - 24, decoded) == SyncDecode::Valid)
+                    __sync_fetch_and_add(&syncDecoded, 1);
+                else
+                    __sync_fetch_and_add(&syncDecodeFailures, 1);
+            }
             if (info.tlvTypes & ((uint64_t(1) << 18) | (uint64_t(1) << 32)))
                 __sync_fetch_and_add(&channelEnvelopes, 1);
             lastFrequency = frequency; lastVersion = info.version; lastSubtype = info.subtype;

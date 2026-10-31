@@ -44,6 +44,8 @@ jobs:
           python3 tests/rtw88_interrupt_selection_test.py
           xcrun clang++ -std=c++14 -Wall -Wextra -Werror -fsanitize=address,undefined -Iinclude tests/rtw_awdl_frame_test.cpp -o /tmp/rtw_awdl_frame_test
           /tmp/rtw_awdl_frame_test
+          xcrun clang++ -std=c++14 -Wall -Wextra -Werror -fsanitize=address,undefined -Iinclude tests/rtw_awdl_sync_test.cpp -o /tmp/rtw_awdl_sync_test
+          /tmp/rtw_awdl_sync_test
           python3 tests/rtw_awdl_filter_test.py
           python3 tests/rtw_workqueue_test.py
           xcrun clang++ -std=c++14 -Wall -Wextra -Werror -fsanitize=address,undefined -Iinclude tests/rtw_mac80211_registry_test.cpp -o /tmp/rtw_mac80211_registry_test

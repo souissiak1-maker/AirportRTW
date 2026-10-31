@@ -552,6 +552,8 @@ void RTWCore89::watchdog(struct _ifnet *ifp)
     RTW_DIAGNOSTIC(controller->setProperty("RTWAwdlChannelEnvelopes", owner->awdlObserver.channelEnvelopes, 64));
     RTW_DIAGNOSTIC(controller->setProperty("RTWAwdlLastFrequency", owner->awdlObserver.lastFrequency, 32));
     RTW_DIAGNOSTIC(controller->setProperty("RTWAwdlTimedActions", owner->awdlObserver.timedActions, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTWAwdlSyncDecoded", owner->awdlObserver.syncDecoded, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTWAwdlSyncDecodeFailures", owner->awdlObserver.syncDecodeFailures, 64));
     RTW_DIAGNOSTIC(controller->setProperty("RTWAwdlLastRadioTimestamp", owner->awdlObserver.lastRadioTimestamp, 32));
     RTW_DIAGNOSTIC(controller->setProperty("RTWAwdlLastVersion", owner->awdlObserver.lastVersion, 32));
     RTW_DIAGNOSTIC(controller->setProperty("RTWAwdlLastSubtype", owner->awdlObserver.lastSubtype, 32));

@@ -36,6 +36,7 @@ def filter_registry(tree):
                              'RTWAwdlSyncEnvelopes', 'RTWAwdlChannelEnvelopes',
                              'RTWAwdlLastFrequency', 'RTWAwdlLastVersion',
                              'RTWAwdlLastSubtype', 'RTWAwdlTimedActions',
+                             'RTWAwdlSyncDecoded', 'RTWAwdlSyncDecodeFailures',
                              'RTWAwdlLastRadioTimestamp'} and isinstance(item, (int, bool)):
                     fields[key] = item
                 elif key in COUNTRY_KEYS and isinstance(item, str):

@@ -550,3 +550,12 @@ endpoint, not completed native AWDL RX delivery. Clock conversion, the native
 workloop event adapter, peer admission and timed channel scheduling remain before
 an end-to-end discovery prototype can run. AirDrop support advertisement remains
 disabled and no intermediate hardware installation is requested.
+
+## RTL88WiFi reference integration
+
+See [RTL88WIFI_REFERENCE.md](RTL88WIFI_REFERENCE.md) for the pinned source,
+license/provenance, adopted wire decoding and the mechanisms still under audit.
+The shared synchronization decoder is used by the Debug observer in both HALs;
+`RTWAwdlSyncDecoded` and `RTWAwdlSyncDecodeFailures` expose numeric parsing
+results. No untrusted peer clock or channel is adopted by observation, and no
+Supported flag or host-clock fallback was imported.
