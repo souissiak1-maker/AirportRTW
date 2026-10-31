@@ -8,9 +8,9 @@
 struct IO80211VirtualInterface;
 namespace AirportRTWAwdlActionInput {
 // Called on the native AWDL workqueue with a live, initialized role-6 interface.
-// Header is the calibrated native action metadata, not the 802.11 frame header.
+// Header is native source/channel/RSSI metadata, not the 802.11 frame header.
 // True means buffer ownership was handed to the family, not peer acceptance.
-// Radio timestamps must already be translated into the family's clock domain.
+// Offset +44 is signed RSSI, not a radio timestamp. Scheduling clocks are separate.
 bool deliver(IO80211VirtualInterface *, const uint8_t *frame, size_t length,
              const uint8_t *metadata, size_t metadataLength);
 }

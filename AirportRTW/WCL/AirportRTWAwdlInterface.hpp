@@ -7,6 +7,8 @@
 #include "AirportRTWAwdlControl.hpp"
 #include "AirportRTWAwdlDatapath.hpp"
 
+struct apple80211_channel;
+
 class AirportRTWAwdlInterface : public IO80211AWDLProtocol {
     OSDeclareDefaultStructors(AirportRTWAwdlInterface)
 public:
@@ -34,8 +36,13 @@ public:
     // Data and TX-ready callbacks are NAPI-safe; provider owns its live reference.
     bool receiveEthernet(const uint8_t *, size_t);
     void resumeTransmit();
-    // Action delivery is on nativeWorkLoop(), with calibrated 72-byte metadata.
+    // Action delivery is on nativeWorkLoop(), with verified 72-byte metadata.
     bool receiveAction(const uint8_t *, size_t, const uint8_t *, size_t);
+    // NAPI-safe staging of an action with verified native RX metadata.
+    // Provider keeps this interface alive and stops producers before shutdown.
+    bool queueAction(const uint8_t *, size_t, const uint8_t *, size_t);
+    // Source is taken from the frame; provider supplies the actual channel and RSSI.
+    bool queueRadioAction(const uint8_t *, size_t, const apple80211_channel &, int32_t);
     IOWorkLoop *nativeWorkLoop() const { return loop_; }
     IOReturn getSSID(apple80211_ssid_data *) override;
     IOReturn getCHANNEL(apple80211_channel_data *) override;
@@ -108,6 +115,7 @@ private:
     void stopImpl(IOService *);
     IOReturn dispatch(AirportRTWAwdl::Request, bool, void *);
     static bool transmit(OSObject *, const uint8_t *, size_t);
+    static bool deliverAction(OSObject *, const uint8_t *, size_t, const uint8_t *, size_t);
     IO80211Controller *controller_ {nullptr}; // Held by service attachment.
     AirportRTWAwdl::Control *control_ {nullptr}; // Controller-owned.
     AirportRTWAwdlDatapath *datapath_ {nullptr};

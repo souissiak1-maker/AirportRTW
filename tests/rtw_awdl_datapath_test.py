@@ -11,7 +11,7 @@ def strip_includes(text):
     return re.sub(r'^#include[^\n]*\n','',text,flags=re.M)
 with tempfile.TemporaryDirectory(prefix='awdl-native-packets-') as temp:
     path=Path(temp)/'host.cpp'
-    path.write_text('#include <AWDL/RTWAwdlData.hpp>\n#include <AWDL/RTWAwdlPacketFlow.hpp>\n'+
+    path.write_text('#include <AWDL/RTWAwdlData.hpp>\n#include <AWDL/RTWAwdlPacketFlow.hpp>\n#include <AWDL/RTWAwdlFrame.hpp>\n'+
         (ROOT/'tests/host/rtw_awdl_datapath_shim.hpp').read_text()+strip_includes(header)+strip_includes(source)+
         (ROOT/'tests/host/rtw_awdl_datapath_scenarios.hpp').read_text())
     binary=str(Path(temp)/'test')

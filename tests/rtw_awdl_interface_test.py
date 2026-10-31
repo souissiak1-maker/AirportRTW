@@ -29,6 +29,15 @@ test+='''
     assert(dp->sender(dp->owner,frame,54)&&control.sends==1&&i->receiveEthernet(frame,54));
     uint8_t metadata[72]{};assert(i->receiveAction(frame,54,metadata,72));
     assert(AirportRTWAwdlActionInput::inputs==1);
+    assert(i->queueAction(frame,54,metadata,72));
+    assert(AirportRTWAwdlActionInput::inputs==1);dp->pumpAction();
+    assert(AirportRTWAwdlActionInput::inputs==2);
+    frame[10]=2;frame[15]=1;apple80211_channel actionChannel{1,44,0x12};
+    assert(i->queueRadioAction(frame,54,actionChannel,-41));
+    int32_t actionRssi=0;memcpy(&actionRssi,dp->actionMetadata.data()+44,4);
+    assert(actionRssi==-41 && dp->actionMetadata[16]==44);
+    dp->pumpAction();assert(AirportRTWAwdlActionInput::inputs==3);
+    assert(!i->queueRadioAction(frame,54,actionChannel,0));
     ether_addr address;memcpy(address.octet,mac,6);address.octet[5]=6;
     control.addressResult=kIOReturnError;assert(i->setMacAddress(address)==kIOReturnError);
     ether_addr current;assert(i->getHardwareAddress(&current)==0&&!memcmp(current.octet,mac,6));
@@ -37,6 +46,7 @@ test+='''
     assert(i->disable(0)==0&&i->link==1&&!i->receiveEthernet(frame,54));
     assert(!dp->sender(dp->owner,frame,54)&&control.sends==1);
     assert(!i->receiveAction(frame,54,metadata,72));
+    assert(!i->queueAction(frame,54,metadata,72));
     i->stop(c);i->stop(c);assert(control.shutdowns==1&&!c->current&&!i->isChipInterfaceReady());
     assert(i->enable(0)==kIOReturnNotReady&&i->getSSID(reinterpret_cast<apple80211_ssid_data*>(&cookie))==kIOReturnNotReady);
     assert(i->setMacAddress(address)==0); // unchanged address is a no-op
@@ -47,7 +57,7 @@ test+='''
 '''
 with tempfile.TemporaryDirectory(prefix='awdl-interface-') as temp:
     path=Path(temp)/'host.cpp';binary=str(Path(temp)/'test')
-    path.write_text('#include <AWDL/RTWAwdlData.hpp>\n'+
+    path.write_text('#include <AWDL/RTWAwdlData.hpp>\n#include <AWDL/RTWAwdlNativeRxMetadata.hpp>\n'+
         (ROOT/'tests/host/rtw_awdl_interface_shim.hpp').read_text()+base+control+header+source+test)
     subprocess.run(['xcrun','clang++','-std=c++14','-Wall','-Wextra','-Werror',
         '-Wno-unused-parameter','-Wno-unused-function','-DAIRPORT_WCL',

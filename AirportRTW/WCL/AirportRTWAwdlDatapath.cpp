@@ -5,6 +5,7 @@
 #include <Availability.h>
 #if defined(AIRPORT_WCL) && __IO80211_TARGET == __MAC_26_0
 #include "AirportRTWAwdlDatapath.hpp"
+#include <AWDL/RTWAwdlFrame.hpp>
 #include <AWDL/RTWAwdlPacketFlow.hpp>
 
 // Nonvirtual exported family APIs. No guessed object/vtable offsets.
@@ -50,22 +51,28 @@ void rtw_awdl_request_dequeue(void *, void *, uint32_t)
 
 OSDefineMetaClassAndStructors(AirportRTWAwdlDatapath, OSObject)
 
-AirportRTWAwdlDatapath *AirportRTWAwdlDatapath::withWorkLoop(IOWorkLoop *loop, OSObject *owner, Sender sender)
+AirportRTWAwdlDatapath *AirportRTWAwdlDatapath::withWorkLoop(IOWorkLoop *loop, OSObject *owner, Sender sender, ActionReceiver actionReceiver)
 {
     auto *object = new AirportRTWAwdlDatapath;
-    if (object && !object->initialize(loop, owner, sender)) {
+    if (object && !object->initialize(loop, owner, sender, actionReceiver)) {
         object->stop(); object->release(); object = nullptr;
     }
     return object;
 }
 
-bool AirportRTWAwdlDatapath::initialize(IOWorkLoop *loop, OSObject *owner, Sender sender)
+bool AirportRTWAwdlDatapath::initialize(IOWorkLoop *loop, OSObject *owner, Sender sender, ActionReceiver actionReceiver)
 {
     if (!loop || !owner || !sender || !OSObject::init()) return false;
     loop_ = loop; loop_->retain(); senderOwner_ = owner; sender_ = sender;
     rxLock_ = IOSimpleLockAlloc();
     rxRing_ = static_cast<RxSlot *>(IOMalloc(sizeof(RxSlot) * ringCapacity));
     if (!rxLock_ || !rxRing_) return false;
+    actionReceiver_ = actionReceiver;
+    if (actionReceiver_) {
+        actionRing_ = static_cast<ActionSlot *>(IOMalloc(sizeof(ActionSlot) * actionCapacity));
+        actionScratch_ = static_cast<ActionSlot *>(IOMalloc(sizeof(ActionSlot)));
+        if (!actionRing_ || !actionScratch_) return false;
+    }
     return loop_->runAction(createGated, this) == kIOReturnSuccess;
 }
 
@@ -113,7 +120,10 @@ IOReturn AirportRTWAwdlDatapath::enableGated(OSObject *owner, void *value, void 
     me->enabled_ = value != nullptr;
     const IOInterruptState state = IOSimpleLockLockDisableInterrupt(me->rxLock_);
     me->rxEnabled_ = me->enabled_;
-    if (!me->enabled_) me->rxCount_ = me->rxRead_ = me->rxWrite_ = 0;
+    if (!me->enabled_) {
+        me->rxCount_ = me->rxRead_ = me->rxWrite_ = 0;
+        me->actionCount_ = me->actionRead_ = me->actionWrite_ = 0;
+    }
     IOSimpleLockUnlockEnableInterrupt(me->rxLock_, state);
     for (auto *queue : me->queues_)
         if (queue) { if (me->enabled_) queue->enable(); else queue->disable(); }
@@ -174,11 +184,41 @@ bool AirportRTWAwdlDatapath::receive(const uint8_t *bytes, size_t length)
     return accepted;
 }
 
+bool AirportRTWAwdlDatapath::queueAction(const uint8_t *frame, size_t length,
+                                         const uint8_t *metadata, size_t metadataLength)
+{
+    RTWAwdl::ActionInfo info;
+    if (!rxLock_ || !metadata || metadataLength != 72 || length > 4120 ||
+        RTWAwdl::parseFrame(frame,length,info) != RTWAwdl::ParseResult::Valid ||
+        (info.subtype != 0 && info.subtype != 3) || (frame[10] & 1) ||
+        memcmp(frame+10,metadata,6)) return false;
+    uint8_t bits = 0;
+    for (unsigned i = 0; i < 6; ++i) bits |= frame[10+i];
+    if (!bits) return false;
+    const IOInterruptState state = IOSimpleLockLockDisableInterrupt(rxLock_);
+    bool accepted = rxEnabled_ && rxSource_ && actionReceiver_ && actionRing_ &&
+        actionCount_ < actionCapacity;
+    if (accepted) {
+        ActionSlot &slot = actionRing_[actionWrite_];
+        slot.length = uint16_t(length);
+        memcpy(slot.bytes,frame,length); memcpy(slot.metadata,metadata,72);
+        actionWrite_ = (actionWrite_ + 1) % actionCapacity; ++actionCount_;
+        rxSource_->interruptOccurred(nullptr,nullptr,0);
+    }
+    IOSimpleLockUnlockEnableInterrupt(rxLock_,state);
+    return accepted;
+}
+
 void AirportRTWAwdlDatapath::receiveReady(OSObject *owner, IOInterruptEventSource *, int)
 {
     auto *me = static_cast<AirportRTWAwdlDatapath *>(owner);
+    // A native callback may disable/stop the parent. Keep this object alive
+    // until the event completes, including removal of owner-retaining sources.
+    me->retain();
+    me->drainActions(); // Control/synchronization frames precede bulk data.
     me->drainReceive();
     if (me->enabled_ && me->queues_[0]) rtw_awdl_request_dequeue(me->queues_[0],nullptr,0);
+    me->release();
 }
 
 void AirportRTWAwdlDatapath::drainReceive()
@@ -218,6 +258,27 @@ void AirportRTWAwdlDatapath::drainReceive()
         for (uint32_t j = 0; j < count; ++j) rtw_awdl_release(rxPool_,packets[j]);
 }
 
+void AirportRTWAwdlDatapath::drainActions()
+{
+    // Heap scratch avoids placing a 4 KiB radio frame above the native parser's
+    // stack. No spin/HAL lock is held during native-family calls.
+    for (unsigned i = 0; i < actionCapacity && enabled_ && actionReceiver_; ++i) {
+        const IOInterruptState state = IOSimpleLockLockDisableInterrupt(rxLock_);
+        const bool present = actionCount_ && actionRing_ && actionScratch_;
+        if (present) {
+            const ActionSlot &source = actionRing_[actionRead_];
+            actionScratch_->length = source.length;
+            memcpy(actionScratch_->bytes,source.bytes,source.length);
+            memcpy(actionScratch_->metadata,source.metadata,72);
+            actionRead_ = (actionRead_ + 1) % actionCapacity; --actionCount_;
+        }
+        IOSimpleLockUnlockEnableInterrupt(rxLock_,state);
+        if (!present) break;
+        actionReceiver_(senderOwner_,actionScratch_->bytes,actionScratch_->length,
+                        actionScratch_->metadata,72);
+    }
+}
+
 void AirportRTWAwdlDatapath::resumeTransmit()
 {
     if (!rxLock_) return;
@@ -238,6 +299,7 @@ IOReturn AirportRTWAwdlDatapath::stopGated(OSObject *owner, void *, void *, void
     if (me->rxLock_) {
         const IOInterruptState state = IOSimpleLockLockDisableInterrupt(me->rxLock_);
         me->rxEnabled_ = false; me->rxCount_ = 0;
+        me->actionCount_ = me->actionRead_ = me->actionWrite_ = 0;
         IOSimpleLockUnlockEnableInterrupt(me->rxLock_,state);
     }
     if (me->rxSource_) {
@@ -265,6 +327,8 @@ void AirportRTWAwdlDatapath::free()
     if (txPool_) static_cast<OSObject *>(txPool_)->release();
     if (rxPool_) static_cast<OSObject *>(rxPool_)->release();
     if (rxRing_) IOFree(rxRing_,sizeof(RxSlot) * ringCapacity);
+    if (actionRing_) IOFree(actionRing_,sizeof(ActionSlot) * actionCapacity);
+    if (actionScratch_) IOFree(actionScratch_,sizeof(ActionSlot));
     if (rxLock_) IOSimpleLockFree(rxLock_);
     OSSafeReleaseNULL(loop_);
     OSObject::free();

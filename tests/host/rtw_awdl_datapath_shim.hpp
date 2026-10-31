@@ -49,7 +49,11 @@ struct IOWorkLoop:OSObject {
     IOReturn runAction(Action f,OSObject*o,void*a=nullptr,void*b=nullptr,void*c=nullptr,void*d=nullptr){std::lock_guard<std::recursive_mutex>lock(gate);return f(o,a,b,c,d);}
     IOReturn addEventSource(IOEventSource*s){if(++adds==failAdd)return kIOReturnError;s->retain();sources.push_back(s);return 0;}
     void removeEventSource(IOEventSource*s){auto i=std::find(sources.begin(),sources.end(),s);assert(i!=sources.end());sources.erase(i);s->release();}
-    void pump(){std::lock_guard<std::recursive_mutex>lock(gate);for(auto*s:sources)if(auto*i=dynamic_cast<IOInterruptEventSource*>(s))if(i->active&&i->signaled){i->signaled=false;i->action(i->owner,i,1);}}
+    bool pumping=false;
+    void pump(){std::lock_guard<std::recursive_mutex>lock(gate);auto snapshot=sources;
+        for(auto*s:snapshot)s->retain();pumping=true;
+        for(auto*s:snapshot)if(auto*i=dynamic_cast<IOInterruptEventSource*>(s))if(i->active&&i->signaled){i->signaled=false;i->action(i->owner,i,1);}
+        pumping=false;for(auto*s:snapshot)s->release();}
 };
 struct FakePool:OSObject {
     OSObject*owner;unsigned packets=0;

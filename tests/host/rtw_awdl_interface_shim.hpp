@@ -4,10 +4,12 @@
 #include <cstring>
 #include <cstdio>
 #include <mutex>
+#include <vector>
 using IOReturn=int;using UInt=unsigned;using UInt64=uint64_t;
 constexpr int kIOReturnSuccess=0,kIOReturnNotReady=1,kIOReturnError=2,kIOReturnBadArgument=3;
 constexpr unsigned kIOServiceRequired=1,kIOServiceSynchronous=2;
 struct ether_addr{uint8_t octet[6];};
+struct apple80211_channel{uint32_t version,channel,flags;};
 enum IO80211LinkState{Down=1,Up=2};enum apple80211_wme_ac:unsigned int;
 static unsigned objects=0,baseStarts=0,baseStops=0,services=0,addressUpdates=0;
 static unsigned failAt=0;
@@ -63,13 +65,19 @@ struct IO80211VirtualInterface:IO80211SkywalkInterface{
 };
 struct AirportRTWAwdlDatapath:OSObject{
     using Sender=bool(*)(OSObject*,const uint8_t*,size_t);
+    using ActionReceiver=bool(*)(OSObject*,const uint8_t*,size_t,const uint8_t*,size_t);
+    ActionReceiver actionReceiver=nullptr;std::vector<uint8_t>actionBytes,actionMetadata;
     IOWorkLoop*loop;OSObject*owner;Sender sender;bool active=false;unsigned stops=0;
     static AirportRTWAwdlDatapath*last;
-    AirportRTWAwdlDatapath(IOWorkLoop*l,OSObject*o,Sender s):loop(l),owner(o),sender(s){l->retain();last=this;}
+    AirportRTWAwdlDatapath(IOWorkLoop*l,OSObject*o,Sender s,ActionReceiver a):actionReceiver(a),loop(l),owner(o),sender(s){l->retain();last=this;}
     ~AirportRTWAwdlDatapath()override{loop->release();last=nullptr;}
-    static AirportRTWAwdlDatapath*withWorkLoop(IOWorkLoop*l,OSObject*o,Sender s){return failAt==7?nullptr:new AirportRTWAwdlDatapath(l,o,s);}
+    static AirportRTWAwdlDatapath*withWorkLoop(IOWorkLoop*l,OSObject*o,Sender s,ActionReceiver a=nullptr){return failAt==7?nullptr:new AirportRTWAwdlDatapath(l,o,s,a);}
     bool setEnabled(bool value){active=value;return true;}void stop(){active=false;++stops;}
     bool receive(const uint8_t*p,size_t){return active&&p;}void resumeTransmit(){}
+    bool queueAction(const uint8_t*p,size_t n,const uint8_t*m,size_t z){
+        if(!active||!actionReceiver)return false;actionBytes.assign(p,p+n);actionMetadata.assign(m,m+z);return true;}
+    void pumpAction(){assert(actionReceiver);actionReceiver(owner,actionBytes.data(),actionBytes.size(),actionMetadata.data(),actionMetadata.size());}
+
     void*txSubmission(){return this;}void*txCompletion(){return this;}void*rxCompletion(){return this;}
     void*txPool(){return this;}void*rxPool(){return this;}
 };

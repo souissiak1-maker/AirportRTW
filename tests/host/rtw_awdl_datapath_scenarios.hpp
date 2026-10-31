@@ -24,6 +24,19 @@ IOReturn rtw_awdl_rx_complete(void*,void*const*values,uint32_t count,uint32_t){
 void rtw_awdl_request_dequeue(void*,void*context,uint32_t){assert(!context);++requests;}
 }
 static bool send(OSObject*,const uint8_t*data,size_t length){assert(data&&length==54);if(!senderReady)return false;++sent;return true;}
+static unsigned actionsDelivered=0;
+static int expectedDataBeforeAction=-1;
+static std::vector<uint8_t>lastAction,lastMetadata;
+static AirportRTWAwdlDatapath *activeActionPath=nullptr;
+static bool dropAction=false,disableInAction=false,stopInAction=false;
+static bool actionReceived(OSObject*owner,const uint8_t*frame,size_t n,const uint8_t*metadata,size_t z){
+    assert(static_cast<IOWorkLoop*>(owner)->pumping && n>=40 && z==72);
+    if(expectedDataBeforeAction>=0)assert(delivered==unsigned(expectedDataBeforeAction));
+    lastAction.assign(frame,frame+n);lastMetadata.assign(metadata,metadata+z);++actionsDelivered;
+    if(disableInAction)activeActionPath->setEnabled(false);
+    if(stopInAction){auto*p=activeActionPath;activeActionPath=nullptr;p->stop();p->release();}
+    return !dropAction;
+}
 int main(){
     auto*loop=new IOWorkLoop;
     // Fail every allocation, including owner-retaining pools and queues. Every
@@ -62,6 +75,37 @@ int main(){
     p->resumeTransmit();p->stop();p->stop();loop->pump();
     assert(!p->receive(bytes,sizeof(bytes))&&!p->setEnabled(true));
     p->release();assert(objects==1&&allocations==0&&packets==0&&loop->sources.empty());
+    for(unsigned fault=1;fault<=10;++fault){faultAt=fault;attempts=0;
+        auto*a=AirportRTWAwdlDatapath::withWorkLoop(loop,loop,send,actionReceived);
+        assert(!a && objects==1 && allocations==0 && loop->sources.empty());}
+    faultAt=0;
+    auto*a=AirportRTWAwdlDatapath::withWorkLoop(loop,loop,send,actionReceived);assert(a);
+    activeActionPath=a;
+    uint8_t frame[40]{0xd0},metadata[72]{};
+    frame[10]=metadata[0]=2;frame[15]=metadata[5]=1;
+    frame[24]=127;frame[26]=0x17;frame[27]=0xf2;frame[28]=8;frame[29]=0x10;
+    metadata[44]=0x12;
+    assert(!a->queueAction(frame,sizeof(frame),metadata,sizeof(metadata)));
+    assert(a->setEnabled(true));
+    for(size_t n=0;n<74;++n)if(n!=72)assert(!a->queueAction(frame,sizeof(frame),metadata,n));
+    metadata[0]^=2;assert(!a->queueAction(frame,sizeof(frame),metadata,72));metadata[0]^=2;
+    frame[1]=0x40;assert(!a->queueAction(frame,sizeof(frame),metadata,72));frame[1]=0;
+    assert(a->queueAction(frame,sizeof(frame),metadata,72));assert(!actionsDelivered);
+    frame[32]=7;metadata[44]=9;
+    expectedDataBeforeAction=int(delivered);assert(a->receive(bytes,sizeof(bytes)));loop->pump();
+    assert(delivered==unsigned(expectedDataBeforeAction)+1);expectedDataBeforeAction=-1;
+    assert(actionsDelivered==1 && lastAction[32]==0 && lastMetadata[44]==0x12);
+    for(unsigned i=0;i<16;++i)assert(a->queueAction(frame,sizeof(frame),metadata,72));
+    assert(!a->queueAction(frame,sizeof(frame),metadata,72));loop->pump();assert(actionsDelivered==17);
+    dropAction=true;assert(a->queueAction(frame,sizeof(frame),metadata,72));loop->pump();
+    loop->pump();assert(actionsDelivered==18);dropAction=false;
+    assert(a->queueAction(frame,sizeof(frame),metadata,72));assert(a->setEnabled(false));
+    assert(a->setEnabled(true));loop->pump();assert(actionsDelivered==18);
+    disableInAction=true;for(unsigned i=0;i<3;++i)assert(a->queueAction(frame,sizeof(frame),metadata,72));
+    loop->pump();assert(actionsDelivered==19);disableInAction=false;
+    assert(a->setEnabled(true));loop->pump();assert(actionsDelivered==19);
+    stopInAction=true;assert(a->queueAction(frame,sizeof(frame),metadata,72));loop->pump();
+    assert(actionsDelivered==20 && !activeActionPath && objects==1 && allocations==0 && loop->sources.empty());
     loop->release();assert(objects==0);
     puts("PASS: native datapath rollback, pool ownership, RX bounds, failures and teardown");
 }

@@ -346,9 +346,9 @@ It rejects malformed/protected/fragmented actions, mismatched source metadata an
 any metadata size other than 72, before allocating. It uses the family's concrete
 IO80211MallocBuffer factory (48-byte options, capacity first), copies the action
 body and hands it to VirtualInterface::bpfTapInput as DLT 12. The native family
-owns the buffer after handoff, including rejection paths. The metadata clock
-must already be calibrated by the future radio/native event adapter; this helper
-does not invent timestamps or report peer acceptance. Host tests cover header
+owns the buffer after handoff, including rejection paths. The caller supplies verified source/channel/RSSI metadata; native metadata +44
+is signed RSSI, as corrected in the receive-adapter audit below. This helper
+does not report peer acceptance. Host tests cover header
 bounds, malformed input, allocation failure and asynchronous ownership. Buffer
 factory, options and returnBuffer semantics were checked in the local family's
 MallocBuffer/Pool disassembly. No vtable indices or fabricated IO80211Buffer
@@ -378,7 +378,7 @@ controller pointer only if it still owns it, and is idempotent. A provider must
 quiesce callbacks synchronously on shutdown and may not reentrantly tear down
 from packet send. Address changes reach the provider before updating native MAC
 state. Data callbacks use the bounded datapath; action callbacks must already be
-on the native workqueue with metadata in the accepted clock domain.
+on the native workqueue with verified source/channel/RSSI metadata.
 
 The native WME category forward declaration now uses an opaque 32-bit enum,
 allowing a correctly typed submission-queue getter instead of an incomplete
@@ -546,7 +546,7 @@ checks still pass. These are host ownership tests, not hardware latency or nativ
 family delivery tests.
 
 No native Control provider binds this receiver yet. It is an implemented HAL RX
-endpoint, not completed native AWDL RX delivery. Clock conversion, the native
+endpoint, not completed native AWDL RX delivery. Radio-clock conversion, binding to the native
 workloop event adapter, peer admission and timed channel scheduling remain before
 an end-to-end discovery prototype can run. AirDrop support advertisement remains
 disabled and no intermediate hardware installation is requested.
@@ -559,3 +559,21 @@ The shared synchronization decoder is used by the Debug observer in both HALs;
 `RTWAwdlSyncDecoded` and `RTWAwdlSyncDecodeFailures` expose numeric parsing
 results. No untrusted peer clock or channel is adopted by observation, and no
 Supported flag or host-clock fallback was imported.
+
+## Native action receive queue and RSSI correction
+
+The concrete Tahoe interface now stages owned action/metadata copies through a
+16-slot native-workloop queue. Native action input runs outside HAL/spin locks,
+actions precede bulk data, disable/stop discards pending work, and heap scratch
+avoids a large parser-stack copy. The producer's buffers may be reused as soon
+as enqueue returns. Callback-driven stop retains the datapath/interface safely.
+
+The local native metadata +44 field is signed RSSI, not a timestamp. The manager
+compares it with a negative RSSI threshold, and Broadcom converts its firmware
+signal field before storing there. `queueRadioAction` now packs the measured
+RSSI, actual source and supplied native channel descriptor. Radio-clock mapping
+remains a separate scheduling concern. See
+[AWDL_NATIVE_RX_METADATA.md](AWDL_NATIVE_RX_METADATA.md) for binary hashes,
+function evidence, unknown-field limits and tests. The native Control provider
+and scheduler remain absent, so these components are still inactive in the
+production controller; no discovery or transfer success is claimed.

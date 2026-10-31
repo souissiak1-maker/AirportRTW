@@ -62,6 +62,8 @@ jobs:
           /tmp/rtw_awdl_linux_action_tx_test
           python3 tests/rtw_awdl_datapath_test.py
           python3 tests/rtw_awdl_action_input_test.py
+          xcrun clang++ -std=c++14 -Wall -Wextra -Werror -fsanitize=address,undefined -Iinclude tests/rtw_awdl_native_rx_metadata_test.cpp -o /tmp/rtw_awdl_native_rx_metadata_test
+          /tmp/rtw_awdl_native_rx_metadata_test
           python3 tests/rtw_awdl_interface_test.py
           xcrun clang++ -std=c++14 -Wall -Wextra -Werror -fsanitize=address,undefined -Iinclude tests/rtw_awdl_packet_flow_test.cpp -o /tmp/rtw_awdl_packet_flow_test
           /tmp/rtw_awdl_packet_flow_test

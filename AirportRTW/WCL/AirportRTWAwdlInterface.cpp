@@ -6,6 +6,8 @@
 #include "AirportRTWAwdlInterface.hpp"
 #include "AirportRTWAwdlActionInput.hpp"
 #include <net/ethernet.h>
+#include <Airport/apple80211_var.h>
+#include <AWDL/RTWAwdlNativeRxMetadata.hpp>
 
 extern "C" {
 IOWorkLoop *rtw_awdl_interface_workloop(void *)
@@ -71,7 +73,7 @@ bool AirportRTWAwdlInterface::start(IOService *provider)
     baseStarted_ = true;
     loop_ = rtw_awdl_interface_workloop(this);
     if (!loop_) return false;
-    datapath_ = AirportRTWAwdlDatapath::withWorkLoop(loop_,this,transmit);
+    datapath_ = AirportRTWAwdlDatapath::withWorkLoop(loop_,this,transmit,deliverAction);
     if (!datapath_) return false;
     if (!initRegistrationInfo(reinterpret_cast<IOSkywalkEthernetInterface::RegistrationInfo *>(registration_),1,sizeof(registration_)))
         return false;
@@ -212,6 +214,36 @@ bool AirportRTWAwdlInterface::transmit(OSObject *owner, const uint8_t *bytes, si
 
 bool AirportRTWAwdlInterface::receiveEthernet(const uint8_t *bytes, size_t length) { return datapath_ && datapath_->receive(bytes,length); }
 void AirportRTWAwdlInterface::resumeTransmit() { if (datapath_) datapath_->resumeTransmit(); }
+bool AirportRTWAwdlInterface::queueAction(const uint8_t *frame, size_t length,
+                                         const uint8_t *metadata, size_t metadataLength)
+{
+    return datapath_ && datapath_->queueAction(frame,length,metadata,metadataLength);
+}
+
+bool AirportRTWAwdlInterface::queueRadioAction(const uint8_t *frame, size_t length,
+                                              const apple80211_channel &channel,
+                                              int32_t rssi)
+{
+    static_assert(sizeof(apple80211_channel) == RTWAwdl::NativeRxMetadata::channelSize,
+                  "native action channel descriptor layout");
+    if (!frame || length < 24) return false;
+    uint8_t metadata[RTWAwdl::NativeRxMetadata::size];
+    if (!RTWAwdl::NativeRxMetadata::build(frame + 10,
+            reinterpret_cast<const uint8_t *>(&channel), sizeof(channel), rssi,
+            metadata, sizeof(metadata))) return false;
+    return queueAction(frame,length,metadata,sizeof(metadata));
+}
+
+bool AirportRTWAwdlInterface::deliverAction(OSObject *owner, const uint8_t *frame,
+    size_t length, const uint8_t *metadata, size_t metadataLength)
+{
+    auto *me = static_cast<AirportRTWAwdlInterface *>(owner);
+    me->retain();
+    const bool handedOff = me->receiveAction(frame,length,metadata,metadataLength);
+    me->release();
+    return handedOff;
+}
+
 bool AirportRTWAwdlInterface::receiveAction(const uint8_t *frame, size_t length, const uint8_t *metadata, size_t metadataLength)
 {
     return enabled_ && !stopping_ && AirportRTWAwdlActionInput::deliver(this,frame,length,metadata,metadataLength);

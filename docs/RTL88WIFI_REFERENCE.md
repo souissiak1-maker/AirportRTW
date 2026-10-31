@@ -62,6 +62,6 @@ reference header. It does not validate live Apple packets or RF synchronization.
 - Copying hardcoded fallback device capabilities/version/service identity.
 - Treating an opaque private channel-sequence blob as a decoded RF schedule.
 
-The native provider, calibrated timing, peer admission, native RX event adapter
+The native provider, calibrated timing, peer admission, native RX binding
 and synchronized HAL channel scheduler remain unfinished. The AWDL feature stays
 unadvertised. This audit does not claim working discovery or AirDrop.
