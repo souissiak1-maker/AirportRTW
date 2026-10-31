@@ -171,7 +171,9 @@ static void receiveFrame(void *opaque, struct sk_buff *skb)
         context->receive(context->nativeOwner, skb->data, skb->len,
                          status->signal, status->freq,
                          (status->flag & RX_FLAG_DECRYPTED) != 0,
-                         (status->flag & RX_FLAG_IV_STRIPPED) != 0);
+                         (status->flag & RX_FLAG_IV_STRIPPED) != 0,
+                         static_cast<uint32_t>(status->mactime),
+                         (status->flag & RX_FLAG_MACTIME_START) != 0);
     }
     kfree_skb(skb);
 }

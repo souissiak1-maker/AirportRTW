@@ -56,7 +56,7 @@ private:
     static void scanDwellExpired(OSObject *, IOTimerEventSource *);
     static void associationRecoveryExpired(OSObject *, IOTimerEventSource *);
     static void receive(void *, const uint8_t *, size_t, int32_t, uint16_t,
-                        bool, bool);
+                        bool, bool, uint32_t, bool);
     static void resumeTransmit(void *);
     static int setKey(struct ieee80211com *, struct ieee80211_node *,
                       struct ieee80211_key *);

@@ -8,8 +8,11 @@ namespace RTWAwdl {
 struct Observer {
     volatile uint64_t actionFrames {0}, vendorActions {0}, appleVendorActions {0};
     volatile uint64_t valid {0}, malformed {0}, syncEnvelopes {0}, channelEnvelopes {0};
+    volatile uint64_t timedActions {0};
+    volatile uint32_t lastRadioTimestamp {0};
     volatile uint32_t lastFrequency {0}, lastVersion {0}, lastSubtype {0};
-    void observe(const uint8_t *frame, size_t length, uint16_t frequency) {
+    void observe(const uint8_t *frame, size_t length, uint16_t frequency,
+                 uint32_t radioTimestamp = 0, bool radioTimestampValid = false) {
         if (frame && length >= 24 && frame[0] == 0xd0) {
             __sync_fetch_and_add(&actionFrames, 1);
             if (!(frame[1] & 0x40) && length >= 25 && frame[24] == 127) {
@@ -24,6 +27,10 @@ struct Observer {
             __sync_fetch_and_add(&malformed, 1);
         } else if (result == ParseResult::Valid) {
             __sync_fetch_and_add(&valid, 1);
+            if (radioTimestampValid) {
+                __sync_fetch_and_add(&timedActions, 1);
+                lastRadioTimestamp = radioTimestamp;
+            }
             if (info.tlvTypes & (uint64_t(1) << 4)) __sync_fetch_and_add(&syncEnvelopes, 1);
             if (info.tlvTypes & ((uint64_t(1) << 18) | (uint64_t(1) << 32)))
                 __sync_fetch_and_add(&channelEnvelopes, 1);

@@ -229,3 +229,47 @@ that RF has returned home. RTW88 does not provide equivalent ops in its current
 mac80211 callback table. Neither existing software scan path supplies a safe
 associated AWDL scheduler. These differences need actual per-HAL implementations,
 not a shared capability flag or an unconditional success return.
+
+## Radio timing transport and availability arithmetic
+
+Both Linux RX drivers already mark RX_FLAG_MACTIME_START and provide the low
+32 bits of their radio RX timestamp (RTW88 tsf_low, RTW89 free_run_cnt). The native
+receive callback previously discarded this field. Both bridge/core contracts now
+carry the raw low word and its validity separately, through the same CRC-checked
+frame callback. Zero is a valid timestamp; absence must use the validity bit.
+No hardware register reads, timer callbacks or new locks are added to RX.
+The Debug AWDL observer retains the timestamp only for validated AWDL action
+frames and publishes TimedActions and LastRadioTimestamp numeric fields. It
+still observes rather than consumes frames. All callers are built together;
+this internal callback is not a public ABI or a packet buffer ownership change.
+
+`RTWAwdlClock.hpp` provides relative 32-bit radio timestamp extension with explicit
+reset, out-of-order rejection and rejection of gaps long enough to make wrap
+count ambiguous. Radio time is not host monotonic time. Calibration between
+these clock domains, and freshness of peer synchronization, remain necessary.
+The helper is not yet used to arm a radio timer or accept a master's epoch.
+
+AvailabilityClock implements accepted-epoch/counter arithmetic, TU conversion,
+16-bit availability counter wrap, guard intervals, boundary deadlines and
+checked overflow. Invalid configuration preserves the prior accepted schedule;
+reset invalidates it. The caller must establish the epoch in a single clock
+domain before use. Tests cover timestamp/counter wrapping, ambiguous gaps,
+backward host samples, interval boundaries, guards, reset and UINT64 overflow.
+This arithmetic is not a synchronization/election algorithm or radio scheduler.
+
+No new user hardware test package is produced for this intermediate work. Full
+native queue delivery, peer-manager event/template integration, election/sync
+integration, per-HAL off-channel execution and end-to-end AirDrop remain open.
+
+Native template contract checked against the local Darwin 25.5 family binary:
+`IO80211AWDLPeerManager::updateSyncFrameTemplate(bool)` builds service/election
+and other TLVs into a 512-byte stack buffer, writes its pointer into request+8
+and its populated length into request+4, then issues ioctl 151. Its buffer does
+not contain the 16-byte vendor-action envelope. `TxTemplate::replaceTlvs` now
+validates and copies this TLV-only form and constructs an explicit versioned
+subtype-0/3 envelope. Complete radio bodies continue using `replace`. Invalid
+updates preserve the previous template. Neither API borrows the native pointer.
+This adapter is not a native setter implementation or an action transmitter;
+dynamic synchronization parameters still require the radio-side engine.
+Research disassembly: `/tmp/awdl-native-template-contract.txt` (local-only,
+reproducible using lldb disassemble by the function's exported symbol).

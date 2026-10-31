@@ -35,7 +35,7 @@ struct Rtw88NativePeer {
 
 struct Rtw88LinuxContext {
     typedef void (*ReceiveCallback)(void *, const uint8_t *, size_t,
-                                    int32_t, uint16_t, bool, bool);
+                                    int32_t, uint16_t, bool, bool, uint32_t, bool);
     typedef void (*TxResumeCallback)(void *);
     void *hardware;
     void *device;

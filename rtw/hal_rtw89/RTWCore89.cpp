@@ -530,6 +530,8 @@ void RTWCore89::watchdog(struct _ifnet *ifp)
     RTW_DIAGNOSTIC(controller->setProperty("RTWAwdlSyncEnvelopes", owner->awdlObserver.syncEnvelopes, 64));
     RTW_DIAGNOSTIC(controller->setProperty("RTWAwdlChannelEnvelopes", owner->awdlObserver.channelEnvelopes, 64));
     RTW_DIAGNOSTIC(controller->setProperty("RTWAwdlLastFrequency", owner->awdlObserver.lastFrequency, 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTWAwdlTimedActions", owner->awdlObserver.timedActions, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTWAwdlLastRadioTimestamp", owner->awdlObserver.lastRadioTimestamp, 32));
     RTW_DIAGNOSTIC(controller->setProperty("RTWAwdlLastVersion", owner->awdlObserver.lastVersion, 32));
     RTW_DIAGNOSTIC(controller->setProperty("RTWAwdlLastSubtype", owner->awdlObserver.lastSubtype, 32));
     RTW_DIAGNOSTIC(controller->setProperty("RTW89RawReceiveCount", owner->rawReceiveCount, 64));
@@ -933,13 +935,15 @@ void RTWCore89::traceReceive(void *opaque, unsigned stage, const uint8_t *frame,
 
 void RTWCore89::receive(void *opaque, const uint8_t *frame, size_t length,
                        int32_t rssi, uint16_t frequency, bool decrypted,
-                       bool ivStripped)
+                       bool ivStripped, uint32_t radioTimestamp,
+                       bool radioTimestampValid)
 {
     auto *owner = static_cast<RTWCore89 *>(opaque);
     if (!owner || !frame || length < sizeof(struct ieee80211_frame))
         return;
     __sync_fetch_and_add(&owner->rawReceiveCount, 1);
-    RTW_DIAGNOSTIC(owner->awdlObserver.observe(frame, length, frequency));
+    RTW_DIAGNOSTIC(owner->awdlObserver.observe(frame, length, frequency,
+                                                  radioTimestamp, radioTimestampValid));
     struct ieee80211com *ic = &owner->sc.sc_ic;
     auto *wh = reinterpret_cast<const struct ieee80211_frame *>(frame);
     const uint8_t frameType = wh->i_fc[0] & IEEE80211_FC0_TYPE_MASK;

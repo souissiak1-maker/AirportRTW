@@ -35,7 +35,8 @@ def filter_registry(tree):
                 elif key in {'RTWAwdlActionFrames', 'RTWAwdlVendorActions', 'RTWAwdlAppleVendorActions', 'RTWAwdlFilterRequested', 'RTWAwdlFilterAccepted', 'RTWAwdlValidActions', 'RTWAwdlMalformedActions',
                              'RTWAwdlSyncEnvelopes', 'RTWAwdlChannelEnvelopes',
                              'RTWAwdlLastFrequency', 'RTWAwdlLastVersion',
-                             'RTWAwdlLastSubtype'} and isinstance(item, (int, bool)):
+                             'RTWAwdlLastSubtype', 'RTWAwdlTimedActions',
+                             'RTWAwdlLastRadioTimestamp'} and isinstance(item, (int, bool)):
                     fields[key] = item
                 elif key in COUNTRY_KEYS and isinstance(item, str):
                     fields[key] = item

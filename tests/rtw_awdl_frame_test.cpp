@@ -19,6 +19,13 @@ int main() {
     Observer observer; observer.observe(frame, 48, 2437);
     assert(observer.valid == 1 && observer.syncEnvelopes == 1 && observer.channelEnvelopes == 1);
     assert(observer.lastFrequency == 2437 && observer.lastSubtype == 3);
+    Observer timing;
+    timing.observe(frame,48,2437,0xfffffff0,true);
+    assert(timing.timedActions==1 && timing.lastRadioTimestamp==0xfffffff0);
+    timing.observe(frame,48,2437,42,false);
+    assert(timing.valid==2 && timing.timedActions==1 && timing.lastRadioTimestamp==0xfffffff0);
+    timing.observe(frame,48,2437,0,true);
+    assert(timing.timedActions==2 && timing.lastRadioTimestamp==0);
     // Every prefix must be bounded, including partial headers and TLVs.
     for (size_t n = 0; n < 48; ++n) {
         const auto r = parseFrame(frame, n, out);

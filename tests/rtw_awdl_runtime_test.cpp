@@ -4,6 +4,7 @@
 #include <assert.h>
 #include <string.h>
 #include <stdio.h>
+#include <initializer_list>
 using namespace RTWAwdl;
 static void templates() {
     TxTemplate t;
@@ -39,6 +40,19 @@ static void templates() {
     assert(!t.replace(maximum,4097) && t.size()==4096);
     src[0]=2;
     assert(t.build(out,sizeof(out),dst,src,bssid,0,0,0,n) && n==4120);
+    const uint8_t nativeTlvs[] {6,1,0,0x55,24,0,0};
+    assert(t.replaceTlvs(nativeTlvs,sizeof(nativeTlvs),0x10,0));
+    assert(t.build(out,sizeof(out),dst,src,bssid,2,0,0,n) && n==47);
+    assert(out[24]==127 && out[29]==0x10 && out[30]==0);
+    assert(out[40]==6 && out[43]==0x55 && out[44]==24);
+    for (size_t cut : {size_t(1),size_t(2),size_t(3),size_t(5),size_t(6)})
+        assert(!t.replaceTlvs(nativeTlvs,cut,1,3));
+    assert(!t.replaceTlvs(nullptr,1,1,3));
+    assert(!t.replaceTlvs(nativeTlvs,sizeof(nativeTlvs),0,3));
+    assert(!t.replaceTlvs(nativeTlvs,sizeof(nativeTlvs),1,2));
+    assert(t.size()==23);
+    assert(t.build(out,sizeof(out),dst,src,bssid,2,0,0,n) && out[43]==0x55);
+    assert(t.replaceTlvs(nullptr,0,1,3) && t.size()==16);
     t.clear();
     assert(t.size()==0 && !t.build(out,sizeof(out),dst,src,bssid,0,0,0,n));
 }

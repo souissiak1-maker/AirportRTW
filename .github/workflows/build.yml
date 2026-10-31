@@ -47,6 +47,8 @@ jobs:
           python3 tests/rtw_awdl_filter_test.py
           xcrun clang++ -std=c++14 -Wall -Wextra -Werror -fsanitize=address,undefined -Iinclude tests/rtw_awdl_runtime_test.cpp -o /tmp/rtw_awdl_runtime_test
           /tmp/rtw_awdl_runtime_test
+          xcrun clang++ -std=c++14 -Wall -Wextra -Werror -fsanitize=address,undefined -Iinclude tests/rtw_awdl_clock_test.cpp -o /tmp/rtw_awdl_clock_test
+          /tmp/rtw_awdl_clock_test
           xcrun clang++ -std=c++14 -Wall -Wextra -Werror -fsanitize=address,undefined -Iinclude tests/rtw_awdl_data_test.cpp -o /tmp/rtw_awdl_data_test
           /tmp/rtw_awdl_data_test
           python3 tests/rtw_awdl_discovery_guard_test.py

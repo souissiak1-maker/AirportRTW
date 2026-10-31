@@ -4,7 +4,8 @@
 #include "RTWAwdlFrame.hpp"
 
 namespace RTWAwdl {
-// Owned action body supplied by the frontend's peer manager. The caller must
+// Owned action body. Native peer-manager TLV payloads use replaceTlvs();
+// complete radio action bodies use replace(). The caller must
 // serialize replace/build/clear on its work queue. No pointers into ioctl memory
 // survive replace(). Wire time fields are opaque LE32 values supplied by radio;
 // their clock domain must be established before enabling action transmission.
@@ -18,6 +19,26 @@ public:
         for (size_t i = 0; i < length; ++i) bytes[i] = body[i];
         for (size_t i = length; i < used; ++i) bytes[i] = 0;
         used = length;
+        return true;
+    }
+    // Tahoe updateSyncFrameTemplate supplies TLVs only, with no 16-byte
+    // action envelope. Validate the entire list before replacing owned storage.
+    // version/subtype are explicit radio policy; neither is inferred from TLVs.
+    bool replaceTlvs(const uint8_t *tlvs, size_t length, uint8_t version,
+                     uint8_t subtype) {
+        if ((!tlvs && length) || length > capacity - 16 || !version ||
+            (subtype != 0 && subtype != 3)) return false;
+        TlvCursor cursor(tlvs, length);
+        Tlv item {};
+        while (cursor.next(item)) {}
+        if (cursor.failed()) return false;
+        for (size_t i = 0; i < 16; ++i) bytes[i] = 0;
+        bytes[0] = 127; bytes[2] = 0x17; bytes[3] = 0xf2;
+        bytes[4] = 8; bytes[5] = version; bytes[6] = subtype;
+        for (size_t i = 0; i < length; ++i) bytes[16 + i] = tlvs[i];
+        const size_t total = 16 + length;
+        for (size_t i = total; i < used; ++i) bytes[i] = 0;
+        used = total;
         return true;
     }
     void clear() {
