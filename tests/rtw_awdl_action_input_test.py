@@ -14,7 +14,7 @@ shim=r'''
 #include <cstring>
 #include <vector>
 #include <cstdio>
-class IO80211VirtualInterface {};
+struct IO80211VirtualInterface {};
 struct Buffer {std::vector<uint8_t> bytes;size_t length;};
 static bool allocationFails=false,bytesFail=false;
 static unsigned allocations=0,releases=0,inputs=0;

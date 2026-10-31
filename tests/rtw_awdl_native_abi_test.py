@@ -78,7 +78,9 @@ def main():
     with tempfile.TemporaryDirectory(prefix='rtw-awdl-abi-') as directory:
         source = Path(directory) / 'probe.cpp'
         source.write_text('#include <Airport/macOS26/IO80211AWDLProtocol.h>\n'
-                          'IOReturn probe(IO80211AWDLProtocol *p, apple80211_channel_data *c) { return p->getCHANNEL(c); }\n')
+                          '#include \"' + str(ROOT/'AirportRTW/WCL/AirportRTWAwdlInterface.hpp') + '\"\n'
+                          'IOReturn probe(IO80211AWDLProtocol *p, apple80211_channel_data *c) { return p->getCHANNEL(c); }\n'
+                          'IOReturn nativeProbe(AirportRTWAwdlInterface *p, apple80211_channel_data *c) { return p->getCHANNEL(c); }\n')
         result = subprocess.run(['xcrun', 'clang++', '@' + str(response.resolve()),
             '-Wno-inconsistent-missing-override', '-Wno-overloaded-virtual',
             '-Xclang', '-fdump-vtable-layouts', '-c', str(source),
@@ -97,7 +99,12 @@ def main():
         for index,name in enumerate(methods,507):
             assert 'IO80211AWDLProtocol::'+name+'(' in slots[index] and '[pure]' in slots[index], (index,name,slots.get(index))
         assert 'IO80211VirtualInterface::init(' in slots[463], slots[463]
-        print('PASS: native Tahoe class sizes, 63 AWDL slots and virtual-interface boundary')
+        concrete = re.search(r"Vtable for 'AirportRTWAwdlInterface' .*?\n(.*?)(?:\n\n|\Z)", text, re.S)
+        assert concrete, 'Compiler did not emit the concrete native interface layout'
+        concrete_slots = {int(n): v for n,v in re.findall(r'^\s*(\d+) \| (.*)$', concrete[1], re.M)}
+        for index,name in enumerate(methods,507):
+            assert 'AirportRTWAwdlInterface::'+name+'(' in concrete_slots[index] and '[pure]' not in concrete_slots[index], (index,name)
+        print('PASS: native Tahoe class sizes, virtual-interface boundary and all 63 concrete AWDL slots')
     if args.family:
         verify_family(args.family)
 

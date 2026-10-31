@@ -356,3 +356,48 @@ objects are used by this helper.
 
 Both components are inactive until role-6 lifecycle and radio integration are
 implemented. Their presence in the binary is not working AWDL/AirDrop.
+
+## Concrete native role-6 lifecycle
+
+AirportRTWAwdlInterface now implements the concrete native IO80211AWDLProtocol
+class, queue registration/getters, role-6 naming, enable/disable, MAC changes,
+controller publication and teardown. Native family base queue getters return
+null in the local binary; the concrete interface overrides them to return the
+actual packet resources. All 63 protocol requests synchronously forward to a
+controller-owned Control provider and propagate its result. There are no
+unconditional-success placeholder control handlers. Native request payloads are
+borrowed only during dispatch and retain their family-defined layout.
+
+The factory requires every protocol/radio capability plus ready hardware,
+rejects invalid MACs and an existing controller AWDL interface before allocation,
+and prepares the provider before native base start. Partial prepare is followed
+by shutdown, partial native initialization uses the appropriate base cleanup,
+and failed publication terminates/detaches the partial service. Stop runs under
+the native workqueue gate, stops producers before packet resources, clears the
+controller pointer only if it still owns it, and is idempotent. A provider must
+quiesce callbacks synchronously on shutdown and may not reentrantly tear down
+from packet send. Address changes reach the provider before updating native MAC
+state. Data callbacks use the bounded datapath; action callbacks must already be
+on the native workqueue with metadata in the accepted clock domain.
+
+The native WME category forward declaration now uses an opaque 32-bit enum,
+allowing a correctly typed submission-queue getter instead of an incomplete
+struct parameter. Existing method symbol names and slot positions are unchanged.
+The concrete ABI test checks all 63 overrides in their expected slots; inspection
+of the built object's inherited native imports found their provider symbols in
+the installed IO80211Family/IOSkywalkFamily (excluding the separately linked
+AirportRTW action-ingress helper).
+
+Host tests execute the actual interface code against lifecycle adapters: every
+capability gate, failed prepare/start/registration/publication, all 63 requests
+and result propagation, offline enable, MAC failure/success, packet enable/disable
+and repeated stop/termination. They do not validate real family matching or
+on-air behavior. Real Tahoe compilation checks the class is concrete and its
+native inheritance/overrides type-check against the target headers.
+
+No production controller path calls the factory yet. There is no concrete
+Control provider for RTW88 or RTW89; clock/protocol integration, radio scheduling,
+peer hardware state and quiescent radio teardown still need implementation.
+The normal capability advertisement and VIRTUAL_IF_CREATE unsupported result
+remain unchanged until that provider exists. This is inactive frontend
+implementation, not functional AWDL/AirDrop.

@@ -1213,6 +1213,7 @@
 		71364CC896DF7F6554F1C119 = {isa = PBXBuildFile; fileRef = 4EC218A429C0D44F88933AAA; };
 		FF4DD01C60B0B5021D351646 /* AirportRTWAwdlDatapath.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 1B3318FB182330B71FDE681F; };
 		C099FADF2F390AD3758AA39E /* AirportRTWAwdlActionInput.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A8C8175392980D8E90CA5604; };
+		8B6D7AD132E15CD0FD31BA5D /* AirportRTWAwdlInterface.cpp in Sources */ = {isa = PBXBuildFile; fileRef = C133DA685EE7E488E62A607D; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -1552,6 +1553,7 @@
 		B62DC19B24447AD44E3C60BF = {isa = PBXFileReference; lastKnownFileType = text; path = "rtw80211/sae/NOTICE.txt"; sourceTree = SOURCE_ROOT; };
 		1B3318FB182330B71FDE681F /* AirportRTWAwdlDatapath.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = AirportRTW/WCL/AirportRTWAwdlDatapath.cpp; sourceTree = SOURCE_ROOT; };
 		A8C8175392980D8E90CA5604 /* AirportRTWAwdlActionInput.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = AirportRTW/WCL/AirportRTWAwdlActionInput.cpp; sourceTree = SOURCE_ROOT; };
+		C133DA685EE7E488E62A607D /* AirportRTWAwdlInterface.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = AirportRTW/WCL/AirportRTWAwdlInterface.cpp; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -1633,6 +1635,7 @@
 		024A07A223FCBC3C009FBA6C = {
 			isa = PBXGroup;
 			children = (
+				C133DA685EE7E488E62A607D /* AirportRTWAwdlInterface.cpp */,
 				A8C8175392980D8E90CA5604 /* AirportRTWAwdlActionInput.cpp */,
 				1B3318FB182330B71FDE681F /* AirportRTWAwdlDatapath.cpp */,
 				4EC218A429C0D44F88933AAA,
@@ -3704,6 +3707,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				8B6D7AD132E15CD0FD31BA5D /* AirportRTWAwdlInterface.cpp in Sources */,
 				C099FADF2F390AD3758AA39E /* AirportRTWAwdlActionInput.cpp in Sources */,
 				FF4DD01C60B0B5021D351646 /* AirportRTWAwdlDatapath.cpp in Sources */,
 				71364CC896DF7F6554F1C119,

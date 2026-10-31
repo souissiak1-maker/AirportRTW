@@ -5,7 +5,7 @@
 #if defined(AIRPORT_WCL) && __IO80211_TARGET == __MAC_26_0
 #include <stddef.h>
 #include <stdint.h>
-class IO80211VirtualInterface;
+struct IO80211VirtualInterface;
 namespace AirportRTWAwdlActionInput {
 // Called on the native AWDL workqueue with a live, initialized role-6 interface.
 // Header is the calibrated native action metadata, not the 802.11 frame header.

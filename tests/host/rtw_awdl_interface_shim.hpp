@@ -1,0 +1,80 @@
+// IOKit/family lifecycle adapters; real ABI layout is checked by the kernel build.
+#include <cassert>
+#include <cstdint>
+#include <cstring>
+#include <cstdio>
+#include <mutex>
+using IOReturn=int;using UInt=unsigned;using UInt64=uint64_t;
+constexpr int kIOReturnSuccess=0,kIOReturnNotReady=1,kIOReturnError=2,kIOReturnBadArgument=3;
+constexpr unsigned kIOServiceRequired=1,kIOServiceSynchronous=2;
+struct ether_addr{uint8_t octet[6];};
+enum IO80211LinkState{Down=1,Up=2};enum apple80211_wme_ac:unsigned int;
+static unsigned objects=0,baseStarts=0,baseStops=0,services=0,addressUpdates=0;
+static unsigned failAt=0;
+struct OSObject{
+    unsigned refs=1;OSObject(){++objects;}virtual~OSObject(){--objects;}
+    virtual bool init(){return true;}virtual void free(){delete this;}
+    void retain(){++refs;}void release(){assert(refs);if(!--refs)free();}
+};
+#define OSDeclareDefaultStructors(C) public:C()=default;~C()override=default;
+#define OSDefineMetaClassAndStructors(C,B)
+struct IOService:OSObject{
+    IOService*parent=nullptr;
+    virtual bool start(IOService*){return true;}virtual void stop(IOService*){}
+    virtual bool attach(IOService*p){if(failAt==3)return false;parent=p;p->retain();return true;}
+    virtual void detach(IOService*p){assert(parent==p);parent=nullptr;p->release();}
+    void registerService(unsigned){++services;}
+    bool terminate(unsigned){auto*p=parent;stop(p);if(parent)detach(p);return true;}
+};
+struct IOWorkLoop:OSObject{
+    std::recursive_mutex gate;
+    using Action=IOReturn(*)(OSObject*,void*,void*,void*,void*);
+    IOReturn runAction(Action action,OSObject*owner,void*a=nullptr){std::lock_guard<std::recursive_mutex>lock(gate);return action(owner,a,nullptr,nullptr,nullptr);}
+};
+struct IO80211VirtualInterface;
+struct IO80211Controller:IOService{IO80211VirtualInterface*current=nullptr;};
+struct IOSkywalkEthernetInterface{struct RegistrationInfo{uint8_t bytes[0x130];};};
+struct IO80211SkywalkInterface:IOService{
+    IOWorkLoop*baseLoop=nullptr;unsigned link=0;
+    bool init()override{if(failAt==1)return false;baseLoop=new IOWorkLoop;return true;}
+    void free()override{if(baseLoop)baseLoop->release();assert(!parent);OSObject::free();}
+    virtual IOReturn enable(unsigned){return 0;}virtual IOReturn disable(unsigned){return 0;}
+    virtual uintptr_t setMacAddress(ether_addr&)=0;
+    virtual IOReturn getHardwareAddress(ether_addr*){return 0;}
+    virtual const char*getBSDNamePrefix(){return "en";}virtual UInt getMaxTransferUnit(){return 1500;}
+    virtual bool isChipInterfaceReady(){return false;}
+    virtual void*getTxSubQueue(apple80211_wme_ac){return nullptr;}
+    virtual void*getTxCompQueue(){return nullptr;}virtual void*getRxCompQueue(){return nullptr;}
+    virtual void*getTxPacketPool(){return nullptr;}virtual void*getRxPacketPool(){return nullptr;}
+    virtual int getNumTxQueues(){return 0;}virtual int getTxHeadroom(){return 0;}
+    virtual UInt64 getRxQueueCapacity(){return 0;}
+    virtual void enableDatapath(){}virtual void disableDatapath(){}
+    void setLinkLayerAddress(ether_addr*){++addressUpdates;}
+    bool initRegistrationInfo(IOSkywalkEthernetInterface::RegistrationInfo*p,unsigned version,size_t n){assert(version==1&&n==0x130);memset(p,0,n);return failAt!=8;}
+    void setInterfaceId(unsigned id){assert(id==2);}
+};
+struct IO80211VirtualInterface:IO80211SkywalkInterface{
+    using IO80211SkywalkInterface::init;
+    bool init(IO80211Controller*,ether_addr*,unsigned role,const char*name){assert(role==6&&!strcmp(name,"awdl"));return failAt!=2;}
+    bool start(IOService*)override{++baseStarts;assert(isChipInterfaceReady());return failAt!=5;}
+    void stop(IOService*)override{++baseStops;if(baseLoop){baseLoop->release();baseLoop=nullptr;}}
+    void free()override{IO80211SkywalkInterface::free();}
+    uintptr_t setLinkState(IO80211LinkState state,unsigned flags){assert(flags==1);link=state;return 0;}
+};
+struct AirportRTWAwdlDatapath:OSObject{
+    using Sender=bool(*)(OSObject*,const uint8_t*,size_t);
+    IOWorkLoop*loop;OSObject*owner;Sender sender;bool active=false;unsigned stops=0;
+    static AirportRTWAwdlDatapath*last;
+    AirportRTWAwdlDatapath(IOWorkLoop*l,OSObject*o,Sender s):loop(l),owner(o),sender(s){l->retain();last=this;}
+    ~AirportRTWAwdlDatapath()override{loop->release();last=nullptr;}
+    static AirportRTWAwdlDatapath*withWorkLoop(IOWorkLoop*l,OSObject*o,Sender s){return failAt==7?nullptr:new AirportRTWAwdlDatapath(l,o,s);}
+    bool setEnabled(bool value){active=value;return true;}void stop(){active=false;++stops;}
+    bool receive(const uint8_t*p,size_t){return active&&p;}void resumeTransmit(){}
+    void*txSubmission(){return this;}void*txCompletion(){return this;}void*rxCompletion(){return this;}
+    void*txPool(){return this;}void*rxPool(){return this;}
+};
+AirportRTWAwdlDatapath*AirportRTWAwdlDatapath::last=nullptr;
+namespace AirportRTWAwdlActionInput{
+static unsigned inputs=0;
+static bool deliver(IO80211VirtualInterface*,const uint8_t*,size_t,const uint8_t*,size_t){++inputs;return true;}
+}
