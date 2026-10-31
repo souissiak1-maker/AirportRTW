@@ -1,0 +1,27 @@
+/* SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause */
+#ifndef RTW_AWDL_RADIO_HPP
+#define RTW_AWDL_RADIO_HPP
+#include <stdint.h>
+namespace RTWAwdl {
+// One serialized owner on the controller workloop. Frequencies are MHz; no
+// Apple or Linux channel structures cross the shared HAL boundary.
+struct RadioState {
+    uint16_t frequency {0};
+    // recoveryRequired means restoration is owed, including a live visit.
+    bool ready {false}, recoveryRequired {false};
+};
+enum class RadioReservation { Granted, Rejected, RecoveryRequired };
+class Radio {
+public:
+    virtual ~Radio() = default;
+    // Defaults describe a HAL without bounded off-channel scheduling. This is
+    // deliberately independent of action RX/TX and must not imply AWDL support.
+    virtual RadioState awdlRadioState() const { return {}; }
+    virtual bool awdlChannelAllowed(uint16_t) const { return false; }
+    virtual RadioReservation reserveAwdlRadio(uint16_t, uint32_t) {
+        return RadioReservation::Rejected;
+    }
+    virtual bool restoreAwdlRadio() { return false; }
+};
+}
+#endif

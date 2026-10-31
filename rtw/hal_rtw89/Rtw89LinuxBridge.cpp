@@ -568,6 +568,48 @@ int rtw89LinuxAwdlRestore(Rtw89LinuxContext *context)
     return result;
 }
 
+// Queries copy state while holding the same hardware lock as reserve/restore.
+// A failed restore has no current frequency, even though hw->conf still names
+// the infrastructure channel. Never expose that cached value as RF confirmation.
+RTWAwdl::RadioState rtw89LinuxAwdlRadioState(const Rtw89LinuxContext *context)
+{
+    RTWAwdl::RadioState state;
+    if (!context || !context->hardware) return state;
+    auto *hw=static_cast<ieee80211_hw *>(context->hardware);
+    WiphyGuard guard(hw);
+    auto *vif=static_cast<ieee80211_vif *>(context->awdlInterface.vif);
+    state.recoveryRequired=context->awdlTxGate.isPaused();
+    state.ready=context->started && context->interfaceAdded && !context->scanning &&
+        context->awdlInterface.hardwareAdded && context->awdlInterface.registered && vif &&
+        (!context->station || context->stationState>=IEEE80211_STA_AUTHORIZED);
+    if (state.ready) {
+        auto *channel=rtw89_macos_awdl_current_channel(hw,vif);
+        if (channel) state.frequency=channel->center_freq;
+    }
+    return state;
+}
+
+bool rtw89LinuxAwdlChannelAllowed(const Rtw89LinuxContext *context, uint16_t frequency)
+{
+    if (!context || !context->hardware) return false;
+    auto *hw=static_cast<ieee80211_hw *>(context->hardware);
+    WiphyGuard guard(hw);
+    return context->started && awdlFrequencyChannel(hw,frequency);
+}
+
+RTWAwdl::RadioReservation rtw89LinuxAwdlReserveRadio(Rtw89LinuxContext *context,
+                                                  uint16_t frequency, uint32_t durationMs)
+{
+    if (!context || !durationMs || durationMs>100)
+        return RTWAwdl::RadioReservation::Rejected;
+    const int result=rtw89LinuxAwdlReserve(context,frequency,durationMs);
+    if (!result) return RTWAwdl::RadioReservation::Granted;
+    // reserve retains the primary submission gate only when restoration is
+    // still owed. Do not classify such a failure as an ordinary rejected visit.
+    return context->awdlTxGate.isPaused() ? RTWAwdl::RadioReservation::RecoveryRequired :
+                                          RTWAwdl::RadioReservation::Rejected;
+}
+
 bool rtw89LinuxAwdlAddInterface(Rtw89LinuxContext *context,
                                       const uint8_t mac[6])
 {

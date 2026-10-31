@@ -2,6 +2,7 @@
 #ifndef AIRPORTRTW_AWDL_RUNTIME_HPP
 #define AIRPORTRTW_AWDL_RUNTIME_HPP
 #include "AirportRTWAwdlControl.hpp"
+#include "AirportRTWAwdlWindowDriver.hpp"
 #if defined(AIRPORT_WCL) && __IO80211_TARGET == __MAC_26_0
 #include <libkern/libkern.h>
 #include <Airport/apple80211_var.h>

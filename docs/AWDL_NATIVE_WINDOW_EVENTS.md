@@ -80,3 +80,29 @@ The combined-HAL Tahoe Debug and final Release builds pass with no compiler
 errors. Native ABI/family checks, byte-layout tests, scheduler/lifecycle
 integration tests, datapath/action tests and backend validators pass. No EFI
 was modified and no release was published.
+
+## Production radio transport adapter
+
+`RTWAwdl::Radio` now defines the shared MHz-based reservation/query contract.
+RTWCore89 implements it using the RTW89 bridge. Queries hold the hardware lock
+and report the confirmed ROC channel; the cached home chandef is not substituted
+when restoration is uncertain. A failed reservation with a retained primary TX
+gate returns RecoveryRequired. RTW88 inherits explicit unsupported defaults;
+its action receive path is not evidence of bounded channel-visit support.
+
+`AirportRTWAwdl::WindowDriver` connects this contract to the native interface's
+window events and timer. Its clock is boot-monotonic microseconds, with explicit
+32-bit wrapping for native wire fields. Its action-staging helper uses that same
+software clock and never queries the HAL from inside the RX registration lock.
+Device TSF/free-run values are not used as software clock values. RX accepts
+passive-channel observations; only TX/window descriptions require effective HAL
+policy and carry the active-channel flag. Channel conversion itself does not
+authorize transmitting on any channel.
+
+The production adapter compiles with the actual Tahoe SDK. Host tests execute
+its methods with deterministic time, radio faults and the real shared scheduler;
+separate bridge tests execute the actual RTW89 implementations. This remains an
+adapter, not a controller-owned RuntimeBackend. No controller factory invokes
+it yet. Peer admission, data/replay flow, scan arbitration and reset-safe teardown
+must be integrated before activating native AWDL. No working-AirDrop claim is
+made by these tests or builds.

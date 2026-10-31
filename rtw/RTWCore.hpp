@@ -4,6 +4,7 @@
 
 #include <HAL/ItlHalService.hpp>
 #include <HAL/RTWAwdlReceive.hpp>
+#include <HAL/RTWAwdlRadio.hpp>
 #include <HAL/ItlDriverInfo.hpp>
 #include <HAL/ItlDriverController.hpp>
 
@@ -14,7 +15,8 @@ constexpr int RTW_MIN_DBM = -100;
  * RTWCore88 or RTWCore89. net80211 remains the shared owner of MLME state. */
 class RTWCore : public ItlHalService,
                 public ItlDriverInfo,
-                public ItlDriverController {
+                public ItlDriverController,
+                public RTWAwdl::Radio {
     OSDeclareAbstractStructors(RTWCore)
 public:
     ItlDriverInfo *getDriverInfo() override { return this; }

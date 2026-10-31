@@ -5,6 +5,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "../../include/HAL/RTWAwdlReceive.hpp"
+#include "../../include/HAL/RTWAwdlRadio.hpp"
 #include "../../include/HAL/RTWAwdlInterfaceState.hpp"
 #include "../../include/AWDL/RTWAwdlTxGate.hpp"
 bool rtw89LinuxSetCountry(struct Rtw89LinuxContext *, const char cc[2]);
@@ -146,6 +147,9 @@ void rtw89LinuxPowerDown(Rtw89LinuxContext *context);
 // Serialized hardware lifecycle only; protocol provider must quiesce producers.
 // Native scheduler owns a bounded timer before reserve and must restore on
 // every completion/error path. These synchronous calls do not schedule expiry.
+RTWAwdl::RadioState rtw89LinuxAwdlRadioState(const Rtw89LinuxContext *);
+bool rtw89LinuxAwdlChannelAllowed(const Rtw89LinuxContext *, uint16_t);
+RTWAwdl::RadioReservation rtw89LinuxAwdlReserveRadio(Rtw89LinuxContext *, uint16_t, uint32_t);
 int rtw89LinuxAwdlReserve(Rtw89LinuxContext *, uint16_t frequency, unsigned durationMs);
 int rtw89LinuxAwdlRestore(Rtw89LinuxContext *);
 bool rtw89LinuxAwdlAddInterface(Rtw89LinuxContext *, const uint8_t mac[6]);

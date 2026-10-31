@@ -10,6 +10,7 @@ start=s.index('unsigned int rtw89LinuxTxAvailableSlots(')
 code+=s[start:s.index('bool rtw89LinuxAmpduStart(',start)]
 shim=r'''
 #include <AWDL/RTWAwdlTxGate.hpp>
+#include <HAL/RTWAwdlRadio.hpp>
 #include <cassert>
 #include <cstdint>
 #include <cerrno>
@@ -46,7 +47,7 @@ static int rtw89_macos_awdl_reserve(ieee80211_hw*,ieee80211_vif*,ieee80211_chann
     assert(depth && ms);++reserves;if(!reserveError){driverLive=true;recovering=true;liveChannel=c;}return reserveError;
 }
 static bool rtw89_macos_awdl_needs_restore(ieee80211_hw*,ieee80211_vif*){assert(depth);return recovering;}
-static ieee80211_channel *rtw89_macos_awdl_current_channel(ieee80211_hw*,ieee80211_vif*){assert(depth);return driverLive?liveChannel:nullptr;}
+static ieee80211_channel *rtw89_macos_awdl_current_channel(ieee80211_hw*hw,ieee80211_vif*){assert(depth);return driverLive?liveChannel:(recovering?nullptr:hw->conf.chandef.chan);}
 static int rtw89_macos_awdl_restore(ieee80211_hw*,ieee80211_vif*){
     assert(depth);++restores;if(!restoreError){driverLive=recovering=false;}return restoreError;
 }
@@ -62,6 +63,35 @@ struct Fixture {
 '''
 cases=r'''
 int main(){
+    {RTWAwdl::Radio unsupported;
+     assert(!unsupported.awdlRadioState().ready&&!unsupported.awdlChannelAllowed(2437));
+     assert(unsupported.reserveAwdlRadio(2437,50)==RTWAwdl::RadioReservation::Rejected);
+     assert(!unsupported.restoreAwdlRadio());}
+    {Fixture f;
+     auto state=rtw89LinuxAwdlRadioState(&f.c);
+     assert(state.ready&&state.frequency==2437&&!state.recoveryRequired);
+     assert(rtw89LinuxAwdlChannelAllowed(&f.c,5180));
+     assert(!rtw89LinuxAwdlChannelAllowed(&f.c,5975));
+     f.channels[1].flags=IEEE80211_CHAN_RADAR;
+     assert(!rtw89LinuxAwdlChannelAllowed(&f.c,5180));
+     f.channels[1].flags=0;
+     assert(rtw89LinuxAwdlReserveRadio(&f.c,5180,101)==RTWAwdl::RadioReservation::Rejected&&!reserves);
+     assert(rtw89LinuxAwdlReserveRadio(&f.c,5180,50)==RTWAwdl::RadioReservation::Granted);
+     state=rtw89LinuxAwdlRadioState(&f.c);
+     assert(state.ready&&state.frequency==5180&&state.recoveryRequired);
+     driverLive=false;recovering=true;
+     state=rtw89LinuxAwdlRadioState(&f.c);
+     assert(state.frequency==0&&state.recoveryRequired);
+     assert(!rtw89LinuxAwdlRestore(&f.c));
+     reserveError=-11;recovering=true;
+     assert(rtw89LinuxAwdlReserveRadio(&f.c,5180,50)==RTWAwdl::RadioReservation::RecoveryRequired);
+     assert(!rtw89LinuxAwdlRestore(&f.c));
+     recovering=false;
+     assert(rtw89LinuxAwdlReserveRadio(&f.c,5180,50)==RTWAwdl::RadioReservation::Rejected);
+     f.c.scanning=true;assert(!rtw89LinuxAwdlRadioState(&f.c).ready);
+     assert(!rtw89LinuxAwdlRadioState(nullptr).frequency);
+     assert(!rtw89LinuxAwdlChannelAllowed(nullptr,2437));}
+
     {Fixture f;
      assert(rtw89LinuxAwdlReserve(&f.c,5180,50)==0);
      assert(f.c.awdlTxGate.isPaused() && f.vif.bss_conf.chandef_chan==f.channels+1);

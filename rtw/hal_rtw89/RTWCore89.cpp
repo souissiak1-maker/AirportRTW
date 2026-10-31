@@ -348,6 +348,26 @@ uint32_t RTWCore89::getTxQueueSize()
     return kRtw89TxQueueSize;
 }
 
+RTWAwdl::RadioState RTWCore89::awdlRadioState() const
+{
+    return rtw89LinuxAwdlRadioState(&linuxContext);
+}
+
+bool RTWCore89::awdlChannelAllowed(uint16_t frequency) const
+{
+    return rtw89LinuxAwdlChannelAllowed(&linuxContext, frequency);
+}
+
+RTWAwdl::RadioReservation RTWCore89::reserveAwdlRadio(uint16_t frequency, uint32_t durationMs)
+{
+    return rtw89LinuxAwdlReserveRadio(&linuxContext, frequency, durationMs);
+}
+
+bool RTWCore89::restoreAwdlRadio()
+{
+    return rtw89LinuxAwdlRestore(&linuxContext) == 0;
+}
+
 bool RTWCore89::addAwdlInterface(const uint8_t mac[6])
 {
     return rtw89LinuxAwdlAddInterface(&linuxContext, mac);
