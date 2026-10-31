@@ -55,7 +55,8 @@ enum class Request : uint8_t {
 };
 // Native protocol/runtime contract, not a hardware-specific HAL interface.
 // The controller owns this provider and stops the interface before destroying it.
-// No provider exists until the radio/protocol implementation supplies all gates.
+// Runtime supplies validated native controls; publication additionally requires
+// its concrete radio/protocol backend to supply every capability gate.
 class Control {
 public:
     enum Capability : uint32_t {

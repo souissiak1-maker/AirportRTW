@@ -77,7 +77,8 @@ def main():
         p.error('Build the Tahoe target first, or specify --response')
     with tempfile.TemporaryDirectory(prefix='rtw-awdl-abi-') as directory:
         source = Path(directory) / 'probe.cpp'
-        source.write_text('#include <Airport/apple80211_var.h>\n'
+        source.write_text('#include "'+str(ROOT/'AirportRTW/WCL/AirportRTWAwdlRuntime.hpp')+'"\n'
+                          '#include <Airport/apple80211_var.h>\n'
                           '#include <Airport/apple80211_ioctl.h>\n'
                           'static_assert(sizeof(apple80211_awdl_sync_state)==24, "sync state");\n'
                           'static_assert(__builtin_offsetof(apple80211_awdl_sync_state,master)==8, "parent address");\n'

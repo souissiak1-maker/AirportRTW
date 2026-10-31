@@ -5,6 +5,7 @@
 #if defined(AIRPORT_WCL) && __IO80211_TARGET == __MAC_26_0
 #include "AirportRTWAwdlInterface.hpp"
 #include "AirportRTWAwdlActionInput.hpp"
+#include "AirportRTWAwdlRuntime.hpp"
 #include <net/ethernet.h>
 #include <Airport/apple80211_var.h>
 #include <AWDL/RTWAwdlNativeRxMetadata.hpp>

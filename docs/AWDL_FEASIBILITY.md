@@ -577,3 +577,40 @@ remains a separate scheduling concern. See
 function evidence, unknown-field limits and tests. The native Control provider
 and scheduler remain absent, so these components are still inactive in the
 production controller; no discovery or transfer success is claimed.
+
+
+## Native control runtime
+
+`AirportRTWAwdlRuntime.hpp` now implements `Control` with an owning configuration
+snapshot and a `RuntimeBackend` contract. It validates native synchronization,
+parent state, channel sequences, presence, election metric/ID, RSSI thresholds,
+action mode and borrowed frame templates. Backend configuration is atomic:
+failures preserve the accepted configuration. Reads use backend snapshots, and
+channel queries report the backend's current channel rather than a requested
+channel. Unknown/opaque requests return Unsupported, including AWDL_CONFIG.
+
+Open rollback, activation, address changes, TX validation and shutdown are
+implemented. Closing must quiesce producers and restore the infrastructure
+channel before releasing radio resources. Frame-template request memory is
+copied and validated before backend invocation, then erased; the backend must
+retain its own copy. The runtime should be heap-owned in the kernel because
+its template scratch storage is 4 KiB.
+
+This is a concrete native control adapter, not a completed AWDL engine. No
+RTW88/RTW89 RuntimeBackend exists yet, no production factory caller installs
+this provider, and no capability flags were enabled. The missing backend must
+integrate clock acceptance, timed radio ownership, native RX binding, peer
+lifecycle and data TX/RX. Peer/election reporting beyond the supported requests,
+advertiser updates and native timeline events also remain incomplete.
+
+The runtime regression executes the production class with a fault-injected
+backend and actual ioctl structure declarations, under ASan/UBSan. It checks
+capability gating, partial-open cleanup, atomic configuration, regulatory
+rejection (including aliased 6 GHz numbers), copying borrowed payloads, failed
+template replacement, TX bounds, device loss and idempotent shutdown. The real
+native-header compilation verifies ABI sizes; host adapters do not validate RF
+behavior or constitute AirDrop interoperability evidence.
+
+Combined-HAL Tahoe Debug and Release builds pass with the control adapter
+header included by the native interface translation unit. Nothing was
+installed to EFI or published.
