@@ -1514,9 +1514,7 @@ static int rtw89_ops_cancel_remain_on_channel(struct ieee80211_hw *hw,
 
 	wiphy_delayed_work_cancel(hw->wiphy, &rtwvif->roc.roc_work);
 
-	rtw89_roc_end(rtwdev, rtwvif);
-
-	return 0;
+	return rtw89_roc_end(rtwdev, rtwvif);
 }
 
 static void rtw89_set_tid_config_iter(void *data, struct ieee80211_sta *sta)

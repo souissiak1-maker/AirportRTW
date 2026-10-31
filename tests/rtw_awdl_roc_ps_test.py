@@ -6,6 +6,8 @@ import tempfile
 ROOT=Path(__file__).resolve().parents[1]
 core=(ROOT/'rtw/hal_rtw89/driver/core.c').read_text()
 code=core[core.index('static int rtw89_roc_station_ps('):core.index('void rtw89_roc_work(')]
+glue=(ROOT/'rtw/hal_rtw89/driver/Senmiko.c').read_text()
+code+=glue[glue.index('int rtw89_macos_awdl_reserve('):glue.index('#endif /* RTW89_MACOS */')]
 shim=r'''
 #include <cassert>
 #include <vector>
@@ -20,6 +22,13 @@ using u32=unsigned;
 #define RTW89_ROC_TX_TIMEOUT 20
 #define RTW89_CHANCTX_PAUSE_REASON_ROC 1
 #define NL80211_CHAN_NO_HT 0
+#define IEEE80211_MLD_MAX_NUM_LINKS 4
+#define NL80211_BAND_2GHZ 0
+#define NL80211_BAND_5GHZ 1
+#define IEEE80211_CHAN_DISABLED 1
+#define IEEE80211_CHAN_NO_IR 2
+#define IEEE80211_CHAN_RADAR 4
+#define IEEE80211_CHAN_NO_OFDM 8
 #define B_AX_A_UC_CAM_MATCH 1
 #define B_AX_A_BC_CAM_MATCH 2
 #define IEEE80211_CONF_IDLE 1
@@ -29,24 +38,32 @@ using u32=unsigned;
 #define lockdep_assert_wiphy(x) ((void)(x))
 #define rtw89_err(...) ((void)0)
 #define rtw89_debug(...) ((void)0)
+#define rtw89_warn(...) ((void)0)
 #define rtw89_for_each_rtwvif(dev,vif) \
     for(unsigned vi=0;vi<(dev)->vifs.size() && (((vif)=(dev)->vifs[vi]),true);++vi)
 #define rtw89_vif_for_each_link(vif,link,index) \
     for((index)=0;(index)<(vif)->links.size();++(index)) \
         if(((link)=(vif)->links[index]))
 struct rtw89_vif_link { unsigned chanctx_idx=0,link_id=0,mac_idx=0,id=0; };
-struct rtw89_roc { int state=RTW89_ROC_NORMAL,chan=6,duration=50,roc_work=0;unsigned link_id=0; };
-struct ieee80211_vif { unsigned type=NL80211_IFTYPE_STATION;struct{bool assoc=true;}cfg; };
+struct ieee80211_channel { unsigned band=NL80211_BAND_2GHZ,flags=0,center_freq=2437; };
+struct rtw89_roc { int state=RTW89_ROC_NORMAL,duration=50,roc_work=0;
+    ieee80211_channel chan;unsigned link_id=0;bool manual=false,on_channel=false,announced=false; };
+struct rtw89_vif;
+struct ieee80211_vif { rtw89_vif *owner=nullptr;unsigned type=NL80211_IFTYPE_STATION;struct{bool assoc=true;}cfg;bool no_beacon=false; };
 struct rtw89_vif { ieee80211_vif native;std::vector<rtw89_vif_link*>links;bool offchan=false;rtw89_roc roc; };
-struct ieee80211_hw { int *wiphy=nullptr;struct{unsigned flags=0;}conf; };
+struct ieee80211_hw { void *priv=nullptr;int *wiphy=nullptr;struct{unsigned flags=0;struct{ieee80211_channel *chan=nullptr;}chandef;}conf; };
 struct rtw89_mac_gen_def { unsigned rx_fltr=0; };
 struct Chip { rtw89_mac_gen_def *mac_def; };
-struct rtw89_dev { Chip *chip;ieee80211_hw *hw;std::vector<rtw89_vif*>vifs;struct{unsigned rx_fltr=0;}hal;int txq_wq=0,txq_work=0; };
+struct rtw89_dev { Chip *chip;ieee80211_hw *hw;std::vector<rtw89_vif*>vifs;struct{unsigned rx_fltr=0;}hal;int txq_wq=0,txq_work=0;bool scanning=false; };
 struct rtw89_chanctx_pause_parm { unsigned rsn;rtw89_vif_link *trigger=nullptr; };
 struct cfg80211_chan_def { int value; };
+int rtw89_roc_end(rtw89_dev*,rtw89_vif*);
 static std::vector<std::pair<unsigned,bool>>sent;
+static bool target=false,failTarget=false,failRestore=false;
 static unsigned expiries=0;
 static unsigned failSleep=999,failWake=999,pauses=0,resumes=0,retunes=0,ready=0,queued=0;
+#define to_rtw89(p) static_cast<rtw89_dev *>(p)
+static rtw89_vif *vif_to_rtwvif(ieee80211_vif*v){return v->owner;}
 static ieee80211_vif *rtwvif_to_vif(rtw89_vif *v){return &v->native;}
 static int rtw89_core_send_nullfunc(rtw89_dev*,rtw89_vif_link*l,bool qos,bool ps,int){
     assert(qos);sent.push_back({l->id,ps});return l->id==(ps?failSleep:failWake)?-7:0;
@@ -56,9 +73,9 @@ static void rtw89_leave_lps(rtw89_dev*){}
 static rtw89_vif_link *rtw89_get_designated_link(rtw89_vif*v){return v->links.empty()?nullptr:v->links[0];}
 static void rtw89_chanctx_pause(rtw89_dev*,rtw89_chanctx_pause_parm*){++pauses;}
 static void rtw89_chanctx_proceed(rtw89_dev*,void*){++resumes;}
-static void cfg80211_chandef_create(cfg80211_chan_def*,int*,int){}
-static void rtw89_config_roc_chandef(rtw89_dev*,rtw89_vif_link*,cfg80211_chan_def*){}
-static int rtw89_set_channel(rtw89_dev*){++retunes;return 0;}
+static void cfg80211_chandef_create(cfg80211_chan_def*,ieee80211_channel*,int){}
+static void rtw89_config_roc_chandef(rtw89_dev*,rtw89_vif_link*,cfg80211_chan_def*p){target=p;}
+static int rtw89_set_channel(rtw89_dev*){++retunes;return target?(failTarget?-11:0):(failRestore?-12:0);}
 static unsigned rtw89_mac_reg_by_idx(rtw89_dev*,unsigned,unsigned){return 0;}
 static void rtw89_write32_clr(rtw89_dev*,unsigned,unsigned){}
 static void ieee80211_ready_on_channel(ieee80211_hw*){++ready;}
@@ -81,18 +98,20 @@ int main(){
     primary.roc.state=other.roc.state=extra.roc.state=disconnected.roc.state=RTW89_ROC_IDLE;
     rtw89_dev dev{};dev.chip=&chip;dev.hw=&hw;
     dev.vifs={&primary,&secondary,&other,&extra,&disconnected};
+    hw.priv=&dev;ieee80211_channel home;hw.conf.chandef.chan=&home;
+    for(auto *v:dev.vifs)v->native.owner=v;
     assert(!rtw89_roc_start(&dev,&secondary));
     assert(sent.size()==2 && sent[0]==std::make_pair(1U,true) && sent[1]==std::make_pair(4U,true));
     assert(retunes==1 && ready==1 && queued==1);
     assert(primary.offchan && secondary.offchan && extra.offchan && !other.offchan);
-    sent.clear();rtw89_roc_end(&dev,&secondary);
+    sent.clear();assert(!rtw89_roc_end(&dev,&secondary));
     assert(sent.size()==2 && sent[0]==std::make_pair(1U,false) && sent[1]==std::make_pair(4U,false));
     assert(!primary.offchan && !secondary.offchan && !extra.offchan && expiries==1);
     // A failed AP notification must not retune or announce a grant. All
     // previously notified stations are woken, even if one wake attempt fails.
     sent.clear();failSleep=4;failWake=1;secondary.roc.state=RTW89_ROC_NORMAL;
     assert(rtw89_roc_start(&dev,&secondary)==-7);
-    assert(retunes==1 && ready==1 && queued==1);
+    assert(retunes==2 && ready==1 && queued==1);
     assert(sent.size()==4 && sent[2]==std::make_pair(1U,false) && sent[3]==std::make_pair(4U,false));
     assert(secondary.roc.state==RTW89_ROC_IDLE && !primary.offchan && !secondary.offchan);
     assert(pauses==2 && resumes==2);
@@ -108,12 +127,67 @@ int main(){
     primary.roc.state=RTW89_ROC_IDLE;
     // A broken associated-station link cannot silently pass PM admission.
     failSleep=failWake=999;primary.links.clear();
-    assert(rtw89_roc_start(&dev,&secondary)==-ENOLINK && ready==1 && retunes==1);
+    assert(rtw89_roc_start(&dev,&secondary)==-ENOLINK && ready==1 && retunes==2);
     primary.links={&primaryLink};sent.clear();
     // An unassociated radio does not fabricate a station PM handshake.
     primary.native.cfg.assoc=false;extra.native.cfg.assoc=false;
     secondary.links={&secondaryLink};failSleep=failWake=999;
     assert(!rtw89_roc_start(&dev,&secondary) && sent.empty() && ready==2);
+    assert(!rtw89_roc_end(&dev,&secondary));
+    // Manual native leases have one expiry owner: no compat delayed work
+    // and no legacy ready/expired callbacks. Channel failures never grant RF.
+    secondary.native.no_beacon=true;
+    unsigned callbacks=ready,exp=expiries,jobs=queued;
+    ieee80211_channel channel{};channel.band=NL80211_BAND_5GHZ;channel.center_freq=5180;
+    assert(!rtw89_awdl_roc_start(&dev,&secondary,&channel,50));
+    assert(secondary.roc.manual && secondary.roc.on_channel);
+    assert(rtw89_macos_awdl_current_channel(&hw,&secondary.native)==&secondary.roc.chan);
+    assert(rtw89_macos_awdl_needs_restore(&hw,&secondary.native));
+    assert(ready==callbacks && queued==jobs);
+    failRestore=true;
+    assert(rtw89_roc_end(&dev,&secondary)==-12);
+    assert(secondary.roc.state!=RTW89_ROC_IDLE && expiries==exp && secondary.offchan);
+    failRestore=false;
+    assert(!rtw89_roc_end(&dev,&secondary) && secondary.roc.state==RTW89_ROC_IDLE);
+    assert(!secondary.roc.on_channel && expiries==exp && queued==jobs);
+    assert(rtw89_macos_awdl_current_channel(&hw,&secondary.native)==&home);
+    assert(!rtw89_macos_awdl_needs_restore(&hw,&secondary.native));
+    assert(!rtw89_roc_end(&dev,&secondary)); // idempotent release
+    failTarget=true;
+    assert(rtw89_awdl_roc_start(&dev,&secondary,&channel,50)==-11);
+    assert(secondary.roc.state==RTW89_ROC_IDLE && !secondary.roc.on_channel);
+    assert(ready==callbacks && queued==jobs && expiries==exp);
+    failRestore=true;
+    assert(rtw89_awdl_roc_start(&dev,&secondary,&channel,50)==-11);
+    assert(secondary.roc.state!=RTW89_ROC_IDLE && secondary.offchan);
+    assert(ready==callbacks && queued==jobs && expiries==exp);
+    failTarget=failRestore=false;
+    assert(!rtw89_roc_end(&dev,&secondary));
+    for(unsigned flag : {1U,2U,4U,8U}) {
+        channel.flags=flag;
+        assert(rtw89_awdl_roc_start(&dev,&secondary,&channel,50)==-EINVAL);
+    }
+    channel.flags=0;dev.scanning=true;
+    assert(rtw89_awdl_roc_start(&dev,&secondary,&channel,50)==-EINVAL);
+    dev.scanning=false;
+    assert(rtw89_awdl_roc_start(&dev,&secondary,&channel,101)==-EINVAL);
+    channel.band=2;
+    assert(rtw89_awdl_roc_start(&dev,&secondary,&channel,50)==-EINVAL);
+    channel.band=NL80211_BAND_2GHZ;channel.center_freq=2484;
+    assert(rtw89_macos_awdl_reserve(&hw,&secondary.native,&channel,50)==-EINVAL);
+    channel.center_freq=2437;primary.native.cfg.assoc=true;
+    assert(!rtw89_macos_awdl_reserve(&hw,&secondary.native,&channel,50));
+    failWake=1;
+    assert(rtw89_macos_awdl_restore(&hw,&secondary.native)==-7);
+    assert(rtw89_macos_awdl_needs_restore(&hw,&secondary.native));
+    assert(!rtw89_macos_awdl_current_channel(&hw,&secondary.native));
+    assert(!secondary.roc.on_channel && secondary.offchan);
+    failWake=999;
+    assert(!rtw89_macos_awdl_restore(&hw,&secondary.native));
+    assert(!rtw89_macos_awdl_restore(&hw,&secondary.native));
+    assert(!rtw89_macos_awdl_current_channel(nullptr,&secondary.native));
+    assert(rtw89_macos_awdl_reserve(nullptr,&secondary.native,&channel,50)==-EINVAL);
+    assert(rtw89_macos_awdl_restore(nullptr,&secondary.native)==-EINVAL);
     puts("PASS: RTW89 secondary ROC uses real associated stations and rejects failed PS admission");
 }
 '''

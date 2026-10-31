@@ -670,3 +670,63 @@ they do not establish on-air interoperability.
 Both combined-HAL Tahoe Debug and Release builds pass with the shared engine
 header compiled through the native runtime. Runtime/interface/datapath/action
 regressions and both backend validators also pass.
+
+
+## Checked manual RTW89 radio reservations
+
+The RTW89 driver now provides a separate manual ROC entry for a quiet secondary
+ADHOC VIF. It rejects scans, overlapping owners, disallowed/passive/DFS/no-OFDM
+channels, unsupported bands and visits above 100 ms. A successful return means
+the driver completed channel programming; it does not assert an RF ACK or
+physical synchronization. The native owner must arm its bounded deadline before
+entry and serialize reserve/restore calls on its workloop.
+
+Manual visits do not queue a compatibility ROC expiry worker or emit legacy
+ready/expired callbacks. This lets the native scheduler own expiry without two
+independent timer paths. Channel-programming errors now propagate; failed entry
+attempts home restoration, and restoration/wake errors retain recovery ownership
+instead of announcing a completed return. Retrying restoration remains possible.
+The saved infrastructure chandef stays in the driver channel context; it is not
+replaced by a synthesized 20 MHz home channel.
+
+The RTW89 bridge exposes reserve/restore primitives and verifies the live radio
+channel before action submission. Off-channel action TX no longer mistakes the
+saved infrastructure chandef for the current channel. It rechecks the current
+regulatory table before submitting, rather than trusting only the lease's copied
+channel flags. RTW88 keeps its existing current-channel behavior.
+
+Primary software TX uses an atomic gate before dequeue. Reserve pauses new
+submissions and drains existing guards before taking WiphyGuard or switching.
+The wait is bounded; timeout restores normal queue progress without attempting a
+radio visit. Successful home restoration reopens the gate and invokes TX wake
+outside WiphyGuard. Recovery errors keep it closed. This gate does not drain
+hardware DMA queues and is not a replacement for driver channel-context pause.
+
+Host tests execute the production driver/glue and bridge functions with injected
+TX, retune, restore and wake failures. They verify bounded admission, single
+expiry ownership, recovery state, regulatory rejection, queue ownership and
+cross-HAL action-helper isolation. A threaded sanitizer test exercises the
+cross-atomic pause/drain handshake.
+
+These primitives do not yet install a native RuntimeBackend or timer owner.
+Teardown/device-reset recovery, all scan/join arbitration, peer/data TX binding,
+native availability events and remaining compatibility-work lifecycle issues
+still need integration before active use. No capabilities were enabled.
+
+## Backend build failure propagation
+
+All three Xcode backend archive phases now use `set -euo pipefail`. Previously a
+failed RTW89 archive script could be followed by successful RTW88/SAE scripts,
+masking the failure with the phase's final zero status. A preliminary build in
+this work exposed a missing include through this behavior; that output was
+rejected and rebuilt after correcting the include and failure propagation.
+
+The regression executes each real shell-phase script with failing archive
+adapters and verifies later archives are not run. Earlier retained election,
+ROC power-save and native-payload build logs were also checked and contain no
+compiler errors.
+
+The final combined-HAL Tahoe Debug and Release builds pass with no compiler
+errors. The Release executable contains the new reservation/restore symbols.
+Both backend validators and the radio, submission-gate, failure-propagation
+and cross-HAL helper tests pass. No EFI was changed and nothing was published.

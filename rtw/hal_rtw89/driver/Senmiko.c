@@ -23,6 +23,7 @@
 #include "pci.h"
 #include "ps.h"
 #include "txrx.h"
+#include "util.h"
 
 /* The kext-facing API (declared in rtw88_compat.h, force-included) passes
  * an opaque "struct rtw_dev *"; here it is really a struct rtw89_dev. */
@@ -771,6 +772,61 @@ void rtw89_macos_get_tx_rate(struct ieee80211_hw *hw, struct RTWTxRate *out)
     if (!out) return;
     memset(out, 0, sizeof(*out));
     if (hw) ieee80211_iterate_stations_atomic(hw, rtw89_copy_tx_rate, out);
+}
+
+/* Native AWDL calls are serialized by the bridge's WiphyGuard. The native
+ * owner supplies the timer and must release the visit before tearing down VIFs.
+ */
+int rtw89_macos_awdl_reserve(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
+                            const struct ieee80211_channel *channel,
+                            unsigned int duration_ms)
+{
+    if (!hw || !hw->priv || !vif)
+        return -EINVAL;
+    return rtw89_awdl_roc_start(to_rtw89(hw->priv), vif_to_rtwvif(vif),
+                               channel, duration_ms);
+}
+
+int rtw89_macos_awdl_restore(struct ieee80211_hw *hw, struct ieee80211_vif *vif)
+{
+    struct rtw89_vif *rtwvif;
+
+    if (!hw || !hw->priv || !vif || vif->type != NL80211_IFTYPE_ADHOC || !vif->no_beacon)
+        return -EINVAL;
+    rtwvif = vif_to_rtwvif(vif);
+    if (rtwvif->roc.state == RTW89_ROC_IDLE)
+        return 0;
+    if (!rtwvif->roc.manual)
+        return -EBUSY;
+    return rtw89_roc_end(to_rtw89(hw->priv), rtwvif);
+}
+
+bool rtw89_macos_awdl_needs_restore(struct ieee80211_hw *hw, struct ieee80211_vif *vif)
+{
+    struct rtw89_vif *rtwvif;
+
+    if (!hw || !hw->priv || !vif)
+        return false;
+    rtwvif = vif_to_rtwvif(vif);
+    return rtwvif->roc.manual && rtwvif->roc.state != RTW89_ROC_IDLE;
+}
+
+struct ieee80211_channel *
+rtw89_macos_awdl_current_channel(struct ieee80211_hw *hw, struct ieee80211_vif *vif)
+{
+    struct rtw89_dev *dev;
+    struct rtw89_vif *rtwvif, *other;
+
+    if (!hw || !hw->priv || !vif || vif->type != NL80211_IFTYPE_ADHOC || !vif->no_beacon)
+        return NULL;
+    dev = to_rtw89(hw->priv);
+    rtwvif = vif_to_rtwvif(vif);
+    if (rtwvif->roc.state != RTW89_ROC_IDLE)
+        return rtwvif->roc.manual && rtwvif->roc.on_channel ? &rtwvif->roc.chan : NULL;
+    rtw89_for_each_rtwvif(dev, other)
+        if (other != rtwvif && other->roc.state != RTW89_ROC_IDLE)
+            return NULL;
+    return hw->conf.chandef.chan;
 }
 
 #endif /* RTW89_MACOS */

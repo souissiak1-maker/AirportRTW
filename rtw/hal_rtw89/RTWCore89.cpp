@@ -823,7 +823,8 @@ void RTWCore89::start(struct _ifnet *ifp)
     struct ieee80211com *ic = &sc->sc_ic;
 
     for (;;) {
-        if (!rtw89LinuxTxAvailable(&owner->linuxContext)) {
+        RTWAwdl::TxGuard submission(owner->linuxContext.awdlTxGate);
+        if (!submission || !rtw89LinuxTxAvailable(&owner->linuxContext)) {
             __sync_fetch_and_add(&owner->txBackpressureCount, 1);
             ifq_set_oactive(&ifp->if_snd);
             break;

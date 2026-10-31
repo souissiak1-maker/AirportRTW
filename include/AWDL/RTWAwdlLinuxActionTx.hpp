@@ -11,7 +11,8 @@ namespace RTWAwdl {
 // Submitted means the driver owns the copied skb, not that an RF ACK occurred.
 enum class ActionSubmission { Rejected, NoMemory, Submitted };
 static inline ActionSubmission submitLinuxAction(ieee80211_hw *hw, ieee80211_vif *vif,
-    const uint8_t *frame, size_t length, uint16_t expectedFrequency)
+    const uint8_t *frame, size_t length, uint16_t expectedFrequency,
+    const struct ieee80211_channel *verifiedRadioChannel = nullptr)
 {
     ActionInfo action;
     if (!hw || !hw->ops || !hw->ops->tx || !vif || !vif->no_beacon ||
@@ -19,7 +20,11 @@ static inline ActionSubmission submitLinuxAction(ieee80211_hw *hw, ieee80211_vif
         parseFrame(frame, length, action) != ParseResult::Valid ||
         (action.subtype != 0 && action.subtype != 3))
         return ActionSubmission::Rejected;
-    auto *channel = hw->conf.chandef.chan;
+    // A manual ROC preserves the infrastructure chandef in hw->conf. Its
+    // HAL may supply the driver-confirmed live ROC channel instead. This must
+    // be queried under the same hardware lock as this submission; an ioctl's
+    // requested channel is not evidence of a successful retune.
+    const auto *channel = verifiedRadioChannel ? verifiedRadioChannel : hw->conf.chandef.chan;
     if (!channel || !expectedFrequency || channel->center_freq != expectedFrequency ||
         vif->bss_conf.chandef_chan != channel ||
         (channel->band == NL80211_BAND_2GHZ &&

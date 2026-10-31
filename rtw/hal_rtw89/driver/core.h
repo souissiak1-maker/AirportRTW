@@ -3617,6 +3617,9 @@ struct rtw89_roc {
 	enum rtw89_roc_state state;
 	int duration;
 	unsigned int link_id;
+	bool manual;
+	bool on_channel;
+	bool announced;
 };
 
 #define RTW89_P2P_MAX_NOA_NUM 2
@@ -7824,7 +7827,9 @@ int rtw89_core_send_nullfunc(struct rtw89_dev *rtwdev, struct rtw89_vif_link *rt
 			     bool qos, bool ps, int timeout);
 void rtw89_roc_work(struct wiphy *wiphy, struct wiphy_work *work);
 int rtw89_roc_start(struct rtw89_dev *rtwdev, struct rtw89_vif *rtwvif);
-void rtw89_roc_end(struct rtw89_dev *rtwdev, struct rtw89_vif *rtwvif);
+int rtw89_roc_end(struct rtw89_dev *rtwdev, struct rtw89_vif *rtwvif);
+int rtw89_awdl_roc_start(struct rtw89_dev *rtwdev, struct rtw89_vif *rtwvif,
+                         const struct ieee80211_channel *channel, unsigned int duration_ms);
 void rtw89_core_scan_start(struct rtw89_dev *rtwdev, struct rtw89_vif_link *rtwvif_link,
 			   const u8 *mac_addr, bool hw_scan);
 void rtw89_core_scan_complete(struct rtw89_dev *rtwdev,

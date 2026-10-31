@@ -11,7 +11,8 @@ enum { IEEE80211_CHAN_DISABLED=1,IEEE80211_CHAN_NO_IR=2,
 enum { IEEE80211_TX_CTL_FIRST_FRAGMENT=16,IEEE80211_TX_CTL_INJECTED=1024,
        IEEE80211_TX_CTL_NO_ACK=4,IEEE80211_TX_CTL_REQ_TX_STATUS=1,
        IEEE80211_AC_VO=0,IEEE80211_TX_MAX_RATES=4,GFP_ATOMIC=0 };
-struct Channel { unsigned band; uint16_t center_freq; unsigned flags; };
+struct ieee80211_channel { unsigned band; uint16_t center_freq; unsigned flags; };
+using Channel=ieee80211_channel;
 struct ieee80211_vif {
     bool no_beacon; unsigned type; uint8_t addr[6];
     struct { Channel *chandef_chan; } bss_conf;
@@ -89,4 +90,16 @@ int main() {
     assert(!(submitted->info.flags & IEEE80211_TX_CTL_NO_ACK));
     delete submitted; submitted=nullptr;
     assert(RTWAwdl::submitLinuxAction(nullptr,&vif,frame,sizeof(frame),5180)==Result::Rejected);
+    // The infrastructure chandef stays home during a manual ROC. Only a
+    // channel confirmed by the HAL may authorize off-channel action TX.
+    Channel home={NL80211_BAND_2GHZ,2437,0};
+    Channel away={NL80211_BAND_5GHZ,5180,0};
+    hw.conf.chandef.chan=&home;vif.bss_conf.chandef_chan=&away;
+    assert(RTWAwdl::submitLinuxAction(&hw,&vif,frame,sizeof(frame),5180)==Result::Rejected);
+    assert(RTWAwdl::submitLinuxAction(&hw,&vif,frame,sizeof(frame),5180,&away)==Result::Submitted);
+    assert(hw.conf.chandef.chan==&home && submitted->info.band==NL80211_BAND_5GHZ);
+    delete submitted;submitted=nullptr;
+    away.flags=IEEE80211_CHAN_NO_IR;
+    assert(RTWAwdl::submitLinuxAction(&hw,&vif,frame,sizeof(frame),5180,&away)==Result::Rejected);
+
 }

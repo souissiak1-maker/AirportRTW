@@ -23,6 +23,12 @@ void rtw89_macos_flush_rx_ba(struct ieee80211_sta *);
 bool rtw89_macos_set_country(struct ieee80211_hw *, const char *);
 bool rtw89_macos_country_ie(struct ieee80211_hw *, const unsigned char *);
 void rtw89_macos_get_tx_rate(struct ieee80211_hw *, struct RTWTxRate *);
+int rtw89_macos_awdl_reserve(struct ieee80211_hw *, struct ieee80211_vif *,
+                            const struct ieee80211_channel *, unsigned);
+int rtw89_macos_awdl_restore(struct ieee80211_hw *, struct ieee80211_vif *);
+bool rtw89_macos_awdl_needs_restore(struct ieee80211_hw *, struct ieee80211_vif *);
+struct ieee80211_channel *rtw89_macos_awdl_current_channel(struct ieee80211_hw *,
+                                                          struct ieee80211_vif *);
 void rtw89_macos_peer_audit(struct ieee80211_hw *, struct ieee80211_vif *, uint32_t *);
 }
 
@@ -483,6 +489,85 @@ bool rtw89LinuxPowerUp(Rtw89LinuxContext *context)
     return true;
 }
 
+static struct ieee80211_channel *awdlFrequencyChannel(ieee80211_hw *hw, uint16_t frequency)
+{
+    if (!hw || !hw->wiphy) return nullptr;
+    for (unsigned band=NL80211_BAND_2GHZ; band<=NL80211_BAND_5GHZ; ++band) {
+        auto *supported=hw->wiphy->bands[band];
+        if (!supported) continue;
+        for (int i=0;i<supported->n_channels;++i) {
+            auto *channel=&supported->channels[i];
+            if (channel->center_freq==frequency &&
+                !(channel->flags & (IEEE80211_CHAN_DISABLED | IEEE80211_CHAN_NO_IR |
+                                    IEEE80211_CHAN_RADAR | IEEE80211_CHAN_NO_OFDM)) &&
+                (band!=NL80211_BAND_2GHZ || (frequency>=2412 && frequency<=2472)))
+                return channel;
+        }
+    }
+    return nullptr;
+}
+
+// Reservation/restore callers share one native workloop. Pause is acquired
+// before WiphyGuard so a producer can finish without waiting behind the retune.
+int rtw89LinuxAwdlReserve(Rtw89LinuxContext *context, uint16_t frequency, unsigned durationMs)
+{
+    if (!context) return -EINVAL;
+    if (!context->awdlTxGate.pause()) return -EBUSY;
+    for (unsigned wait=0; !context->awdlTxGate.drained(); ++wait) {
+        if (wait==100) {
+            context->awdlTxGate.resume();
+            if (context->txResume) context->txResume(context->nativeOwner);
+            return -EBUSY;
+        }
+        IOSleep(1);
+    }
+    int result=-EBUSY;
+    bool recovery=false;
+    auto *hw=static_cast<ieee80211_hw *>(context->hardware);
+    {
+        WiphyGuard guard(hw);
+        if (context->started && context->interfaceAdded && !context->scanning &&
+            context->awdlInterface.hardwareAdded && context->awdlInterface.registered &&
+            (!context->station || context->stationState>=IEEE80211_STA_AUTHORIZED)) {
+            auto *channel=awdlFrequencyChannel(hw,frequency);
+            auto *vif=static_cast<ieee80211_vif *>(context->awdlInterface.vif);
+            result=channel ? rtw89_macos_awdl_reserve(hw,vif,channel,durationMs) : -EINVAL;
+            recovery=rtw89_macos_awdl_needs_restore(hw,vif);
+            if (!result) {
+                vif->bss_conf.chandef_chan=rtw89_macos_awdl_current_channel(hw,vif);
+                vif->bss_conf.chandef_width=NL80211_CHAN_WIDTH_20;
+            }
+        }
+    }
+    // Recovery owns the paused producer gate until home restoration succeeds.
+    if (result && !recovery) {
+        context->awdlTxGate.resume();
+        if (context->txResume) context->txResume(context->nativeOwner);
+    }
+    return result;
+}
+
+int rtw89LinuxAwdlRestore(Rtw89LinuxContext *context)
+{
+    if (!context || !context->awdlInterface.vif) return -EINVAL;
+    auto *hw=static_cast<ieee80211_hw *>(context->hardware);
+    int result;
+    {
+        WiphyGuard guard(hw);
+        auto *vif=static_cast<ieee80211_vif *>(context->awdlInterface.vif);
+        result=rtw89_macos_awdl_restore(hw,vif);
+        if (!result) {
+            vif->bss_conf.chandef_chan=hw->conf.chandef.chan;
+            vif->bss_conf.chandef_width=hw->conf.chandef.width;
+        }
+    }
+    if (!result) {
+        context->awdlTxGate.resume();
+        if (context->txResume) context->txResume(context->nativeOwner);
+    }
+    return result;
+}
+
 bool rtw89LinuxAwdlAddInterface(Rtw89LinuxContext *context,
                                       const uint8_t mac[6])
 {
@@ -512,9 +597,13 @@ bool rtw89LinuxAwdlTransmitAction(Rtw89LinuxContext *context,
     if (!context->started || context->scanning ||
         !context->awdlInterface.hardwareAdded || !context->awdlInterface.registered)
         return false;
-    return RTWAwdl::submitLinuxAction(hw,
-        static_cast<ieee80211_vif *>(context->awdlInterface.vif),
-        frame, length, expectedFrequency) == RTWAwdl::ActionSubmission::Submitted;
+    auto *vif=static_cast<ieee80211_vif *>(context->awdlInterface.vif);
+    auto *channel=rtw89_macos_awdl_current_channel(hw,vif);
+    // Recheck the live regulatory table; roc.chan is a snapshot taken when
+    // the lease began and may predate a country/domain update.
+    if (!channel || !awdlFrequencyChannel(hw,channel->center_freq)) return false;
+    return RTWAwdl::submitLinuxAction(hw,vif,frame,length,expectedFrequency,channel) ==
+        RTWAwdl::ActionSubmission::Submitted;
 }
 
 bool rtw89LinuxAwdlSetReceiver(Rtw89LinuxContext *context,
@@ -722,7 +811,7 @@ bool rtw89LinuxTxAvailable(Rtw89LinuxContext *context)
 
 unsigned int rtw89LinuxTxAvailableSlots(Rtw89LinuxContext *context)
 {
-    return context && context->started ? rtw88_be_tx_avail() : 0;
+    return context && context->started && !context->awdlTxGate.isPaused() ? rtw88_be_tx_avail() : 0;
 }
 
 bool rtw89LinuxAmpduStart(Rtw89LinuxContext *context, uint8_t tid,
