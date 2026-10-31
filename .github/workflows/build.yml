@@ -67,6 +67,7 @@ jobs:
           python3 tests/rtw_awdl_interface_test.py
           python3 tests/rtw_awdl_runtime_test.py
           python3 tests/rtw_awdl_roc_ps_test.py
+          python3 tests/rtw_backend_build_failure_test.py
           xcrun clang++ -std=c++14 -Wall -Wextra -Werror -fsanitize=address,undefined -Iinclude tests/rtw_awdl_election_test.cpp -o /tmp/rtw_awdl_election_test
           /tmp/rtw_awdl_election_test
           xcrun clang++ -std=c++14 -Wall -Wextra -Werror -fsanitize=address,undefined -Iinclude tests/rtw_awdl_packet_flow_test.cpp -o /tmp/rtw_awdl_packet_flow_test

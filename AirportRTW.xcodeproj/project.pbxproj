@@ -2755,7 +2755,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/bash;
-			shellScript = "scripts/build_rtw89_c_archive.sh\nscripts/build_rtw88_c_archive.sh\nscripts/build_sae_archive.sh\n";
+			shellScript = "set -euo pipefail\nscripts/build_rtw89_c_archive.sh\nscripts/build_rtw88_c_archive.sh\nscripts/build_sae_archive.sh\n";
 		};
 		A89C00012F00000000000002 /* Build RTW89 C Archive */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -2771,7 +2771,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/bash;
-			shellScript = "scripts/build_rtw89_c_archive.sh\nscripts/build_rtw88_c_archive.sh\nscripts/build_sae_archive.sh\n";
+			shellScript = "set -euo pipefail\nscripts/build_rtw89_c_archive.sh\nscripts/build_rtw88_c_archive.sh\nscripts/build_sae_archive.sh\n";
 		};
 		A89C00012F00000000000003 /* Build RTW89 C Archive */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -2787,7 +2787,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/bash;
-			shellScript = "scripts/build_rtw89_c_archive.sh\nscripts/build_rtw88_c_archive.sh\nscripts/build_sae_archive.sh\n";
+			shellScript = "set -euo pipefail\nscripts/build_rtw89_c_archive.sh\nscripts/build_rtw88_c_archive.sh\nscripts/build_sae_archive.sh\n";
 		};
 		5066D63C25287F8E00EE6F38 /* Generate Firmware */ = {
 			isa = PBXShellScriptBuildPhase;
