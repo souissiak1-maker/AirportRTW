@@ -401,3 +401,28 @@ peer hardware state and quiescent radio teardown still need implementation.
 The normal capability advertisement and VIRTUAL_IF_CREATE unsupported result
 remain unchanged until that provider exists. This is inactive frontend
 implementation, not functional AWDL/AirDrop.
+
+## Multiple interface and peer registry
+
+Both HAL compatibility layers now compile the same bounded registry implementation
+(four interfaces, 32 peers per HAL). Secondary registration has explicit failure
+results; existing primary-station APIs retain their behavior without clearing
+secondary state. Peer lookup matches the owning interface and the by-ifaddr
+variant honors the hardware and local address. Duplicate live peer identities
+within one interface and pointer migration between interfaces are rejected.
+Removing an interface removes only its own peer entries, not their allocations.
+The bridge remains responsible for hardware removal and freeing memory.
+
+A recursive registry lock covers mutation and iterator callbacks, so removal
+waits for in-flight iterators before the caller frees a peer. Iterator callbacks
+must not free registry entries. Borrowed lookup pointers are not protected after
+lookup returns: their callers still need teardown exclusion throughout use.
+This does not supply RCU or solve cross-driver lock ordering. Future secondary
+radio operations must serialize peer removal with all driver users before freeing.
+
+Host tests cover per-interface lookup with identical remote MACs, primary-only
+cleanup, bounded capacity, duplicate rejection, slot reuse, hardware mismatch,
+reset and removal waiting for a live iterator under ASan/UBSan. The new API is
+namespaced for the RTW88 archive to preserve combined-HAL linkage. No secondary
+hardware VIF or peer is created yet; this removes a compatibility-layer blocker,
+not the remaining radio/protocol implementation.

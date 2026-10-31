@@ -416,22 +416,7 @@ irq_handler_t g_irq_thread_fn = NULL;
 void *g_irq_dev_id = NULL;
 thread_call_t g_irq_thread_call = NULL;
 
-/* Single active VIF — registered by the kext after add_interface so that
- * ieee80211_iterate_active_interfaces_atomic can deliver the iterator to
- * rtw88's internal callbacks (e.g. rtw_build_rsvd_page_iter). */
-static struct ieee80211_vif *g_rtw88_vif = NULL;
-static struct ieee80211_sta *g_rtw88_sta = NULL;
-static IORecursiveLock *g_station_lock;
-
-void rtw88_register_vif(struct ieee80211_vif *vif)   { g_rtw88_vif = vif; }
-void rtw88_unregister_vif(void)                       { g_rtw88_vif = NULL; }
-void rtw88_register_sta(struct ieee80211_sta *sta)
-{
-    IORecursiveLockLock(g_station_lock);
-    g_rtw88_sta = sta;
-    IORecursiveLockUnlock(g_station_lock);
-}
-void rtw88_unregister_sta(void) { rtw88_register_sta(NULL); }
+#include "../../../include/AWDL/RTWMac80211Registry.h"
 
 /* Kext-registered hook fired after the IRQ bottom-half (tx_isr) has run and
  * freed TX descriptors.  Runs on the thread_call thread with no rtw88 locks
@@ -645,36 +630,6 @@ void ieee80211_beacon_loss(struct ieee80211_vif *vif) {}
 void ieee80211_cqm_rssi_notify(struct ieee80211_vif *vif,
                                 int event, s32 rssi_level, gfp_t gfp) {}
 
-void ieee80211_iterate_active_interfaces_atomic(
-    struct ieee80211_hw *hw, unsigned int iter_flags,
-    void (*iterator)(void *data, u8 *mac, struct ieee80211_vif *vif),
-    void *data)
-{
-    if (g_rtw88_vif && iterator)
-        iterator(data, g_rtw88_vif->addr, g_rtw88_vif);
-}
-
-void ieee80211_iterate_active_interfaces(
-    struct ieee80211_hw *hw, unsigned int iter_flags,
-    void (*iterator)(void *data, u8 *mac, struct ieee80211_vif *vif),
-    void *data)
-{
-    if (g_rtw88_vif && iterator)
-        iterator(data, g_rtw88_vif->addr, g_rtw88_vif);
-}
-
-void ieee80211_iterate_stations_atomic(
-    struct ieee80211_hw *hw,
-    void (*iterator)(void *data, struct ieee80211_sta *sta),
-    void *data)
-{
-    if (!g_station_lock || hw != g_rtw88_hw || !iterator) return;
-    // Unregister waits for in-flight iterators before the bridge frees sta.
-    IORecursiveLockLock(g_station_lock);
-    if (g_rtw88_sta) iterator(data, g_rtw88_sta);
-    IORecursiveLockUnlock(g_station_lock);
-}
-
 void ieee80211_iter_keys(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
     void (*iter)(struct ieee80211_hw *, struct ieee80211_vif *,
                  struct ieee80211_sta *, struct ieee80211_key_conf *, void *),
@@ -842,30 +797,6 @@ void ieee80211_queue_delayed_work(struct ieee80211_hw *hw,
 /* ------------------------------------------------------------------ */
 /*  mac80211 stubs                                                      */
 /* ------------------------------------------------------------------ */
-
-/* Single-STA setup: the kext registers the peer via rtw88_register_sta()
- * after association.  rtw89's assoc path resolves the peer with
- * ieee80211_find_sta(vif, vif->cfg.ap_addr). */
-struct ieee80211_sta *ieee80211_find_sta(struct ieee80211_vif *vif,
-                                          const u8 *addr)
-{
-    (void)vif;
-    if (g_rtw88_sta && addr &&
-        memcmp(g_rtw88_sta->addr, addr, ETH_ALEN) == 0)
-        return g_rtw88_sta;
-    return NULL;
-}
-
-struct ieee80211_sta *ieee80211_find_sta_by_ifaddr(struct ieee80211_hw *hw,
-                                                    const u8 *addr,
-                                                    const u8 *localaddr)
-{
-    (void)hw; (void)localaddr;
-    if (g_rtw88_sta && addr &&
-        memcmp(g_rtw88_sta->addr, addr, ETH_ALEN) == 0)
-        return g_rtw88_sta;
-    return NULL;
-}
 
 struct sk_buff *ieee80211_proberesp_get(struct ieee80211_hw *hw,
                                          struct ieee80211_vif *vif)
@@ -1062,8 +993,7 @@ void rtw88_compat_exit(void)
     g_tx_resume_cb  = NULL;
     g_hw_cbs        = NULL;
     g_kext_hw       = NULL;
-    g_rtw88_vif     = NULL;
-    g_rtw88_sta     = NULL;
+    rtw_registry_reset();
     if (g_station_lock) {
         IORecursiveLockFree(g_station_lock);
         g_station_lock = NULL;
