@@ -324,6 +324,27 @@ uint32_t RTWCore88::getTxQueueSize()
     return kRtw88TxQueueSize;
 }
 
+bool RTWCore88::addAwdlInterface(const uint8_t mac[6])
+{
+    return rtw88LinuxAwdlAddInterface(&linuxContext, mac);
+}
+
+void RTWCore88::removeAwdlInterface()
+{
+    rtw88LinuxAwdlRemoveInterface(&linuxContext);
+}
+
+bool RTWCore88::setAwdlReceiver(OSObject *owner, RTWAwdl::ReceiveHandler handler)
+{
+    return rtw88LinuxAwdlSetReceiver(&linuxContext, owner, handler);
+}
+
+bool RTWCore88::transmitAwdlAction(const uint8_t *frame, size_t length,
+                                      uint16_t frequency)
+{
+    return rtw88LinuxAwdlTransmitAction(&linuxContext, frame, length, frequency);
+}
+
 void RTWCore88::clearScanningFlags()
 {
     sc.sc_flags &= ~RTW88_FLAG_SCANNING;

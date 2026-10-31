@@ -509,3 +509,44 @@ coalescing can select the wrong backend. A two-translation-unit host link test
 checks that interface creation, registry updates and cleanup stay with the
 calling HAL. Existing AP-mode address-CAM selection is preserved independently
 of the new non-beaconing ad-hoc predicate, including other AP-mode roles.
+
+## HAL receive handoff and common radio entry points
+
+RTWCore now exposes secondary interface creation/removal, action submission and
+receive registration through one hardware-independent contract. RTWCore88 and
+RTWCore89 implement it using their separate bridges; native protocol code need
+not downcast to a chip-specific core or import Linux/private Apple types into
+shared HAL state.
+
+Each bridge owns an RX registration lock allocated during attach. Successful
+secondary interface creation opens registration with its MAC. Registered receivers
+are retained OSObjects; replacing, clearing or closing registration waits for a
+live synchronous callback, then releases ownership outside the lock. Removal and
+power-down close registration before removing the secondary VIF. Driver/PCI
+teardown must stop RX producers before the registration lock is destroyed.
+Control operations must remain serialized on the controller workloop.
+
+CRC-validated receive frames are classified before the normal net80211 handoff.
+The separate receiver accepts supported AWDL PSF/MIF envelopes with canonical
+BSSID, or fully validated IPv6 AWDL data framing, addressed to the secondary
+station or a group and from a nonzero remote unicast source. Other traffic follows
+the existing path. Callbacks borrow the skb only during the call and may copy or
+enqueue, never wait for a workloop, reenter the HAL or change registration. Raw
+RSSI/frequency and the device timestamp with a separate validity bit are retained;
+no native-family timestamp or successful peer admission is invented.
+
+DataCodec::inspect exposes a validated borrowed view used by both classification
+and decapsulation; it avoids allocating a scratch Ethernet packet on the kernel
+stack. When the secondary receiver is closed, an atomic gate avoids taking the
+registration lock on ordinary RX. Tests cover allocation failure, object retain/
+release, replacement, callback/close concurrency, destructor execution outside
+the RX lock, address/framing rejection, IPv6 classification, zero-but-valid raw
+clock values and the disabled fast path. Existing codec malformed-frame/fuzz
+checks still pass. These are host ownership tests, not hardware latency or native
+family delivery tests.
+
+No native Control provider binds this receiver yet. It is an implemented HAL RX
+endpoint, not completed native AWDL RX delivery. Clock conversion, the native
+workloop event adapter, peer admission and timed channel scheduling remain before
+an end-to-end discovery prototype can run. AirDrop support advertisement remains
+disabled and no intermediate hardware installation is requested.

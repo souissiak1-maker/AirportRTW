@@ -45,6 +45,11 @@ public:
     bool setCountryCode(const char cc[2]) override;
     uint32_t getTxQueueSize() override;
 
+    bool addAwdlInterface(const uint8_t mac[6]) override;
+    void removeAwdlInterface() override;
+    bool setAwdlReceiver(OSObject *, RTWAwdl::ReceiveHandler) override;
+    bool transmitAwdlAction(const uint8_t *, size_t, uint16_t) override;
+
     void clearScanningFlags() override;
     IOReturn setMulticastList(IOEthernetAddress *addresses, int count) override;
 

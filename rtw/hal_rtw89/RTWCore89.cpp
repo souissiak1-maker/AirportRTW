@@ -348,6 +348,27 @@ uint32_t RTWCore89::getTxQueueSize()
     return kRtw89TxQueueSize;
 }
 
+bool RTWCore89::addAwdlInterface(const uint8_t mac[6])
+{
+    return rtw89LinuxAwdlAddInterface(&linuxContext, mac);
+}
+
+void RTWCore89::removeAwdlInterface()
+{
+    rtw89LinuxAwdlRemoveInterface(&linuxContext);
+}
+
+bool RTWCore89::setAwdlReceiver(OSObject *owner, RTWAwdl::ReceiveHandler handler)
+{
+    return rtw89LinuxAwdlSetReceiver(&linuxContext, owner, handler);
+}
+
+bool RTWCore89::transmitAwdlAction(const uint8_t *frame, size_t length,
+                                      uint16_t frequency)
+{
+    return rtw89LinuxAwdlTransmitAction(&linuxContext, frame, length, frequency);
+}
+
 void RTWCore89::clearScanningFlags()
 {
     sc.sc_flags &= ~RTW89_FLAG_SCANNING;

@@ -28,6 +28,7 @@ void rtw89_macos_peer_audit(struct ieee80211_hw *, struct ieee80211_vif *, uint3
 
 #include <AWDL/RTWAwdlLinuxInterface.hpp>
 #include <AWDL/RTWAwdlLinuxActionTx.hpp>
+#include <AWDL/RTWAwdlReceiveRegistration.hpp>
 
 namespace {
 static Rtw89LinuxContext *activeContext;
@@ -166,6 +167,16 @@ static void receiveFrame(void *opaque, struct sk_buff *skb)
                     ? (uint32_t)(action[3] | ((uint32_t)action[4] << 8)) : 0xffff;
             }
         }
+    }
+    // Only CRC-validated AWDL frames enter the separate receiver. The callback
+    // borrows this skb synchronously and must copy before returning.
+    if (context && context->awdlReceive && skb->data &&
+        !(status->flag & (RX_FLAG_FAILED_FCS_CRC | RX_FLAG_FAILED_PLCP_CRC)) &&
+        RTWAwdl::dispatchReceiver(*context->awdlReceive, skb->data, skb->len,
+            status->signal, status->freq, static_cast<uint32_t>(status->mactime),
+            (status->flag & RX_FLAG_MACTIME_START) != 0)) {
+        kfree_skb(skb);
+        return;
     }
     if (context && context->receive && skb->data && skb->len >= 10 &&
         !(status->flag & (RX_FLAG_FAILED_FCS_CRC | RX_FLAG_FAILED_PLCP_CRC))) {
@@ -343,6 +354,10 @@ bool rtw89LinuxAttach(Rtw89PciTransport *transport,
         goto fail;
     context->hardware = hw;
     context->device = hw->priv;
+    context->awdlReceive = static_cast<RTWAwdl::ReceiveRegistration *>(
+        IOMallocZero(sizeof(RTWAwdl::ReceiveRegistration)));
+    if (!context->awdlReceive || !RTWAwdl::initializeReceiver(*context->awdlReceive))
+        goto fail;
     rtw88_set_hw_callbacks(&hardwareCallbacks, context);
     activeContext = context;
     rtw88_set_tx_resume_cb(resumeTransmit);
@@ -392,6 +407,11 @@ void rtw89LinuxDetach(Rtw89PciTransport *transport,
     }
     if (context->probed && transport)
         rtw_pci_remove(transport->linuxDevice());
+    if (context->awdlReceive) {
+        RTWAwdl::destroyReceiver(*context->awdlReceive);
+        IOFree(context->awdlReceive, sizeof(RTWAwdl::ReceiveRegistration));
+        context->awdlReceive = nullptr;
+    }
     context->probed = false;
     context->hardware = nullptr;
     context->device = nullptr;
@@ -472,8 +492,14 @@ bool rtw89LinuxAwdlAddInterface(Rtw89LinuxContext *context,
     if (!context->started || !context->interfaceAdded || context->scanning)
         return false;
     auto *primary = static_cast<ieee80211_vif *>(context->vif);
-    return primary && RTWAwdl::addLinuxInterface(hw, context->awdlInterface,
-                                               mac, primary->addr, false);
+    bool added = primary && context->awdlReceive &&
+        RTWAwdl::addLinuxInterface(hw, context->awdlInterface,
+                                  mac, primary->addr, false);
+    if (added && !RTWAwdl::openReceiver(*context->awdlReceive, mac)) {
+        RTWAwdl::removeLinuxInterface(hw, context->awdlInterface);
+        return false;
+    }
+    return added;
 }
 
 bool rtw89LinuxAwdlTransmitAction(Rtw89LinuxContext *context,
@@ -491,9 +517,18 @@ bool rtw89LinuxAwdlTransmitAction(Rtw89LinuxContext *context,
         frame, length, expectedFrequency) == RTWAwdl::ActionSubmission::Submitted;
 }
 
+bool rtw89LinuxAwdlSetReceiver(Rtw89LinuxContext *context,
+                                    OSObject *owner, RTWAwdl::ReceiveHandler handler)
+{
+    return context && context->awdlReceive &&
+        RTWAwdl::bindReceiver(*context->awdlReceive, owner, handler);
+}
+
 void rtw89LinuxAwdlRemoveInterface(Rtw89LinuxContext *context)
 {
-    if (!context || !context->awdlInterface.vif) return;
+    if (!context) return;
+    if (context->awdlReceive) RTWAwdl::closeReceiver(*context->awdlReceive);
+    if (!context->awdlInterface.vif) return;
     auto *hw = static_cast<ieee80211_hw *>(context->hardware);
     WiphyGuard guard(hw);
     RTWAwdl::removeLinuxInterface(hw, context->awdlInterface);

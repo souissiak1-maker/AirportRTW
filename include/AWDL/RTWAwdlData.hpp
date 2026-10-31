@@ -41,10 +41,18 @@ public:
     }
     // Single non-A-MSDU MPDU, without FCS. Unsupported protected, fragmented,
     // mesh/HT-control or aggregate frames are left to their owning decoder.
-    static bool decode(const uint8_t *frame, size_t length, uint8_t *ethernet,
-                       size_t capacity, size_t &written, uint16_t &dataSequence) {
-        written = 0; dataSequence = 0;
-        if (!frame || !ethernet || length < 40 ||
+    struct View {
+        const uint8_t *destination {nullptr};
+        const uint8_t *source {nullptr};
+        const uint8_t *payload {nullptr};
+        size_t payloadLength {0};
+        uint16_t sequence {0};
+    };
+    // Validated borrowed view; permits RX classification without a kernel-stack
+    // scratch Ethernet packet. The caller must not retain pointers after RX.
+    static bool inspect(const uint8_t *frame, size_t length, View &out) {
+        out = {};
+        if (!frame || length < 40 ||
             (frame[0] != 0x88 && frame[0] != 0x08) ||
             (frame[1] & (3 | 4 | 0x40 | 0x80)) || (frame[22] & 15) ||
             !validSource(frame + 10)) return false;
@@ -57,16 +65,28 @@ public:
         for (size_t i = 0; i < 10; ++i) if (body[i] != fixed[i]) return false;
         if (body[12] || body[13] || body[14] != 0x86 || body[15] != 0xdd) return false;
         const size_t payload = length - header - 16;
-        if (payload > mtu || capacity < 14 + payload || !ipv6(body + 16, payload)) return false;
-        for (size_t i = 0; i < 6; ++i) {
-            ethernet[i] = frame[4 + i]; ethernet[6 + i] = frame[10 + i];
-        }
-        ethernet[12] = 0x86; ethernet[13] = 0xdd;
-        for (size_t i = 0; i < payload; ++i) ethernet[14 + i] = body[16 + i];
-        dataSequence = uint16_t(body[10] | (uint16_t(body[11]) << 8));
-        written = 14 + payload;
+        if (payload > mtu || !ipv6(body + 16, payload)) return false;
+        out.destination = frame + 4; out.source = frame + 10;
+        out.payload = body + 16; out.payloadLength = payload;
+        out.sequence = uint16_t(body[10] | (uint16_t(body[11]) << 8));
         return true;
     }
+    static bool decode(const uint8_t *frame, size_t length, uint8_t *ethernet,
+                       size_t capacity, size_t &written, uint16_t &dataSequence) {
+        written = 0; dataSequence = 0;
+        View view;
+        if (!ethernet || !inspect(frame, length, view) ||
+            capacity < 14 + view.payloadLength) return false;
+        for (size_t i = 0; i < 6; ++i) {
+            ethernet[i] = view.destination[i]; ethernet[6 + i] = view.source[i];
+        }
+        ethernet[12] = 0x86; ethernet[13] = 0xdd;
+        for (size_t i = 0; i < view.payloadLength; ++i) ethernet[14 + i] = view.payload[i];
+        dataSequence = view.sequence;
+        written = 14 + view.payloadLength;
+        return true;
+    }
+
 private:
     static uint8_t bssidByte(size_t i) {
         const uint8_t address[6] {0,0x25,0,0xff,0x94,0x73};

@@ -4,6 +4,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include "../../include/HAL/RTWAwdlReceive.hpp"
 #include "../../include/HAL/RTWAwdlInterfaceState.hpp"
 bool rtw88LinuxSetCountry(struct Rtw88LinuxContext *, const char cc[2]);
 unsigned int rtw88LinuxGetLocale(struct Rtw88LinuxContext *);
@@ -42,6 +43,7 @@ struct Rtw88LinuxContext {
     void *device;
     void *vif;
     RTWAwdl::InterfaceState awdlInterface;
+    RTWAwdl::ReceiveRegistration *awdlReceive;
     void *station;
     size_t vifAllocationSize;
     size_t stationAllocationSize;
@@ -136,6 +138,7 @@ void rtw88LinuxPowerDown(Rtw88LinuxContext *context);
 // Serialized hardware lifecycle only; protocol provider must quiesce producers.
 bool rtw88LinuxAwdlAddInterface(Rtw88LinuxContext *, const uint8_t mac[6]);
 void rtw88LinuxAwdlRemoveInterface(Rtw88LinuxContext *);
+bool rtw88LinuxAwdlSetReceiver(Rtw88LinuxContext *, OSObject *, RTWAwdl::ReceiveHandler);
 // true transfers a copied frame to the driver; it does not report an RF ACK.
 bool rtw88LinuxAwdlTransmitAction(Rtw88LinuxContext *, const uint8_t *,
                                        size_t, uint16_t expectedFrequency);
