@@ -8,6 +8,8 @@
 #include "AirportRTWAwdlRuntime.hpp"
 #include "AirportRTWAwdlBackend.hpp"
 #include <net/ethernet.h>
+#include <net/if.h>
+#include <net/kpi_interface.h>
 #include <Airport/apple80211_var.h>
 #include <AWDL/RTWAwdlNativeRxMetadata.hpp>
 #include <AWDL/RTWAwdlNativeEvents.hpp>
@@ -78,6 +80,9 @@ bool AirportRTWAwdlInterface::initialize(IO80211Controller *controller,
 bool AirportRTWAwdlInterface::start(IOService *provider)
 {
     if (stopping_ || baseStarted_ || !prepared_ || !control_) return false;
+    // Native base start can publish the service before queues are registered.
+    deferBSDAttach(true);
+    if (!getProperty("IODeferBSDAttach")) return false;
     if (!IO80211VirtualInterface::start(provider)) return false;
     baseStarted_ = true;
     loop_ = rtw_awdl_interface_workloop(this);
@@ -110,10 +115,36 @@ bool AirportRTWAwdlInterface::publish()
     rtw_awdl_controller_publish(controller_,this);
     controllerPublished_ = rtw_awdl_controller_interface(controller_) == this;
     if (!controllerPublished_) return false;
+    // Controller ownership and native queue registration precede BSD matching.
+    deferBSDAttach(false);
     servicePublished_ = true;
     registerService(kIOServiceSynchronous);
     const char *name = rtw_awdl_interface_name(this);
     return name && strncmp(name,"awdl",4) == 0;
+}
+
+void AirportRTWAwdlInterface::setHardwareAssists(unsigned int,unsigned int)
+{
+    // Raw AWDL transport neither segments TCP nor completes partial checksums.
+    IO80211AWDLProtocol::setHardwareAssists(0,~0u);
+}
+
+IOReturn AirportRTWAwdlInterface::prepareBSDInterface(struct __ifnet *interface,unsigned int options)
+{
+    if (!interface) return kIOReturnBadArgument;
+    setHardwareAssists(0,~0u);
+    const IOReturn result=IO80211AWDLProtocol::prepareBSDInterface(interface,options);
+    if (result!=kIOReturnSuccess) return result;
+    // On Tahoe, setting zero offloads alone can leave enabled capability bits.
+    // Preserve unrelated capabilities, then verify both advertised masks.
+    const unsigned mask=IFCAP_HWCSUM|IFCAP_TSO|IFCAP_LRO|IFCAP_CSUM_PARTIAL|IFCAP_CSUM_ZERO_INVERT;
+    int error=ifnet_set_offload(interface,0);
+    if (!error) error=ifnet_set_capabilities_enabled(interface,0,mask);
+    if (!error) error=ifnet_set_capabilities_supported(interface,0,mask);
+    if (error || ifnet_offload(interface) ||
+        ((ifnet_capabilities_supported(interface)|ifnet_capabilities_enabled(interface))&mask))
+        return kIOReturnError;
+    return kIOReturnSuccess;
 }
 
 IOReturn AirportRTWAwdlInterface::enableImpl(unsigned int)

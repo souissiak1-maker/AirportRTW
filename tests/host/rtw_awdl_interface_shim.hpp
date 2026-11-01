@@ -80,8 +80,21 @@ static void(*eventHook)(OSObject*,unsigned)=nullptr;
 struct IO80211VirtualInterface;
 struct IO80211Controller:IOService{IO80211VirtualInterface*current=nullptr;};
 struct IOSkywalkEthernetInterface{struct RegistrationInfo{uint8_t bytes[0x130];};};
+constexpr unsigned IFCAP_HWCSUM=3,IFCAP_TSO=0x60,IFCAP_LRO=0x80,IFCAP_CSUM_PARTIAL=0x2000,IFCAP_CSUM_ZERO_INVERT=0x4000;
+struct __ifnet {unsigned offload=0xffff,supported=0xffff,enabled=0xffff;};
+static int ifnet_set_offload(__ifnet*p,unsigned value){if(failAt==17)return 1;p->offload=value;return 0;}
+static int ifnet_set_capabilities_enabled(__ifnet*p,unsigned value,unsigned mask){if(failAt!=18)p->enabled=(p->enabled&~mask)|(value&mask);return 0;}
+static int ifnet_set_capabilities_supported(__ifnet*p,unsigned value,unsigned mask){if(failAt==19)return 1;p->supported=(p->supported&~mask)|(value&mask);return 0;}
+static unsigned ifnet_offload(__ifnet*p){return p->offload;}
+static unsigned ifnet_capabilities_supported(__ifnet*p){return p->supported;}
+static unsigned ifnet_capabilities_enabled(__ifnet*p){return p->enabled;}
 struct IO80211SkywalkInterface:IOService{
-    IOWorkLoop*baseLoop=nullptr;unsigned link=0;
+    IOWorkLoop*baseLoop=nullptr;unsigned link=0,assists=0xffff;bool deferred=false;
+    virtual UInt getHardwareAssists(){return assists;}
+    virtual void setHardwareAssists(unsigned value,unsigned mask){assists=(assists&~mask)|(value&mask);}
+    virtual IOReturn prepareBSDInterface(__ifnet*,unsigned){return failAt==16?kIOReturnError:0;}
+    void deferBSDAttach(bool value){deferred=value;}
+    OSObject*getProperty(const char*name){assert(!strcmp(name,"IODeferBSDAttach"));return deferred?this:nullptr;}
     bool init()override{if(failAt==1)return false;baseLoop=new IOWorkLoop;return true;}
     void free()override{if(baseLoop)baseLoop->release();assert(!parent);OSObject::free();}
     virtual IOReturn enable(unsigned){return 0;}virtual IOReturn disable(unsigned){return 0;}
@@ -106,7 +119,7 @@ static void(*virtualInitHook)(OSObject*)=nullptr;
 struct IO80211VirtualInterface:IO80211SkywalkInterface{
     using IO80211SkywalkInterface::init;
     bool init(IO80211Controller*,ether_addr*,unsigned role,const char*name){assert(role==6&&!strcmp(name,"awdl"));if(virtualInitHook)virtualInitHook(this);return failAt!=2;}
-    bool start(IOService*)override{++baseStarts;assert(isChipInterfaceReady());return failAt!=5;}
+    bool start(IOService*)override{++baseStarts;assert(isChipInterfaceReady() && deferred);return failAt!=5;}
     void stop(IOService*)override{++baseStops;if(baseLoop){baseLoop->release();baseLoop=nullptr;}}
     void free()override{IO80211SkywalkInterface::free();}
     uintptr_t setLinkState(IO80211LinkState state,unsigned flags){assert(flags==1);link=state;return 0;}

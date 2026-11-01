@@ -25,6 +25,9 @@ public:
     IOReturn getHardwareAddress(ether_addr *) override;
     const char *getBSDNamePrefix() override { return "awdl"; }
     UInt getMaxTransferUnit() override { return RTWAwdl::DataCodec::mtu; }
+    UInt getHardwareAssists() override {return 0;}
+    void setHardwareAssists(unsigned int,unsigned int) override;
+    IOReturn prepareBSDInterface(struct __ifnet *,unsigned int) override;
     bool isChipInterfaceReady() override;
     void *getTxSubQueue(apple80211_wme_ac) override;
     void *getTxCompQueue() override;

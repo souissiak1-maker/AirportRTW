@@ -33,8 +33,10 @@ In particular, the compatibility layer's delay-based replacement for
 also do not yet implement upstream's mutex/cancellation ordering. Adding a
 mutex around their callbacks alone would deadlock cancellation under that mutex.
 These require a coordinated work/timer lifetime implementation before enabling
-native publication. BSD attachment/offload preparation and actual discovery /
-bidirectional transfer testing also remain outstanding. Build or host-test
+native publication. BSD attachment is deferred until queue registration and
+controller publication; checksum/segmentation assists are disabled and the BSD
+offload/capability masks are checked after preparation. Actual discovery and
+bidirectional transfer testing remain outstanding. Build or host-test
 success does not establish functioning AirDrop.
 
 ## Evidence
@@ -55,3 +57,10 @@ Wi-Fi implementation in local MtkWireless revision
 `98d9442076939dd3a0360eed27bdcfb5681c3078` as a reference. No Bluetooth code is
 imported. The 56-byte election payload offsets were additionally checked against
 Darwin 25.5's IO80211Family image in the boot kernel collection.
+
+
+BSD preparation tests inject base-preparation errors, offload setter errors,
+a setter that silently retains enabled bits, and supported-mask setter errors.
+They verify failed preparation is reported and unrelated capabilities survive.
+Native base start is tested with BSD deferral already active; successful
+publication releases that deferral only after controller and queues are ready.

@@ -42,6 +42,16 @@ int main(){
       assert(!co.prepares&&!co.shutdowns&&objects==1&&controlLocks==0);}
     failAt=0;Control control;
     auto*i=AirportRTWAwdlInterface::withController(c,&control,mac);assert(i&&c->current==i&&control.prepares==1);
+    assert(!i->deferred && !i->getHardwareAssists());
+    i->setHardwareAssists(~0u,~0u);assert(!i->assists);
+    assert(i->prepareBSDInterface(nullptr,0)==kIOReturnBadArgument);
+    const unsigned checksumMask=IFCAP_HWCSUM|IFCAP_TSO|IFCAP_LRO|IFCAP_CSUM_PARTIAL|IFCAP_CSUM_ZERO_INVERT;
+    {__ifnet net;assert(!i->prepareBSDInterface(&net,0));assert(!net.offload);
+      assert(net.enabled==(0xffff&~checksumMask) && net.supported==net.enabled);}
+    for(unsigned fault=16;fault<=19;++fault){failAt=fault;__ifnet net;
+      assert(i->prepareBSDInterface(&net,0)==kIOReturnError);}
+    failAt=0;
+
     assert(i->isChipInterfaceReady()&&i->getNumTxQueues()==1&&i->getMaxTransferUnit()==1428);
     assert(i->getTxSubQueue(static_cast<apple80211_wme_ac>(3))&&i->getTxCompQueue()&&i->getRxCompQueue());
     assert(i->getTxPacketPool()&&i->getRxPacketPool());
