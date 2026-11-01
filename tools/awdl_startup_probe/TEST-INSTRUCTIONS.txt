@@ -1,4 +1,4 @@
-AirportRTW Tahoe AWDL lifecycle probe v3
+AirportRTW Tahoe AWDL lifecycle probe v4
 
 This is a local experimental diagnostic kext, not working AirDrop. It uses
 Release optimization with general verbose diagnostics disabled and a bounded
@@ -46,7 +46,7 @@ The hardware test runs once per controller lifetime. Wi-Fi off/on before its
 first attempt resumes waiting. After an actual attempt, reboot to repeat.
 If startup or ordinary Wi-Fi regresses, restore your previous kext. If there is a panic, keep its report and stop using this diagnostic build.
 
-Revision 3 retains a radio snapshot from the last readiness check BEFORE cleanup.
+Revisions 3 and later retain a radio snapshot from the last readiness check BEFORE cleanup.
 RTWAwdlProbeRadioSampled indicates whether that check ran. When sampled, inspect
 RadioReady, RadioRecoveryRequired, RadioFrequency, RadioChecks and RadioBlockers.
 RadioBlockers is a bitmask; several decimal values can be added together:
@@ -68,3 +68,10 @@ RadioBlockers is a bitmask; several decimal values can be added together:
   32768 invalid secondary VIF type/configuration
 These are observations, not a relaxation of the readiness checks. Channel details
 are queried only when the bridge is otherwise ready, under the same HAL lock.
+
+Revision 4 mirrors the already-completed net80211 controlled-port authorization
+into the RTW89 primary station's ASSOC -> AUTHORIZED lifecycle transition before
+opening the probe VIF. It validates the current peer, association and transition
+result. It does not bypass WPA authorization or change credentials/ciphers.
+The AWDL reservation entry point also rechecks and mirrors port revocation;
+readiness reports reject a RUN-state RSN connection whose port is not valid.

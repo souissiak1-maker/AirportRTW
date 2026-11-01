@@ -58,7 +58,7 @@ public:
         else __atomic_fetch_add(&data_,uint32_t(1),__ATOMIC_RELAXED);
     }
     void publish() const {
-        owner_.setProperty("RTWAwdlProbeRevision",uint64_t(3),32);
+        owner_.setProperty("RTWAwdlProbeRevision",uint64_t(4),32);
         const auto *ic=core_.get80211Controller();
         owner_.setProperty("RTWAwdlProbePrimaryState",uint64_t(ic?ic->ic_state:UINT32_MAX),32);
         owner_.setProperty("RTWAwdlProbePrimaryReady",primaryReady()?kOSBooleanTrue:kOSBooleanFalse);

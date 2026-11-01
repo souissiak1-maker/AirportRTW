@@ -171,6 +171,7 @@ bool rtw89LinuxAwdlTransmitAction(Rtw89LinuxContext *, const uint8_t *,
 bool rtw89LinuxSetChannel(Rtw89LinuxContext *context, uint16_t channel);
 bool rtw89LinuxPrepareConnection(Rtw89LinuxContext *context,
                                  const uint8_t bssid[6], uint16_t channel);
+bool rtw89LinuxSetStationAuthorized(Rtw89LinuxContext *, const uint8_t peer[6], bool);
 void rtw89LinuxScanBegin(Rtw89LinuxContext *context);
 void rtw89LinuxScanEnd(Rtw89LinuxContext *context);
 bool rtw89LinuxIsScanning(Rtw89LinuxContext *context);

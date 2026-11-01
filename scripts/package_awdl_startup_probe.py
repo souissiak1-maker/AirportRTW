@@ -17,7 +17,7 @@ def main():
         raise SystemExit('Build the opt-in Tahoe probe first; executable lacks probe diagnostics')
     output=ROOT/'build/diagnostics'
     output.mkdir(parents=True,exist_ok=True)
-    folder=output/'AirportRTW-Tahoe-AWDL-Probe-v3'
+    folder=output/'AirportRTW-Tahoe-AWDL-Probe-v4'
     if folder.exists():
         shutil.rmtree(folder)
     folder.mkdir()
@@ -37,14 +37,14 @@ def main():
     relevant_dirty=[line for line in dirty.splitlines() if line[3:]!='.DS_Store']
     if relevant_dirty:
         raise SystemExit('Commit source changes before packaging: '+str(relevant_dirty))
-    identity={'source_commit':commit,'package':'Tahoe AWDL lifecycle probe v3',
+    identity={'source_commit':commit,'package':'Tahoe AWDL lifecycle probe v4',
               'configuration':'Release-optimized diagnostic','macos':'Tahoe / Darwin 25',
               'bundle_identifier':info['CFBundleIdentifier'],
               'bundle_version':info['CFBundleVersion'],
               'firmware_display':'AirportRTW'+info['CFBundleVersion'],
               'executable_uuid':uuid,'binary_sha256':sha(executable),
               'info_plist_sha256':sha(plist),'general_verbose_diagnostics':False,
-              'awdl_probe_revision':3,'native_awdl_interface_published':False}
+              'awdl_probe_revision':4,'native_awdl_interface_published':False}
     (folder/'BUILD-IDENTITY.json').write_text(json.dumps(identity,indent=2)+'\n')
     for name in ('collect-awdl.command','TEST-INSTRUCTIONS.txt'):
         shutil.copy2(ROOT/'tools/awdl_startup_probe'/name,folder/name)

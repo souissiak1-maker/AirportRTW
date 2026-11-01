@@ -350,7 +350,14 @@ uint32_t RTWCore89::getTxQueueSize()
 
 RTWAwdl::RadioState RTWCore89::awdlRadioState() const
 {
-    return rtw89LinuxAwdlRadioState(&linuxContext);
+    auto state=rtw89LinuxAwdlRadioState(&linuxContext);
+    const auto &ic=sc.sc_ic;
+    if (ic.ic_state==IEEE80211_S_RUN && (ic.ic_flags & IEEE80211_F_RSNON) &&
+        (!ic.ic_bss || !ic.ic_bss->ni_port_valid)) {
+        state.ready=false;state.frequency=0;
+        state.blockers|=RTW_AWDL_RADIO_PRIMARY_NOT_AUTHORIZED;
+    }
+    return state;
 }
 
 bool RTWCore89::awdlChannelAllowed(uint16_t frequency) const
@@ -360,6 +367,14 @@ bool RTWCore89::awdlChannelAllowed(uint16_t frequency) const
 
 RTWAwdl::RadioReservation RTWCore89::reserveAwdlRadio(uint16_t frequency, uint32_t durationMs)
 {
+    const auto &ic=sc.sc_ic;
+    if (ic.ic_state==IEEE80211_S_RUN) {
+        const auto *node=ic.ic_bss;
+        if (!node) return RTWAwdl::RadioReservation::Rejected;
+        const bool authorized=!(ic.ic_flags & IEEE80211_F_RSNON) || node->ni_port_valid;
+        if (!rtw89LinuxSetStationAuthorized(&linuxContext,node->ni_bssid,authorized) || !authorized)
+            return RTWAwdl::RadioReservation::Rejected;
+    }
     return rtw89LinuxAwdlReserveRadio(&linuxContext, frequency, durationMs);
 }
 
@@ -385,6 +400,12 @@ bool RTWCore89::quiesceAwdlInterface()
 
 bool RTWCore89::addAwdlInterface(const uint8_t mac[6])
 {
+    const auto &ic=sc.sc_ic;
+    if (ic.ic_state==IEEE80211_S_RUN &&
+        (!(ic.ic_flags & IEEE80211_F_RSNON) || (ic.ic_bss && ic.ic_bss->ni_port_valid))) {
+        if (!ic.ic_bss || !rtw89LinuxSetStationAuthorized(&linuxContext,ic.ic_bss->ni_bssid,true))
+            return false;
+    }
     return rtw89LinuxAwdlAddInterface(&linuxContext, mac);
 }
 

@@ -1243,6 +1243,28 @@ bool rtw89LinuxAuthenticateStation(Rtw89LinuxContext *context)
     return result == 0;
 }
 
+// Mirror a completed net80211 controlled-port decision into the mac80211
+// station lifecycle. The peer address binds the decision to this association;
+// never infer authorization from key installation or fabricate firmware ACKs.
+bool rtw89LinuxSetStationAuthorized(Rtw89LinuxContext *context,
+                                      const uint8_t peer[6], bool authorized)
+{
+    if (!context || !context->hardware || !peer || (peer[0]&1)) return false;
+    auto *hw=static_cast<ieee80211_hw *>(context->hardware);
+    WiphyGuard guard(hw);
+    auto *vif=static_cast<ieee80211_vif *>(context->vif);
+    auto *sta=static_cast<ieee80211_sta *>(context->station);
+    if (!context->started || !hw->ops || !hw->ops->sta_state ||
+        !vif || !vif->cfg.assoc || !sta || memcmp(sta->addr,peer,6)) return false;
+    const auto target=authorized ? IEEE80211_STA_AUTHORIZED : IEEE80211_STA_ASSOC;
+    const auto previous=authorized ? IEEE80211_STA_ASSOC : IEEE80211_STA_AUTHORIZED;
+    if (context->stationState==static_cast<unsigned>(target)) return true;
+    if (context->stationState!=static_cast<unsigned>(previous)) return false;
+    const int result=hw->ops->sta_state(hw,vif,sta,previous,target);
+    if (!result) context->stationState=target;
+    return result==0;
+}
+
 void rtw89LinuxScanBegin(Rtw89LinuxContext *context)
 {
     if (!context)

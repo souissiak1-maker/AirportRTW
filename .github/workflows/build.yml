@@ -78,6 +78,7 @@ jobs:
           python3 tests/rtw_awdl_roc_ps_test.py
           python3 tests/rtw_awdl_tx_drain_test.py
           python3 tests/rtw_awdl_startup_probe_integration_test.py
+          python3 tests/rtw_awdl_primary_authorization_test.py
           python3 tests/rtw_awdl_probe_build_test.py
           xcrun clang++ -std=c++14 -Wall -Wextra -Werror -fsanitize=address,undefined -Iinclude tests/rtw_awdl_startup_probe_test.cpp -o /tmp/rtw_awdl_startup_probe_test
           /tmp/rtw_awdl_startup_probe_test
