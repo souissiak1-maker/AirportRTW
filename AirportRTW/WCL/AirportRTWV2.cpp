@@ -13,6 +13,7 @@
 #include <net80211/ieee80211_var.h>
 
 #include "AirportRTWNativeInterface.hpp"
+#include "AirportRTWAwdlProbe.hpp"
 #include "IOPCIEDeviceWrapper.hpp"
 
 #define super IO80211Controller
@@ -24,6 +25,9 @@ IOCommandGate *_fCommandGate;
 
 void AirportRTW::releaseAll()
 {
+#if defined(AIRPORT_WCL) && __IO80211_TARGET == __MAC_26_0 && (RTW_DIAGNOSTICS || RTW_AWDL_STARTUP_PROBE)
+    stopAwdlProbe(true);
+#endif
 #ifdef AIRPORT_WCL
     if (fNetIf)
         static_cast<AirportRTWSkywalkInterface *>(fNetIf)->stopWCL();
@@ -546,11 +550,17 @@ bool AirportRTW::start(IOService *provider)
     stage("controller publication");
     registerService();
     stage("controller startup complete");
+#if defined(AIRPORT_WCL) && __IO80211_TARGET == __MAC_26_0 && (RTW_DIAGNOSTICS || RTW_AWDL_STARTUP_PROBE)
+    startAwdlProbe();
+#endif
     return true;
 }
 
 void AirportRTW::stop(IOService *provider)
 {
+#if defined(AIRPORT_WCL) && __IO80211_TARGET == __MAC_26_0 && (RTW_DIAGNOSTICS || RTW_AWDL_STARTUP_PROBE)
+    stopAwdlProbe();
+#endif
     XYLog("%s\n", __PRETTY_FUNCTION__);XYLog("%s\n", __PRETTY_FUNCTION__);
     struct _ifnet *ifp = &fHalService->get80211Controller()->ic_ac.ac_if;
 #ifdef AIRPORT_WCL
@@ -569,6 +579,9 @@ void AirportRTW::stop(IOService *provider)
 
 void AirportRTW::free()
 {
+#if defined(AIRPORT_WCL) && __IO80211_TARGET == __MAC_26_0 && (RTW_DIAGNOSTICS || RTW_AWDL_STARTUP_PROBE)
+    stopAwdlProbe(true);
+#endif
     XYLog("%s\n", __PRETTY_FUNCTION__);
     if (fHalService != NULL) {
         fHalService->release();
@@ -1242,6 +1255,9 @@ IOReturn AirportRTW::enableAdapter(IONetworkInterface *netif)
 
 void AirportRTW::disableAdapter(IONetworkInterface *netif)
 {
+#if defined(AIRPORT_WCL) && __IO80211_TARGET == __MAC_26_0 && (RTW_DIAGNOSTICS || RTW_AWDL_STARTUP_PROBE)
+    stopAwdlProbe();
+#endif
     watchdogTimer->cancelTimeout();
     watchdogTimer->disable();
     fHalService->disable(netif);
@@ -1417,3 +1433,69 @@ void AirportRTW::setPowerStateOn()
     pmPowerState = kPowerStateOn;
     pmPolicyMaker->acknowledgeSetPowerState();
 }
+
+#if defined(AIRPORT_WCL) && __IO80211_TARGET == __MAC_26_0 && (RTW_DIAGNOSTICS || RTW_AWDL_STARTUP_PROBE)
+void AirportRTW::startAwdlProbe()
+{
+    // Opt-in only in a dedicated diagnostic package. Normal Debug/Release builds
+    // retain their previous hardware behavior and native publication gates.
+    if (getProperty("RTWAwdlProbeEnabled") != kOSBooleanTrue || awdlProbe_ || !_fWorkloop)
+        return;
+    auto *core=OSDynamicCast(RTWCore,fHalService);
+    if (!core) return;
+    awdlProbe_=new AirportRTWAwdlProbe(*core,*this);
+    awdlProbeTimer_=IOTimerEventSource::timerEventSource(this,awdlProbeTimer);
+    if (!awdlProbe_ || !awdlProbeTimer_ ||
+        _fWorkloop->addEventSource(awdlProbeTimer_)!=kIOReturnSuccess) {
+        OSSafeReleaseNULL(awdlProbeTimer_);
+        delete awdlProbe_;awdlProbe_=nullptr;
+        setProperty("RTWAwdlProbeSetupFailed",kOSBooleanTrue);
+        return;
+    }
+    awdlProbe_->setReceiveHandler(awdlProbeReceive);
+    _fWorkloop->runAction(awdlProbeAction,this,nullptr,nullptr,nullptr,nullptr);
+}
+
+void AirportRTW::awdlProbeTimer(OSObject *owner,IOTimerEventSource *)
+{
+    auto *me=static_cast<AirportRTW *>(owner);
+    if (_fWorkloop) _fWorkloop->runAction(awdlProbeAction,me,reinterpret_cast<void *>(1),nullptr,nullptr,nullptr);
+}
+
+IOReturn AirportRTW::awdlProbeAction(OSObject *owner,void *operation,void *,void *,void *)
+{
+    auto *me=static_cast<AirportRTW *>(owner);
+    if (!me->awdlProbe_ || !me->awdlProbeTimer_) return kIOReturnNotReady;
+    bool again=false;
+    switch (reinterpret_cast<uintptr_t>(operation)) {
+    case 0: again=me->awdlProbe_->state.arm();break;
+    case 1: again=me->awdlProbe_->state.tick();break;
+    default:
+        me->awdlProbeTimer_->cancelTimeout();me->awdlProbeTimer_->disable();
+        me->awdlProbe_->state.stop();break;
+    }
+    me->awdlProbe_->publish();
+    if (again) {me->awdlProbeTimer_->enable();me->awdlProbeTimer_->setTimeoutMS(1000);}
+    return kIOReturnSuccess;
+}
+
+void AirportRTW::stopAwdlProbe(bool dispose)
+{
+    if (!awdlProbe_) return;
+    if (_fWorkloop) _fWorkloop->runAction(awdlProbeAction,this,reinterpret_cast<void *>(2),nullptr,nullptr,nullptr);
+    else awdlProbe_->state.stop();
+    if (dispose) {
+        if (_fWorkloop && awdlProbeTimer_) _fWorkloop->removeEventSource(awdlProbeTimer_);
+        OSSafeReleaseNULL(awdlProbeTimer_);
+        delete awdlProbe_;awdlProbe_=nullptr;
+    }
+}
+
+void AirportRTW::awdlProbeReceive(OSObject *owner,const uint8_t *,size_t,
+                                 const RTWAwdl::ReceiveMetadata &metadata)
+{
+    auto *me=static_cast<AirportRTW *>(owner);
+    // setAwdlReceiver(nullptr,nullptr) drains this registration before disposal.
+    if (me->awdlProbe_) me->awdlProbe_->receive(metadata);
+}
+#endif

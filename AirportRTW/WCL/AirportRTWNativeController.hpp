@@ -31,6 +31,11 @@
 #include <IOKit/IOFilterInterruptEventSource.h>
 
 #include "../../rtw/RTWCore.hpp"
+#include <AirportRTWDiagnostics.h>
+#if defined(AIRPORT_WCL) && __IO80211_TARGET == __MAC_26_0 && (RTW_DIAGNOSTICS || RTW_AWDL_STARTUP_PROBE)
+class AirportRTWAwdlProbe;
+#endif
+
 
 #include "AirportRTWEthernetInterface.hpp"
 
@@ -255,6 +260,16 @@ public:
     UInt8 pmPCICapPtr;
     bool magicPacketEnabled;
     bool magicPacketSupported;
+
+#if defined(AIRPORT_WCL) && __IO80211_TARGET == __MAC_26_0 && (RTW_DIAGNOSTICS || RTW_AWDL_STARTUP_PROBE)
+    AirportRTWAwdlProbe *awdlProbe_ = nullptr;
+    IOTimerEventSource *awdlProbeTimer_ = nullptr;
+    void startAwdlProbe();
+    void stopAwdlProbe(bool dispose = false);
+    static void awdlProbeTimer(OSObject *, IOTimerEventSource *);
+    static IOReturn awdlProbeAction(OSObject *, void *, void *, void *, void *);
+    static void awdlProbeReceive(OSObject *, const uint8_t *, size_t, const RTWAwdl::ReceiveMetadata &);
+#endif
 
     //AWDL
     uint8_t *syncFrameTemplate;

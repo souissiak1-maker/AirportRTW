@@ -1,0 +1,46 @@
+AirportRTW Tahoe AWDL lifecycle probe v1
+
+This is a local experimental diagnostic kext, not working AirDrop. It uses
+Release optimization with general verbose diagnostics disabled and a bounded
+AWDL lifecycle probe enabled. Bundle/firmware version remains 2.3.0 /
+AirportRTW2.3.0. BUILD-IDENTITY.json identifies this particular executable.
+
+Test on the RTW89 Tahoe machine only. The combined kext still contains RTW88,
+but its AWDL radio backend is not ready and this probe will report Unavailable.
+Do not use this package to test AirDrop transfers, sleep, or RTW88 behavior.
+
+1. Keep your current working AirportRTW.kext as a rollback copy.
+2. Replace only AirportRTW.kext in EFI/OC/Kexts. Keep its existing Kernel/Add
+   entry enabled. Do not change other kexts, root patches, or boot arguments.
+3. Reboot and allow your usual Wi-Fi network to auto-join. The probe waits up
+   to 30 seconds for that connection. Keep Wi-Fi on for at least 15 seconds.
+4. Run collect-awdl.command from this extracted folder. If macOS refuses to
+   launch it, open Terminal and type /bin/zsh followed by a space, drag the
+   command file into Terminal, and press Return. Python 3 must be installed.
+5. Send the ZIP that the collector writes to your Desktop. It records numeric
+   diagnostics, macOS version and the loaded driver UUID; it excludes SSID,
+   BSSID/MAC, IP addresses, passwords, keys and packet contents. This can still
+   contain hardware model/family and regulatory country information.
+
+The probe creates a real quiet secondary hardware VIF, binds its RX callback,
+queries the radio state, listens on the existing channel for ten seconds, then
+unbinds RX and requests checked VIF/peer-pool cleanup. It does not retune, send
+frames, install peers, create awdl0, or advertise AirDrop capabilities. Therefore
+zero received AWDL frames is not a failure: a nearby peer may use another channel.
+The native IO80211AWDLProtocol interface is not exercised by this first probe.
+
+RTWAwdlProbeStage values:
+ 0 Idle                 1 Waiting for primary Wi-Fi
+ 2 Opening VIF          3 Binding RX
+ 4 Listening            5 Complete
+ 6 Unavailable          7 Open failed
+ 8 RX bind failed       9 Radio not ready / primary connection changed
+10 Cleanup failed      11 Cancelled by disable/stop
+12 Timed out waiting for primary Wi-Fi
+RTWAwdlProbeResult retains the original result when cleanup fails.
+A completed test has Stage=5, Listens=10, CleanupSucceeded=true.
+This does not establish firmware/RF correctness or working AirDrop.
+
+The test runs once per controller lifetime. Powering Wi-Fi off cancels it;
+reboot to repeat. If startup or ordinary Wi-Fi regresses, restore your previous
+kext. If there is a panic, keep its report and stop using this diagnostic build.

@@ -1,6 +1,9 @@
 /* SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause */
 #ifndef AIRPORTRTW_DIAGNOSTICS_H
 #define AIRPORTRTW_DIAGNOSTICS_H
+#ifndef RTW_AWDL_STARTUP_PROBE
+#define RTW_AWDL_STARTUP_PROBE 0
+#endif
 #if defined(DEBUG) && DEBUG
 #define RTW_DIAGNOSTICS 1
 #define RTW_LOG(...) IOLog(__VA_ARGS__)

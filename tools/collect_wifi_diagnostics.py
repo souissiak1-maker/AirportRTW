@@ -37,7 +37,12 @@ def filter_registry(tree):
                              'RTWAwdlLastFrequency', 'RTWAwdlLastVersion',
                              'RTWAwdlLastSubtype', 'RTWAwdlTimedActions',
                              'RTWAwdlSyncDecoded', 'RTWAwdlSyncDecodeFailures',
-                             'RTWAwdlLastRadioTimestamp'} and isinstance(item, (int, bool)):
+                             'RTWAwdlLastRadioTimestamp', 'RTWAwdlProbeEnabled',
+                             'RTWAwdlProbeSetupFailed', 'RTWAwdlProbeRevision',
+                             'RTWAwdlProbeStage', 'RTWAwdlProbeResult',
+                             'RTWAwdlProbeWaits', 'RTWAwdlProbeListens',
+                             'RTWAwdlProbePeerCapacity', 'RTWAwdlProbeCleanupSucceeded',
+                             'RTWAwdlProbeActionRx', 'RTWAwdlProbeDataRx'} and isinstance(item, (int, bool)):
                     fields[key] = item
                 elif key in COUNTRY_KEYS and isinstance(item, str):
                     fields[key] = item
