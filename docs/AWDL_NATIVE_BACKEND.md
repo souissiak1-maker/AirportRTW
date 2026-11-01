@@ -75,3 +75,13 @@ that value; it does not return an address pointer. The Tahoe header is corrected
 to return `ether_addr`, with a compile-time type assertion. Registration writes
 the native MAC agent and checks the returned value before exposing queues/BSD.
 Failure of either setter or readback unwinds the interface.
+
+
+v1 hardware boot finding: the kext was enabled on the tested USB and matched its
+published local identity, but did not load. System-library import validation
+identified three unresolved imports: the two IOKit interrupt-lock inline helpers
+and an unbound C interface-name helper. The RTW89 C shim now implements the SDK
+inline operations using exported calls; the controller helper binds to the
+native `getBSDName` symbol. The v2 packager checks every import against the host
+kernel libraries and fails on any unresolved symbol. Compilation alone did not
+prove loadability. Native registration still needs a reboot with the fixed kext.

@@ -1,4 +1,7 @@
-AirportRTW 2.3.0 — experimental native AWDL registration (Tahoe / RTW89)
+AirportRTW 2.3.0 — experimental native AWDL registration v2 (Tahoe / RTW89)
+
+v2 corrects three unresolved imports that prevented v1 from loading. All imports
+are checked against the installed native kernel libraries before packaging.
 
 This package enables RTWAwdlEnabled in the controller personality. It handles
 native role-6 requests, registers actual AWDL queues and enables the proximity

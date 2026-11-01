@@ -4,7 +4,8 @@
  */
 #include "AirportRTWAwdlBackend.hpp"
 #include <sys/errno.h>
-extern "C" const char *rtw_awdl_interface_name(void *);
+extern "C" const char *rtw_awdl_interface_name(void *)
+    __asm__("__ZN23IO80211SkywalkInterface10getBSDNameEv");
 bool AirportRTW::nativeAwdlAvailable() const
 {
     auto *hal=OSDynamicCast(RTWCore,fHalService);
