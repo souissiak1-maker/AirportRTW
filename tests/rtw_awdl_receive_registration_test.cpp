@@ -78,6 +78,26 @@ int main() {
     assert(dispatchReceiver(registration,data,written,-50,5180,123,false));
     assert(sink.metadata.kind==FrameKind::IPv6 && !sink.metadata.radioTimestampValid);
     data[26]=0; assert(!dispatchReceiver(registration,data,written,0,5180,0,false));
+    std::vector<uint8_t> largeEthernet(14+DataCodec::mtu),largeWire(DataCodec::maximumFrame);
+    memcpy(largeEthernet.data(),mac,6);memcpy(largeEthernet.data()+6,peer,6);
+    largeEthernet[12]=0x86;largeEthernet[13]=0xdd;largeEthernet[14]=0x60;
+    largeEthernet[18]=uint8_t((DataCodec::mtu-40)>>8);largeEthernet[19]=uint8_t(DataCodec::mtu-40);
+    assert(DataCodec::encode(largeEthernet.data(),largeEthernet.size(),largeWire.data(),largeWire.size(),1,2,written));
+    std::vector<uint8_t> aggregate(largeWire.begin(),largeWire.begin()+26);aggregate[24]=0x80;
+    for(unsigned j=0;j<4;++j){
+     aggregate.insert(aggregate.end(),largeWire.begin()+4,largeWire.begin()+16);
+     size_t body=largeWire.size()-26;aggregate.push_back(uint8_t(body>>8));aggregate.push_back(uint8_t(body));
+     aggregate.insert(aggregate.end(),largeWire.begin()+26,largeWire.end());
+     if(j<3){aggregate.push_back(0);aggregate.push_back(0);}
+    }
+    assert(aggregate.size()>4120&&DataCodec::validAggregate(aggregate.data(),aggregate.size()));
+    assert(dispatchReceiver(registration,aggregate.data(),aggregate.size(),-50,5180,123,false));
+    assert(sink.metadata.kind==FrameKind::IPv6&&sink.frame.size()==aggregate.size());
+    aggregate.back()^=1; // legal payload data, then break the final body's IPv6 version
+    size_t lastSub=26+3*(14+largeWire.size()-26+2);
+    aggregate[lastSub+14+16]^=0x10;
+    unsigned before=sink.calls;
+    assert(!dispatchReceiver(registration,aggregate.data(),aggregate.size(),-50,5180,123,false)&&sink.calls==before);
     assert(bindReceiver(registration,&other,receive));
     assert(sink.refs.load()==1 && other.refs.load()==2);
     assert(bindReceiver(registration,nullptr,nullptr)); assert(other.refs.load()==1);

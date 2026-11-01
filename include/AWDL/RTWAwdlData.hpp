@@ -14,6 +14,8 @@ public:
     static constexpr size_t mtu = 1428;
     static constexpr size_t maximumFrame = 26 + 16 + mtu;
     static constexpr size_t maximumReceiveFrame = maximumFrame + 8;
+    static constexpr size_t maximumAggregateFrame = 11454;
+    static constexpr size_t maximumSubframes = 32;
     static bool validEthernet(const uint8_t *ethernet, size_t length) {
         return ethernet && length >= 14 && length <= 14 + mtu &&
             ethernet[12] == 0x86 && ethernet[13] == 0xdd &&
@@ -70,7 +72,7 @@ public:
     static bool inspectAggregate(const uint8_t *frame, size_t length,
                                  View *views, size_t capacity, size_t &count) {
         count = 0;
-        if (!frame || !views || !capacity || length < 26 || length > 11454 ||
+        if (!frame || !capacity || length < 26 || length > maximumAggregateFrame ||
             frame[0] != 0x88 || (frame[1] & (3 | 4 | 0x40 | 0x80)) ||
             (frame[22] & 15) || !(frame[24] & 0x80) ||
             !validSource(frame + 10)) return false;
@@ -90,7 +92,7 @@ public:
                 View v;
                 if (!inspectBody(sub+14,bytes,true,v)) return false;
                 v.destination=sub; v.source=sub+6;
-                if (pass) views[index]=v;
+                if (pass && views) views[index]=v;
                 ++index; offset+=14+bytes;
                 if (offset==length) break;
                 const size_t padding=(4-((14+bytes)&3))&3;
@@ -103,6 +105,11 @@ public:
         }
         count=total;
         return true;
+    }
+    // Classify a bounded aggregate without allocating views on an RX stack.
+    static bool validAggregate(const uint8_t *frame,size_t length) {
+        size_t count=0;
+        return inspectAggregate(frame,length,nullptr,maximumSubframes,count);
     }
     static bool decode(const uint8_t *frame, size_t length, uint8_t *ethernet,
                        size_t capacity, size_t &written, uint16_t &dataSequence) {

@@ -29,6 +29,8 @@ shim=r'''
 #include <atomic>
 #include <chrono>
 #include <AWDL/RTWAwdlData.hpp>
+#include <AWDL/RTWAwdlDataReceive.hpp>
+#include <AWDL/RTWAwdlDataReplay.hpp>
 #include <AWDL/RTWAwdlNativeRxMetadata.hpp>
 #include <AWDL/RTWAwdlNativeEvents.hpp>
 #include <AWDL/RTWAwdlWindowScheduler.hpp>
@@ -185,6 +187,46 @@ int main(){
  {Hardware h;NativePeers peers(h);Backend b(peers,h);Runtime runtime(b);auto*c=new IO80211Controller;
   b.onOpen=[&h](){h.limit=0;};assert(!AirportRTWAwdlInterface::withController(c,&runtime,local));
   assert(b.opens==1&&b.closes==1);c->release();assert(objects==0);}
+ {Fixture f;auto *dp=AirportRTWAwdlDatapath::last;
+  uint8_t eth[54]={},wire[82]={};size_t n=0;
+  memcpy(eth,local,6);memcpy(eth+6,peer,6);eth[12]=0x86;eth[13]=0xdd;eth[14]=0x60;eth[20]=59;
+  assert(RTWAwdl::DataCodec::encode(eth,sizeof(eth),wire,sizeof(wire),1,7,n));
+  RTWAwdl::ReceiveMetadata metadata{RTWAwdl::FrameKind::IPv6,-40,5180,0xdeadbeef,true};
+  nativeHostUs=1000000;
+  AirportRTWAwdlInterface::receiveRadio(f.i,wire,n,metadata);
+  assert(!dp->pumpData()&&!dp->received); // native peer membership is mandatory
+  assert(!cache(f.i,0,peer));
+  AirportRTWAwdlInterface::receiveRadio(f.i,wire,n,metadata);
+  wire[41]^=1;assert(dp->dataBytes[41]!=wire[41]);wire[41]^=1;
+  assert(dp->pumpData()&&dp->received==1&&dp->ethernetBytes==std::vector<uint8_t>(eth,eth+54));
+  assert(!dp->pumpData()&&dp->received==1); // duplicate on this TID
+  wire[24]=1;AirportRTWAwdlInterface::receiveRadio(f.i,wire,n,metadata);
+  assert(dp->pumpData()&&dp->received==2); // independent stream
+  assert(!cache(f.i,2,peer));assert(!cache(f.i,0,peer));
+  AirportRTWAwdlInterface::receiveRadio(f.i,wire,n,metadata);
+  assert(dp->pumpData()&&dp->received==3); // remove/re-add resets duplicate history
+  wire[36]=8;AirportRTWAwdlInterface::receiveRadio(f.i,wire,n,metadata);
+  nativeHostUs+=3000001;assert(!dp->pumpData()&&dp->received==3); // stale staging
+  nativeHostUs=(uint64_t(1)<<32)+1000;
+  AirportRTWAwdlInterface::receiveRadio(f.i,wire,n,metadata);
+  assert(dp->pumpData()&&dp->received==4); // software RX clock wraps at 32 bits
+  wire[36]=9;AirportRTWAwdlInterface::receiveRadio(f.i,wire,n,metadata);
+  dp->dataMetadata[0]^=1;assert(!dp->pumpData()&&dp->received==4);
+  assert(!f.i->disable(0));assert(!dp->pumpData()&&dp->received==4);
+  nativeHostUs=1000000;
+ }
+ {Fixture f;auto *dp=AirportRTWAwdlDatapath::last;
+  assert(!f.i->disable(0));ether_addr address{};memcpy(address.octet,local,6);address.octet[5]^=0x10;
+  assert(!f.i->setMacAddress(address));assert(!f.i->enable(0));assert(!cache(f.i,0,peer));
+  uint8_t eth[54]={},wire[82]={};size_t n=0;memcpy(eth,local,6);memcpy(eth+6,peer,6);
+  eth[12]=0x86;eth[13]=0xdd;eth[14]=0x60;eth[20]=59;
+  RTWAwdl::ReceiveMetadata metadata{RTWAwdl::FrameKind::IPv6,-40,5180,0,false};
+  assert(RTWAwdl::DataCodec::encode(eth,sizeof(eth),wire,sizeof(wire),1,7,n));
+  AirportRTWAwdlInterface::receiveRadio(f.i,wire,n,metadata);assert(!dp->pumpData()&&!dp->received);
+  memcpy(eth,address.octet,6);
+  assert(RTWAwdl::DataCodec::encode(eth,sizeof(eth),wire,sizeof(wire),1,7,n));
+  AirportRTWAwdlInterface::receiveRadio(f.i,wire,n,metadata);assert(dp->pumpData()&&dp->received==1);
+ }
  puts("PASS: actual native peer requests install hardware before completion, preserve ownership and defer reentrant shutdown");
 }
 '''

@@ -10,10 +10,16 @@
 #include <Airport/apple80211_ioctl.h>
 #include <AWDL/RTWAwdlTxTemplate.hpp>
 #include <AWDL/RTWAwdlData.hpp>
+#include <AWDL/RTWAwdlDataReceive.hpp>
+#include <AWDL/RTWAwdlNativeRxMetadata.hpp>
 #include <AWDL/RTWAwdlElection.hpp>
 #include <AWDL/RTWAwdlWindowScheduler.hpp>
 
 namespace AirportRTWAwdl {
+// Nonvirtual local adapters implemented by the real native interface source.
+// Runtime holds its interface pin through every callback/delivery.
+uint64_t runtimeNowUs();
+bool deliverRuntimeEthernet(IO80211VirtualInterface *,const uint8_t *,size_t);
 // Owning configuration snapshot: no pointers into native request storage.
 struct Settings {
     apple80211_awdl_sync_params synchronization {};
@@ -34,11 +40,20 @@ public:
     virtual ~RuntimeBackend() = default;
     bool peersReady() const { return !peers_ || peers_->ready(); }
     IOReturn bindPeers(IO80211VirtualInterface *interface,const uint8_t mac[6]) {
-        return peers_ ? peers_->bind(interface,mac) : kIOReturnSuccess;
+        const IOReturn result=peers_ ? peers_->bind(interface,mac) : kIOReturnSuccess;
+        if(result==kIOReturnSuccess){dataInterface_=interface;memcpy(dataAddress_,mac,6);}
+        return result;
     }
-    IOReturn enablePeers(bool enabled) { return peers_ ? peers_->enable(enabled) : kIOReturnSuccess; }
-    void revokePeers() { if (peers_) peers_->revoke(); }
-    void abandonPeers() { if (peers_) peers_->abandon(); }
+    IOReturn enablePeers(bool enabled) {
+        const IOReturn result=peers_ ? peers_->enable(enabled) : kIOReturnSuccess;
+        dataEnabled_=enabled && result==kIOReturnSuccess;return result;
+    }
+    void revokePeers() {dataEnabled_=false;if (peers_) peers_->revoke();}
+    void updateReceiveAddress(const uint8_t address[6]) {memcpy(dataAddress_,address,6);receive_.reset();}
+    void abandonPeers() {
+        dataEnabled_=false;dataInterface_=nullptr;memset(dataAddress_,0,6);receive_.reset();
+        if (peers_) peers_->abandon();
+    }
     virtual uint32_t capabilities() const = 0;
     virtual bool ready() const = 0;
     // open may fail part way; close must unwind that case as well. No RX callback
@@ -71,9 +86,27 @@ public:
         return peers_ ? peers_->traffic(d) : kIOReturnUnsupported;
     }
     virtual uint32_t peerCapacity() const { return peers_ ? peers_->capacity() : 0; }
+    virtual void observeRadioAction(const uint8_t *,size_t,const uint8_t *,size_t) {}
+    bool receiveRadioData(const uint8_t *frame,size_t length,const uint8_t *metadata,size_t size) {
+        if (!dataEnabled_ || !dataInterface_ || !peers_ || !frame || length<24 ||
+            !metadata || size!=RTWAwdl::NativeRxMetadata::size || memcmp(frame+10,metadata,6)) return false;
+        const auto *clock=metadata+RTWAwdl::NativeRxMetadata::clockOffset;
+        const uint32_t wire=(uint32_t(clock[0])<<24)|(uint32_t(clock[1])<<16)|
+            (uint32_t(clock[2])<<8)|clock[3];
+        const uint64_t now=runtimeNowUs();const uint32_t age=uint32_t(now)-wire;
+        if(age>3000000 || now<age)return false;
+        return receive_.deliver(frame,length,dataAddress_,now-age,*peers_,
+            [this](const uint8_t *bytes,size_t n) {
+                return dataEnabled_ && dataInterface_ && deliverRuntimeEthernet(dataInterface_,bytes,n);
+            })!=0;
+    }
     virtual void timerFired() {}
 private:
     PeerControl *peers_;
+    IO80211VirtualInterface *dataInterface_{nullptr}; // weak, Runtime pins it
+    uint8_t dataAddress_[6] {};
+    bool dataEnabled_{false};
+    RTWAwdl::DataReceive receive_;
 };
 
 // Concrete native control provider. Publication still requires a complete,
@@ -135,14 +168,24 @@ public:
         Call call(*this);
         const IOReturn result=backend_.setAddress(mac);
         if (stopped_) return kIOReturnNotReady;
-        if (result==kIOReturnSuccess)
+        if (result==kIOReturnSuccess) {
             for (unsigned i=0;i<6;++i) address_[i]=mac[i];
+            backend_.updateReceiveAddress(mac);
+        }
         return result;
     }
     bool transmitEthernet(const uint8_t *bytes, size_t length) override {
         if (!opened_ || !enabled_ || !ready() || !RTWAwdl::DataCodec::validEthernet(bytes,length)) return false;
         Call call(*this);
         return backend_.transmitEthernet(bytes,length);
+    }
+    bool receiveRadioData(const uint8_t *frame,size_t length,const uint8_t *metadata,size_t size) override {
+        if (!opened_ || !enabled_ || stopped_ || !ready()) return false;
+        Call call(*this);return backend_.receiveRadioData(frame,length,metadata,size);
+    }
+    void observeRadioAction(const uint8_t *frame,size_t length,const uint8_t *metadata,size_t size) override {
+        if (!opened_ || !enabled_ || stopped_ || !ready()) return;
+        Call call(*this);backend_.observeRadioAction(frame,length,metadata,size);
     }
     void timerFired() override {
         if (opened_ && enabled_ && !stopped_) {Call call(*this);backend_.timerFired();}

@@ -26,6 +26,9 @@ public:
     virtual IOReturn cache(uint32_t operation, const uint8_t[6]) = 0;
     virtual IOReturn traffic(const apple80211_awdl_peer_traffic_registration &) = 0;
     virtual uint32_t capacity() const = 0;
+    // Serialized native RX admission. Default rejects incomplete providers.
+    virtual bool authorized(const uint8_t[6]) const {return false;}
+    virtual bool acceptData(const uint8_t[6],unsigned,uint16_t,uint64_t) {return false;}
 };
 }
 #endif

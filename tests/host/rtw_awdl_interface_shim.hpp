@@ -1,3 +1,11 @@
+#include <HAL/RTWAwdlReceive.hpp>
+#ifndef OSDynamicCast
+#define OSDynamicCast(T,p) dynamic_cast<T*>(p)
+#endif
+#ifndef APPLE80211_VERSION
+#define APPLE80211_VERSION 1
+#endif
+constexpr unsigned APPLE80211_C_FLAG_20MHZ=1,APPLE80211_C_FLAG_2GHZ=2,APPLE80211_C_FLAG_5GHZ=4;
 // IOKit/family lifecycle adapters; real ABI layout is checked by the kernel build.
 #include <cassert>
 #include <atomic>
@@ -13,6 +21,9 @@ constexpr unsigned kIOServiceRequired=1,kIOServiceSynchronous=2;
 struct ether_addr{uint8_t octet[6];};
 struct apple80211_channel{uint32_t version,channel,flags;};
 enum IO80211LinkState{Down=1,Up=2};enum apple80211_wme_ac:unsigned int;
+static uint64_t nativeHostUs=1000000;
+static uint64_t mach_absolute_time(){return nativeHostUs*1000;}
+static void absolutetime_to_nanoseconds(uint64_t ticks,uint64_t*ns){*ns=ticks;}
 static unsigned objects=0,baseStarts=0,baseStops=0,services=0,addressUpdates=0;
 static unsigned failAt=0;
 using IORecursiveLock=std::recursive_mutex;
@@ -22,7 +33,7 @@ static void IORecursiveLockFree(IORecursiveLock*p){assert(controlLocks);--contro
 static void IORecursiveLockLock(IORecursiveLock*p){p->lock();}
 static void IORecursiveLockUnlock(IORecursiveLock*p){p->unlock();}
 
-struct OSObject{
+class OSObject{public:
     std::atomic<unsigned> refs{1};OSObject(){++objects;}virtual~OSObject(){--objects;}
     virtual bool init(){return true;}virtual void free(){delete this;}
     void retain(){++refs;}void release(){assert(refs);if(!--refs)free();}
@@ -102,16 +113,21 @@ struct IO80211VirtualInterface:IO80211SkywalkInterface{
 struct AirportRTWAwdlDatapath:OSObject{
     using Sender=bool(*)(OSObject*,const uint8_t*,size_t);
     using ActionReceiver=bool(*)(OSObject*,const uint8_t*,size_t,const uint8_t*,size_t);
+    ActionReceiver dataReceiver=nullptr;std::vector<uint8_t>dataBytes,dataMetadata;
     ActionReceiver actionReceiver=nullptr;std::vector<uint8_t>actionBytes,actionMetadata;
     IOWorkLoop*loop;OSObject*owner;Sender sender;bool active=false;unsigned stops=0;
     static AirportRTWAwdlDatapath*last;
-    AirportRTWAwdlDatapath(IOWorkLoop*l,OSObject*o,Sender s,ActionReceiver a):actionReceiver(a),loop(l),owner(o),sender(s){l->retain();last=this;}
+    AirportRTWAwdlDatapath(IOWorkLoop*l,OSObject*o,Sender s,ActionReceiver a,ActionReceiver d):dataReceiver(d),actionReceiver(a),loop(l),owner(o),sender(s){l->retain();last=this;}
     ~AirportRTWAwdlDatapath()override{loop->release();last=nullptr;}
-    static AirportRTWAwdlDatapath*withWorkLoop(IOWorkLoop*l,OSObject*o,Sender s,ActionReceiver a=nullptr){return failAt==7?nullptr:new AirportRTWAwdlDatapath(l,o,s,a);}
+    static AirportRTWAwdlDatapath*withWorkLoop(IOWorkLoop*l,OSObject*o,Sender s,ActionReceiver a=nullptr,ActionReceiver d=nullptr){return failAt==7?nullptr:new AirportRTWAwdlDatapath(l,o,s,a,d);}
     bool setEnabled(bool value){active=value;return true;}void stop(){active=false;++stops;}
-    bool receive(const uint8_t*p,size_t){return active&&p;}void resumeTransmit(){}
+    unsigned received=0;std::vector<uint8_t>ethernetBytes;
+    bool receive(const uint8_t*p,size_t n){if(!active||!p)return false;++received;ethernetBytes.assign(p,p+n);return true;}void resumeTransmit(){}
     bool queueAction(const uint8_t*p,size_t n,const uint8_t*m,size_t z){
         if(!active||!actionReceiver)return false;actionBytes.assign(p,p+n);actionMetadata.assign(m,m+z);return true;}
+    bool queueData(const uint8_t*p,size_t n,const uint8_t*m,size_t z){
+        if(!active||!dataReceiver)return false;dataBytes.assign(p,p+n);dataMetadata.assign(m,m+z);return true;}
+    bool pumpData(){assert(dataReceiver);return dataReceiver(owner,dataBytes.data(),dataBytes.size(),dataMetadata.data(),dataMetadata.size());}
     void pumpAction(){assert(actionReceiver);actionReceiver(owner,actionBytes.data(),actionBytes.size(),actionMetadata.data(),actionMetadata.size());}
 
     void*txSubmission(){return this;}void*txCompletion(){return this;}void*rxCompletion(){return this;}

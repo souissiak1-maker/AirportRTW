@@ -25,6 +25,8 @@ shim=r'''
 #include <sys/types.h>
 #include <AWDL/RTWAwdlTxTemplate.hpp>
 #include <AWDL/RTWAwdlData.hpp>
+#include <AWDL/RTWAwdlDataReceive.hpp>
+#include <AWDL/RTWAwdlNativeRxMetadata.hpp>
 #define APPLE80211_VERSION 1
 #define APPLE80211_MAX_SSID_LEN 32
 #define APPLE80211_MAX_CHANNELS 128
@@ -34,6 +36,11 @@ using IOReturn=int;
 constexpr int kIOReturnSuccess=0,kIOReturnNotReady=1,kIOReturnError=2;
 constexpr int kIOReturnBadArgument=3,kIOReturnBusy=4,kIOReturnUnsupported=5;
 struct IO80211VirtualInterface {void retain(){}void release(){}};
+namespace AirportRTWAwdl {
+uint64_t runtimeNowUs(){return 1000000;}
+bool deliverRuntimeEthernet(IO80211VirtualInterface*,const uint8_t*,size_t){return true;}
+}
+
 struct apple80211_channel { uint32_t version,channel,flags; };
 '''
 scenario=r'''

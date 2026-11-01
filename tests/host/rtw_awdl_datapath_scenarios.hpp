@@ -37,6 +37,16 @@ static bool actionReceived(OSObject*owner,const uint8_t*frame,size_t n,const uin
     if(stopInAction){auto*p=activeActionPath;activeActionPath=nullptr;p->stop();p->release();}
     return !dropAction;
 }
+static unsigned rawDataDelivered=0;
+static bool stopInData=false;
+static AirportRTWAwdlDatapath *activeDataPath=nullptr;
+static std::vector<uint8_t>lastRawData;
+static bool dataReceived(OSObject*owner,const uint8_t*frame,size_t n,const uint8_t*,size_t z){
+ assert(static_cast<IOWorkLoop*>(owner)->pumping&&n>=82&&z==72);
+ ++rawDataDelivered;lastRawData.assign(frame,frame+n);
+ if(stopInData){auto*p=activeDataPath;activeDataPath=nullptr;p->stop();p->release();}
+ return true;
+}
 int main(){
     auto*loop=new IOWorkLoop;
     // Fail every allocation, including owner-retaining pools and queues. Every
@@ -106,6 +116,42 @@ int main(){
     assert(a->setEnabled(true));loop->pump();assert(actionsDelivered==19);
     stopInAction=true;assert(a->queueAction(frame,sizeof(frame),metadata,72));loop->pump();
     assert(actionsDelivered==20 && !activeActionPath && objects==1 && allocations==0 && loop->sources.empty());
+    stopInAction=false;
+    for(unsigned fault=1;fault<=12;++fault){faultAt=fault;attempts=0;
+     auto*d=AirportRTWAwdlDatapath::withWorkLoop(loop,loop,send,actionReceived,dataReceived);
+     assert(!d&&objects==1&&allocations==0&&loop->sources.empty());}
+    faultAt=0;
+    auto*d=AirportRTWAwdlDatapath::withWorkLoop(loop,loop,send,actionReceived,dataReceived);
+    assert(d&&d->setEnabled(true));activeDataPath=d;
+    uint8_t radio[82]{};size_t radioSize=0;
+    assert(RTWAwdl::DataCodec::encode(bytes,sizeof(bytes),radio,sizeof(radio),0,1,radioSize));
+    uint8_t dataMetadata[72]{};memcpy(dataMetadata,radio+10,6);
+    assert(d->queueData(radio,radioSize,dataMetadata,72)&&!rawDataDelivered);
+    radio[41]^=1;loop->pump();assert(rawDataDelivered==1&&lastRawData[41]!=radio[41]);radio[41]^=1;
+    for(unsigned j=0;j<16;++j)assert(d->queueData(radio,radioSize,dataMetadata,72));
+    assert(!d->queueData(radio,radioSize,dataMetadata,72));loop->pump();assert(rawDataDelivered==17);
+    radio[42]^=0x10;assert(!d->queueData(radio,radioSize,dataMetadata,72));radio[42]^=0x10;
+    dataMetadata[0]^=1;assert(!d->queueData(radio,radioSize,dataMetadata,72));dataMetadata[0]^=1;
+    assert(d->queueData(radio,radioSize,dataMetadata,72));assert(d->setEnabled(false));
+    assert(d->setEnabled(true));loop->pump();assert(rawDataDelivered==17);
+    stopInData=true;assert(d->queueData(radio,radioSize,dataMetadata,72));loop->pump();
+    assert(rawDataDelivered==18&&!activeDataPath&&objects==1&&allocations==0&&loop->sources.empty());
+    stopInData=false;
+    d=AirportRTWAwdlDatapath::withWorkLoop(loop,loop,send,nullptr,dataReceived);assert(d&&d->setEnabled(true));
+    std::vector<uint8_t> bigEthernet(14+RTWAwdl::DataCodec::mtu),bigWire(RTWAwdl::DataCodec::maximumFrame);
+    memcpy(bigEthernet.data(),bytes,54);bigEthernet[18]=uint8_t((RTWAwdl::DataCodec::mtu-40)>>8);
+    bigEthernet[19]=uint8_t(RTWAwdl::DataCodec::mtu-40);size_t bigSize=0;
+    assert(RTWAwdl::DataCodec::encode(bigEthernet.data(),bigEthernet.size(),bigWire.data(),bigWire.size(),0,1,bigSize));
+    std::vector<uint8_t> bigAggregate(bigWire.begin(),bigWire.begin()+26);bigAggregate[24]=0x80;
+    for(unsigned j=0;j<3;++j){bigAggregate.insert(bigAggregate.end(),bigWire.begin()+4,bigWire.begin()+16);
+     size_t body=bigWire.size()-26;bigAggregate.push_back(uint8_t(body>>8));bigAggregate.push_back(uint8_t(body));
+     bigAggregate.insert(bigAggregate.end(),bigWire.begin()+26,bigWire.end());
+     if(j<2){bigAggregate.push_back(0);bigAggregate.push_back(0);}}
+    memcpy(dataMetadata,bigAggregate.data()+10,6);assert(bigAggregate.size()>4120);
+    assert(d->queueData(bigAggregate.data(),bigAggregate.size(),dataMetadata,72));
+    loop->pump();assert(rawDataDelivered==19&&lastRawData==bigAggregate);
+    assert(!d->queueData(radio,RTWAwdl::DataCodec::maximumAggregateFrame+1,dataMetadata,72));
+    d->stop();d->release();assert(objects==1&&allocations==0&&loop->sources.empty());
     loop->release();assert(objects==0);
     puts("PASS: native datapath rollback, pool ownership, RX bounds, failures and teardown");
 }

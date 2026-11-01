@@ -51,16 +51,16 @@ void rtw_awdl_request_dequeue(void *, void *, uint32_t)
 
 OSDefineMetaClassAndStructors(AirportRTWAwdlDatapath, OSObject)
 
-AirportRTWAwdlDatapath *AirportRTWAwdlDatapath::withWorkLoop(IOWorkLoop *loop, OSObject *owner, Sender sender, ActionReceiver actionReceiver)
+AirportRTWAwdlDatapath *AirportRTWAwdlDatapath::withWorkLoop(IOWorkLoop *loop, OSObject *owner, Sender sender, ActionReceiver actionReceiver, DataReceiver dataReceiver)
 {
     auto *object = new AirportRTWAwdlDatapath;
-    if (object && !object->initialize(loop, owner, sender, actionReceiver)) {
+    if (object && !object->initialize(loop, owner, sender, actionReceiver, dataReceiver)) {
         object->stop(); object->release(); object = nullptr;
     }
     return object;
 }
 
-bool AirportRTWAwdlDatapath::initialize(IOWorkLoop *loop, OSObject *owner, Sender sender, ActionReceiver actionReceiver)
+bool AirportRTWAwdlDatapath::initialize(IOWorkLoop *loop, OSObject *owner, Sender sender, ActionReceiver actionReceiver, DataReceiver dataReceiver)
 {
     if (!loop || !owner || !sender || !OSObject::init()) return false;
     loop_ = loop; loop_->retain(); senderOwner_ = owner; sender_ = sender;
@@ -72,6 +72,12 @@ bool AirportRTWAwdlDatapath::initialize(IOWorkLoop *loop, OSObject *owner, Sende
         actionRing_ = static_cast<ActionSlot *>(IOMalloc(sizeof(ActionSlot) * actionCapacity));
         actionScratch_ = static_cast<ActionSlot *>(IOMalloc(sizeof(ActionSlot)));
         if (!actionRing_ || !actionScratch_) return false;
+    }
+    dataReceiver_=dataReceiver;
+    if(dataReceiver_) {
+        dataRing_=static_cast<DataSlot *>(IOMalloc(sizeof(DataSlot)*actionCapacity));
+        dataScratch_=static_cast<DataSlot *>(IOMalloc(sizeof(DataSlot)));
+        if(!dataRing_ || !dataScratch_)return false;
     }
     return loop_->runAction(createGated, this) == kIOReturnSuccess;
 }
@@ -123,6 +129,7 @@ IOReturn AirportRTWAwdlDatapath::enableGated(OSObject *owner, void *value, void 
     if (!me->enabled_) {
         me->rxCount_ = me->rxRead_ = me->rxWrite_ = 0;
         me->actionCount_ = me->actionRead_ = me->actionWrite_ = 0;
+        me->dataCount_=me->dataRead_=me->dataWrite_=0;
     }
     IOSimpleLockUnlockEnableInterrupt(me->rxLock_, state);
     for (auto *queue : me->queues_)
@@ -209,6 +216,25 @@ bool AirportRTWAwdlDatapath::queueAction(const uint8_t *frame, size_t length,
     return accepted;
 }
 
+bool AirportRTWAwdlDatapath::queueData(const uint8_t *frame,size_t length,
+                                       const uint8_t *metadata,size_t metadataLength)
+{
+    RTWAwdl::DataCodec::View view;
+    if (!rxLock_ || !frame || length<24 || length>RTWAwdl::DataCodec::maximumAggregateFrame ||
+        !metadata || metadataLength!=72 || memcmp(frame+10,metadata,6) ||
+        (!RTWAwdl::DataCodec::inspect(frame,length,view) &&
+         !RTWAwdl::DataCodec::validAggregate(frame,length))) return false;
+    const IOInterruptState state=IOSimpleLockLockDisableInterrupt(rxLock_);
+    const bool accepted=rxEnabled_ && rxSource_ && dataReceiver_ && dataRing_ && dataCount_<actionCapacity;
+    if(accepted) {
+        auto &slot=dataRing_[dataWrite_];slot.length=uint16_t(length);
+        memcpy(slot.bytes,frame,length);memcpy(slot.metadata,metadata,72);
+        dataWrite_=(dataWrite_+1)%actionCapacity;++dataCount_;
+        rxSource_->interruptOccurred(nullptr,nullptr,0);
+    }
+    IOSimpleLockUnlockEnableInterrupt(rxLock_,state);return accepted;
+}
+
 void AirportRTWAwdlDatapath::receiveReady(OSObject *owner, IOInterruptEventSource *, int)
 {
     auto *me = static_cast<AirportRTWAwdlDatapath *>(owner);
@@ -216,6 +242,7 @@ void AirportRTWAwdlDatapath::receiveReady(OSObject *owner, IOInterruptEventSourc
     // until the event completes, including removal of owner-retaining sources.
     me->retain();
     me->drainActions(); // Control/synchronization frames precede bulk data.
+    me->drainRadioData();
     me->drainReceive();
     if (me->enabled_ && me->queues_[0]) rtw_awdl_request_dequeue(me->queues_[0],nullptr,0);
     me->release();
@@ -279,6 +306,22 @@ void AirportRTWAwdlDatapath::drainActions()
     }
 }
 
+void AirportRTWAwdlDatapath::drainRadioData()
+{
+    for(unsigned i=0;i<actionCapacity && enabled_ && dataReceiver_;++i) {
+        const IOInterruptState state=IOSimpleLockLockDisableInterrupt(rxLock_);
+        const bool present=dataCount_ && dataRing_ && dataScratch_;
+        if(present) {
+            const auto &slot=dataRing_[dataRead_];dataScratch_->length=slot.length;
+            memcpy(dataScratch_->bytes,slot.bytes,slot.length);memcpy(dataScratch_->metadata,slot.metadata,72);
+            dataRead_=(dataRead_+1)%actionCapacity;--dataCount_;
+        }
+        IOSimpleLockUnlockEnableInterrupt(rxLock_,state);
+        if(!present)break;
+        dataReceiver_(senderOwner_,dataScratch_->bytes,dataScratch_->length,dataScratch_->metadata,72);
+    }
+}
+
 void AirportRTWAwdlDatapath::resumeTransmit()
 {
     if (!rxLock_) return;
@@ -300,6 +343,7 @@ IOReturn AirportRTWAwdlDatapath::stopGated(OSObject *owner, void *, void *, void
         const IOInterruptState state = IOSimpleLockLockDisableInterrupt(me->rxLock_);
         me->rxEnabled_ = false; me->rxCount_ = 0;
         me->actionCount_ = me->actionRead_ = me->actionWrite_ = 0;
+        me->dataCount_=me->dataRead_=me->dataWrite_=0;
         IOSimpleLockUnlockEnableInterrupt(me->rxLock_,state);
     }
     if (me->rxSource_) {
@@ -329,6 +373,8 @@ void AirportRTWAwdlDatapath::free()
     if (rxRing_) IOFree(rxRing_,sizeof(RxSlot) * ringCapacity);
     if (actionRing_) IOFree(actionRing_,sizeof(ActionSlot) * actionCapacity);
     if (actionScratch_) IOFree(actionScratch_,sizeof(ActionSlot));
+    if(dataRing_)IOFree(dataRing_,sizeof(DataSlot)*actionCapacity);
+    if(dataScratch_)IOFree(dataScratch_,sizeof(DataSlot));
     if (rxLock_) IOSimpleLockFree(rxLock_);
     OSSafeReleaseNULL(loop_);
     OSObject::free();

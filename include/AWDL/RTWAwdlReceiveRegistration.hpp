@@ -62,7 +62,7 @@ static inline bool dispatchReceiver(ReceiveRegistration &r,
     const uint8_t *frame, size_t length, int32_t rssi, uint16_t frequency,
     uint32_t timestamp, bool timestampValid) {
     if (!r.lock || !__atomic_load_n(&r.enabled, __ATOMIC_ACQUIRE) ||
-        !frame || length < 24 || length > 4120) return false;
+        !frame || length < 24 || length > DataCodec::maximumAggregateFrame) return false;
     IOLockLock(r.lock);
     bool handled = false;
     if (__atomic_load_n(&r.enabled, __ATOMIC_ACQUIRE) && r.owner && r.handler) {
@@ -78,7 +78,7 @@ static inline bool dispatchReceiver(ReceiveRegistration &r,
             if (parseFrame(frame,length,action) == ParseResult::Valid &&
                 (action.subtype == 0 || action.subtype == 3) &&
                 !memcmp(frame + 16, bssid, 6)) handled = true;
-            else if (DataCodec::inspect(frame,length,data)) {
+            else if (DataCodec::inspect(frame,length,data) || DataCodec::validAggregate(frame,length)) {
                 metadata.kind = FrameKind::IPv6; handled = true;
             }
             if (handled) r.handler(r.owner,frame,length,metadata);

@@ -100,6 +100,8 @@ jobs:
           /tmp/rtw_awdl_clock_test
           xcrun clang++ -std=c++14 -Wall -Wextra -Werror -fsanitize=address,undefined -Iinclude tests/rtw_awdl_data_test.cpp -o /tmp/rtw_awdl_data_test
           /tmp/rtw_awdl_data_test
+          xcrun clang++ -std=c++14 -Wall -Wextra -Werror -fsanitize=address,undefined -Iinclude tests/rtw_awdl_data_receive_test.cpp -o /tmp/rtw_awdl_data_receive_test
+          /tmp/rtw_awdl_data_receive_test
           python3 tests/rtw_awdl_discovery_guard_test.py
           python3 tests/rtw_locale_test.py
           python3 tests/rtw_locale_cache_test.py

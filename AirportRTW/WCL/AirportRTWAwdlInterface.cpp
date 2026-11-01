@@ -11,6 +11,8 @@
 #include <Airport/apple80211_var.h>
 #include <AWDL/RTWAwdlNativeRxMetadata.hpp>
 #include <AWDL/RTWAwdlNativeEvents.hpp>
+#include <kern/clock.h>
+#include <mach/mach_time.h>
 
 extern "C" {
 IOWorkLoop *rtw_awdl_interface_workloop(void *)
@@ -78,7 +80,7 @@ bool AirportRTWAwdlInterface::start(IOService *provider)
     baseStarted_ = true;
     loop_ = rtw_awdl_interface_workloop(this);
     if (!loop_) return false;
-    datapath_ = AirportRTWAwdlDatapath::withWorkLoop(loop_,this,transmit,deliverAction);
+    datapath_ = AirportRTWAwdlDatapath::withWorkLoop(loop_,this,transmit,deliverAction,deliverData);
     if (!datapath_) return false;
     if (!initRegistrationInfo(reinterpret_cast<IOSkywalkEthernetInterface::RegistrationInfo *>(registration_),1,sizeof(registration_)))
         return false;
@@ -302,6 +304,46 @@ bool AirportRTWAwdlInterface::queueRadioAction(const uint8_t *frame, size_t leng
     return queueAction(frame,length,metadata,sizeof(metadata));
 }
 
+namespace AirportRTWAwdl {
+uint64_t runtimeNowUs() {
+    uint64_t ns=0;absolutetime_to_nanoseconds(mach_absolute_time(),&ns);return ns/1000;
+}
+bool deliverRuntimeEthernet(IO80211VirtualInterface *interface,const uint8_t *bytes,size_t length) {
+    auto *native=OSDynamicCast(AirportRTWAwdlInterface,interface);
+    return native && native->receiveEthernet(bytes,length);
+}
+}
+
+bool AirportRTWAwdlInterface::queueRadioData(const uint8_t *frame,size_t length,
+    const apple80211_channel &channel,int32_t rssi,uint32_t wireRxTime)
+{
+    if(!frame || length<24 || !datapath_)return false;
+    uint8_t metadata[RTWAwdl::NativeRxMetadata::size];
+    if(!RTWAwdl::NativeRxMetadata::build(frame+10,reinterpret_cast<const uint8_t *>(&channel),
+        sizeof(channel),rssi,metadata,sizeof(metadata),wireRxTime,true))return false;
+    return datapath_->queueData(frame,length,metadata,sizeof(metadata));
+}
+
+void AirportRTWAwdlInterface::receiveRadio(OSObject *owner,const uint8_t *frame,size_t length,
+                                           const RTWAwdl::ReceiveMetadata &metadata)
+{
+    auto *me=static_cast<AirportRTWAwdlInterface *>(owner);
+    // Frequency-to-channel conversion only; RX does not grant TX permission.
+    const uint16_t f=metadata.frequency;
+    const uint8_t number=f>=2412 && f<=2472 && (f-2407)%5==0 ? uint8_t((f-2407)/5) :
+        f>=5180 && f<=5885 && f%5==0 ? uint8_t((f-5000)/5) : 0;
+    if(!number)return;
+    apple80211_channel channel{};channel.version=APPLE80211_VERSION;channel.channel=number;
+    channel.flags=APPLE80211_C_FLAG_20MHZ |
+        (number<=13 ? APPLE80211_C_FLAG_2GHZ : APPLE80211_C_FLAG_5GHZ);
+    const uint32_t wire=uint32_t(AirportRTWAwdl::runtimeNowUs());
+    // No HAL calls, blocking gate, family calls or raw TSF casts on NAPI.
+    if(metadata.kind==RTWAwdl::FrameKind::Action)
+        me->queueRadioAction(frame,length,channel,metadata.rssi,wire,true);
+    else me->queueRadioData(frame,length,channel,metadata.rssi,wire);
+}
+
+
 bool AirportRTWAwdlInterface::postWindowStart(uint16_t counter,uint32_t role,
     const uint8_t parent[6],const uint8_t root[6],const apple80211_channel &channel,uint32_t wireTime)
 {
@@ -394,9 +436,20 @@ bool AirportRTWAwdlInterface::deliverAction(OSObject *owner, const uint8_t *fram
 {
     auto *me = static_cast<AirportRTWAwdlInterface *>(owner);
     me->retain();
+    if(me->enabled_ && !me->stopping_ && me->control_)
+        me->control_->observeRadioAction(frame,length,metadata,metadataLength);
     const bool handedOff = me->receiveAction(frame,length,metadata,metadataLength);
     me->release();
     return handedOff;
+}
+
+bool AirportRTWAwdlInterface::deliverData(OSObject *owner,const uint8_t *frame,size_t length,
+                                          const uint8_t *metadata,size_t metadataLength)
+{
+    auto *me=static_cast<AirportRTWAwdlInterface *>(owner);me->retain();
+    const bool accepted=me->enabled_ && !me->stopping_ && me->control_ &&
+        me->control_->receiveRadioData(frame,length,metadata,metadataLength);
+    me->release();return accepted;
 }
 
 bool AirportRTWAwdlInterface::receiveAction(const uint8_t *frame, size_t length, const uint8_t *metadata, size_t metadataLength)

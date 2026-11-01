@@ -5,6 +5,7 @@
 #include "AirportRTWAwdlInterface.hpp"
 #if defined(AIRPORT_WCL) && __IO80211_TARGET == __MAC_26_0
 #include <HAL/RTWAwdlPeer.hpp>
+#include <AWDL/RTWAwdlDataReplay.hpp>
 #include <net/ethernet.h>
 #include <Airport/apple80211_ioctl.h>
 #include <libkern/libkern.h>
@@ -57,11 +58,16 @@ public:
         memset(trafficPeer_,0,6);interface_=nullptr;bound_=false;
         abandonPending_=shutdownPending_=disablePending_=false;
     }
-    bool authorized(const uint8_t address[6]) const {
+    bool authorized(const uint8_t address[6]) const override {
         if (!bound_ || !active_ || fault_ || closing_ || !valid(address)) return false;
         const int i=find(address);
         return i>=0 && entries_[i].installed && !entries_[i].retiring &&
             (entries_[i].cached || entries_[i].traffic);
+    }
+    bool acceptData(const uint8_t address[6],unsigned stream,uint16_t sequence,uint64_t now) override {
+        if (stream>=17 || !authorized(address)) return false;
+        const int i=find(address);
+        return i>=0 && entries_[i].windows[stream].accept(sequence,now);
     }
     IOReturn lastError() const {return lastError_;}
     IOReturn cache(uint32_t operation,const uint8_t address[6]) override {
@@ -128,6 +134,7 @@ private:
     struct Entry {
         uint8_t address[6] {};
         bool used {false},cached {false},traffic {false},installed {false},retiring {false};
+        RTWAwdl::DataReplayWindow windows[17] {};
     };
     struct Transaction {
         NativePeers &owner;

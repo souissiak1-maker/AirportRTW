@@ -8,6 +8,7 @@
 #include "AirportRTWAwdlDatapath.hpp"
 #include <IOKit/IOTimerEventSource.h>
 #include <IOKit/IOLocks.h>
+#include <HAL/RTWAwdlReceive.hpp>
 
 struct apple80211_channel;
 
@@ -46,6 +47,9 @@ public:
     // Source is taken from the frame; provider supplies the actual channel and RSSI.
     bool queueRadioAction(const uint8_t *, size_t, const apple80211_channel &, int32_t,
                           uint32_t wireRxTime = 0, bool wireRxTimeValid = false);
+    bool queueRadioData(const uint8_t *,size_t,const apple80211_channel &,int32_t,uint32_t);
+    // Register this with the HAL and this interface as retained RX owner.
+    static void receiveRadio(OSObject *,const uint8_t *,size_t,const RTWAwdl::ReceiveMetadata &);
     // Native-workloop only. Returns handoff/arming status, not peer-manager ACK.
     bool postWindowStart(uint16_t counter,uint32_t role,const uint8_t parent[6],
                          const uint8_t root[6],const apple80211_channel &,uint32_t wireTime);
@@ -143,6 +147,7 @@ private:
     IOReturn dispatch(AirportRTWAwdl::Request, bool, void *);
     static bool transmit(OSObject *, const uint8_t *, size_t);
     static bool deliverAction(OSObject *, const uint8_t *, size_t, const uint8_t *, size_t);
+    static bool deliverData(OSObject *,const uint8_t *,size_t,const uint8_t *,size_t);
     IO80211Controller *controller_ {nullptr}; // Held by service attachment.
     AirportRTWAwdl::Control *control_ {nullptr}; // Controller-owned.
     AirportRTWAwdlDatapath *datapath_ {nullptr};

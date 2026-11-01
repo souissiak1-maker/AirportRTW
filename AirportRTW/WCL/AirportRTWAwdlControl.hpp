@@ -85,6 +85,8 @@ public:
     // Copy before true; false is backpressure. Do not tear down reentrantly.
     virtual bool transmitEthernet(const uint8_t *, size_t) = 0;
     // Native-workloop timer dispatch; scheduler implementations rearm explicitly.
+    virtual bool receiveRadioData(const uint8_t *,size_t,const uint8_t *,size_t) {return false;}
+    virtual void observeRadioAction(const uint8_t *,size_t,const uint8_t *,size_t) {}
     virtual void timerFired() {}
 };
 }
