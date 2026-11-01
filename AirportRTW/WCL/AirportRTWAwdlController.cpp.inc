@@ -50,14 +50,19 @@ IOReturn AirportRTW::createNativeAwdl(apple80211_virt_if_create_data *request)
         }
         OSSafeReleaseNULL(bsd);
     } else if(!RTWAwdl::Election::unicast(request->mac)){stage="invalid-mac";result=kIOReturnBadArgument;}
+    bool bsdReady=false;
     if(result==kIOReturnSuccess || result==EEXIST) {
         const char *name=rtw_awdl_interface_name(nativeAwdlInterface_);
         memset(request->bsd_name,0,sizeof(request->bsd_name));
-        if(name)strlcpy(reinterpret_cast<char *>(request->bsd_name),name,sizeof(request->bsd_name));
+        bsdReady=name && !strncmp(name,"awdl",4) && name[4];
+        if(bsdReady)strlcpy(reinterpret_cast<char *>(request->bsd_name),name,sizeof(request->bsd_name));
+        else {stage="bsd-pending";result=kIOReturnNotReady;}
+        // Retain the native object while BSD matching completes. A repeated
+        // create request observes its real name without allocating another VIF.
     }
-    setProperty("RTWAwdlCreateStage",nativeAwdlInterface_ ? "registered" : stage);
+    setProperty("RTWAwdlCreateStage",bsdReady ? "registered" : stage);
     setProperty("RTWAwdlCreateStatus",uint64_t(uint32_t(result)),32);
-    setProperty("RTWAwdlInterfaceReady",nativeAwdlInterface_!=nullptr);
+    setProperty("RTWAwdlInterfaceReady",bsdReady);
     IOLockUnlock(nativeAwdlLock_);return result;
 }
 IO80211VirtualInterface *AirportRTW::createVirtualInterface(ether_addr *address,unsigned int role)
@@ -66,7 +71,10 @@ IO80211VirtualInterface *AirportRTW::createVirtualInterface(ether_addr *address,
     apple80211_virt_if_create_data request{};request.version=APPLE80211_VERSION;request.role=role;
     memcpy(request.mac,address,6);
     const IOReturn result=createNativeAwdl(&request);
-    return result==kIOReturnSuccess || result==EEXIST ? nativeAwdlInterface_ : nullptr;
+    // The native caller needs the registered object to complete BSD matching;
+    // its BSD name is allowed to become available after this factory returns.
+    return result==kIOReturnSuccess || result==EEXIST || result==kIOReturnNotReady
+        ? nativeAwdlInterface_ : nullptr;
 }
 SInt32 AirportRTW::enableVirtualInterface(IO80211VirtualInterface *interface)
 {

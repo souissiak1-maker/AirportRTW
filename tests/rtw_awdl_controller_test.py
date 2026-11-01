@@ -58,6 +58,15 @@ int main(){
  assert(!controller->enableVirtualInterface(interface));assert(hal.receiver);
  assert(!controller->disableVirtualInterface(interface));assert(!hal.receiver);
  controller->stopNativeAwdl();assert(!controller->current && !controller->nativeAwdlRuntime_ && hal.closes==1);
+ // BSD attachment may be asynchronous: preserve the provider and reuse it.
+ failAt=22;assert(controller->createNativeAwdl(&request)==kIOReturnNotReady);
+ auto *pending=controller->nativeAwdlInterface_;assert(pending && !request.bsd_name[0]);
+ assert(controller->createVirtualInterface(reinterpret_cast<ether_addr*>(request.mac),6)==pending);
+ auto adds=hal.adds;
+ assert(controller->createNativeAwdl(&request)==kIOReturnNotReady && hal.adds==adds);
+ failAt=0;assert(controller->createNativeAwdl(&request)==EEXIST);
+ assert(controller->nativeAwdlInterface_==pending && !strcmp(request.bsd_name,"awdl0"));
+ controller->stopNativeAwdl();
  // Recreate after Wi-Fi power cycle; a native completion can re-enter teardown.
  assert(!controller->createNativeAwdl(&request));interface=controller->nativeAwdlInterface_;
  assert(!controller->enableVirtualInterface(interface));
@@ -65,7 +74,7 @@ int main(){
  eventHook=[](OSObject*,unsigned event){if(event==51)owner->stopNativeAwdl();};
  uint8_t cache[0x1d0]{};cache[0]=1;cache[8]=2;cache[13]=9;
  (void)interface->setPEER_CACHE_CONTROL(reinterpret_cast<apple80211_peer_cache_control*>(cache));
- eventHook=nullptr;assert(!controller->current && hal.closes==2);
+ eventHook=nullptr;assert(!controller->current && hal.closes==3);
  controller->nativeAwdlShutdown_=true;
  assert(!controller->nativeAwdlAvailable());assert(controller->createNativeAwdl(&request)==kIOReturnUnsupported);
  controller->release();assert(objects==0);

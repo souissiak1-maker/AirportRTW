@@ -156,8 +156,12 @@ bool AirportRTWAwdlInterface::publish()
     registerService(kIOServiceSynchronous);
     creationStage("bsd-name",kIOReturnNotReady);
     const char *name = rtw_awdl_interface_name(this);
-    if(!name || strncmp(name,"awdl",4))return false;
-    creationStage("registered",kIOReturnSuccess);return true;
+    // BSD matching can finish after registerService returns, especially when
+    // creation was requested by the same native workqueue. Never wait here or
+    // destroy a registered provider merely because its BSD client is pending.
+    if(name && name[0] && strncmp(name,"awdl",4))return false;
+    creationStage(name && name[0] ? "registered" : "bsd-pending",kIOReturnSuccess);
+    return true;
 }
 
 void AirportRTWAwdlInterface::setHardwareAssists(unsigned int,unsigned int)

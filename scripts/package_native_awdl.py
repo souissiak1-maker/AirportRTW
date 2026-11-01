@@ -12,7 +12,7 @@ def main():
     dirty=subprocess.check_output(['git','status','--porcelain','--untracked-files=normal'],cwd=ROOT,text=True)
     if any(line[3:]!='.DS_Store' for line in dirty.splitlines()):raise SystemExit('Commit source changes before packaging')
     output=ROOT/'build/diagnostics';output.mkdir(parents=True,exist_ok=True)
-    folder=output/'AirportRTW-Tahoe-Native-AWDL-v3'
+    folder=output/'AirportRTW-Tahoe-Native-AWDL-v4'
     if folder.exists():shutil.rmtree(folder)
     folder.mkdir();kext=folder/'AirportRTW.kext';shutil.copytree(source,kext)
     subprocess.run([sys.executable,str(ROOT/'scripts/validate_kext_imports.py'),str(kext),
@@ -27,7 +27,7 @@ def main():
     executable=kext/'Contents/MacOS/AirportRTW'
     uuid=subprocess.check_output(['xcrun','dwarfdump','--uuid',str(executable)],text=True).split()[1]
     identity={'source_commit':subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip(),
-        'package':'Tahoe native AWDL v3','configuration':'Release with experimental native AWDL opt-in',
+        'package':'Tahoe native AWDL v4','configuration':'Release with experimental native AWDL opt-in',
         'bundle_identifier':info['CFBundleIdentifier'],'bundle_version':info['CFBundleVersion'],
         'firmware_display':'AirportRTW'+info['CFBundleVersion'],'executable_uuid':uuid,
         'binary_sha256':sha(executable),'info_plist_sha256':sha(plist),

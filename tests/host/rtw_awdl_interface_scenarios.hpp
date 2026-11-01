@@ -1,6 +1,6 @@
 extern "C" {
 IOWorkLoop*rtw_awdl_interface_workloop(void*p){return failAt==6?nullptr:static_cast<IO80211VirtualInterface*>(p)->baseLoop;}
-const char*rtw_awdl_interface_name(void*){return failAt==11?"en0":"awdl0";}
+const char*rtw_awdl_interface_name(void*){return failAt==22?nullptr:(failAt==11?"en0":"awdl0");}
 IO80211VirtualInterface*rtw_awdl_controller_interface(IO80211Controller*c){return c->current;}
 void rtw_awdl_controller_publish(IO80211Controller*c,IO80211VirtualInterface*i){if(failAt!=10)c->current=i;}
 IOReturn rtw_awdl_register_interface(void*,const void*raw,void**q,uint32_t count,void*tx,void*rx,uint32_t){
@@ -54,6 +54,10 @@ int main(){
       assert(!co.prepares&&!co.shutdowns&&objects==1&&controlLocks==0);}
     for(unsigned fault=20;fault<=21;++fault){failAt=fault;Control co;
       assert(!AirportRTWAwdlInterface::withController(c,&co,mac));assert(co.shutdowns==1 && objects==1);}
+    failAt=22;{Control co;AirportRTWAwdlInterface::CreationResult result;
+      auto *pending=AirportRTWAwdlInterface::withController(c,&co,mac,&result);
+      assert(pending && c->current==pending && !strcmp(result.stage,"bsd-pending"));
+      pending->terminate(0);pending->release();assert(!c->current && objects==1);}
     failAt=0;Control control;
     auto*i=AirportRTWAwdlInterface::withController(c,&control,mac);assert(i&&c->current==i&&control.prepares==1);
     assert(!i->deferred && !i->getHardwareAssists());
