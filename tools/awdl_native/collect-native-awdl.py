@@ -2,7 +2,8 @@
 """Collect native AWDL registration status without network identity or payloads."""
 import argparse,json,plistlib,subprocess
 from pathlib import Path
-KEYS=('RTWAwdlEnabled','RTWAwdlCreateStage','RTWAwdlCreateStatus','RTWAwdlInterfaceReady')
+KEYS=('RTWAwdlEnabled','RTWAwdlCreateStage','RTWAwdlCreateStatus','RTWAwdlInterfaceReady',
+    'RTWAwdlStartupRadioBlockers','RTWAwdlStartupRadioFrequency','RTWAwdlStartupRadioReady')
 def command(args,timeout=15):
     try:
         result=subprocess.run(args,capture_output=True,timeout=timeout,check=False)

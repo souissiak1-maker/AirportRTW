@@ -32,17 +32,25 @@ IOReturn rtw_awdl_register_interface(void *, const void *, void **, uint32_t, vo
 OSDefineMetaClassAndStructors(AirportRTWAwdlInterface, IO80211AWDLProtocol)
 
 AirportRTWAwdlInterface *AirportRTWAwdlInterface::withController(IO80211Controller *controller,
-    AirportRTWAwdl::Control *control, const uint8_t mac[6])
+    AirportRTWAwdl::Control *control, const uint8_t mac[6],CreationResult *result)
 {
-    if (!controller || !control || !mac || !control->ready() ||
-        (control->capabilities() & AirportRTWAwdl::Control::requiredCapabilities) !=
-        AirportRTWAwdl::Control::requiredCapabilities || rtw_awdl_controller_interface(controller))
-        return nullptr;
+    if(result)*result={"invalid-factory-arguments",kIOReturnBadArgument};
+    if(!controller || !control || !mac)return nullptr;
+    if(result)*result={"provider-readiness",kIOReturnNotReady};
+    if(!control->ready())return nullptr;
+    if(result)*result={"provider-capabilities",kIOReturnUnsupported};
+    if((control->capabilities()&AirportRTWAwdl::Control::requiredCapabilities)!=AirportRTWAwdl::Control::requiredCapabilities)return nullptr;
+    if(result)*result={"existing-native-interface",kIOReturnBusy};
+    if(rtw_awdl_controller_interface(controller))return nullptr;
+    if(result)*result={"invalid-mac",kIOReturnBadArgument};
     uint8_t bits = 0; for (unsigned i = 0; i < 6; ++i) bits |= mac[i];
     if (!bits || (mac[0] & 1)) return nullptr;
+    if(result)*result={"interface-allocation",kIOReturnNoMemory};
     auto *object = new AirportRTWAwdlInterface;
     if (!object) return nullptr;
+    object->creation_=result;
     if (!object->initialize(controller,control,mac) || !object->start(controller) || !object->publish()) {
+        object->creation_=nullptr; // preserve the failure across shutdown
         if (object->servicePublished_) {
             object->terminate(kIOServiceRequired | kIOServiceSynchronous);
         } else {
@@ -51,6 +59,7 @@ AirportRTWAwdlInterface *AirportRTWAwdlInterface::withController(IO80211Controll
         }
         object->release(); return nullptr;
     }
+    object->creation_=nullptr;
     return object;
 }
 
@@ -61,40 +70,55 @@ bool AirportRTWAwdlInterface::initialize(IO80211Controller *controller,
     for (unsigned i = 0; i < 6; ++i) bits |= mac[i];
     if (!bits || (mac[0] & 1)) return false;
     controller_ = controller; control_ = control;control_->retainProvider();providerHeld_=true;memcpy(mac_,mac,6);
+    creationStage("skywalk-init");
     if (!IO80211SkywalkInterface::init()) return false;
+    creationStage("control-lock",kIOReturnNoMemory);
     controlLock_=IORecursiveLockAlloc();
     if (!controlLock_) return false;
     // Native base initialization can query AWDL limits and election state.
     // Bind validated state before that call; prepare must not use its workqueue.
     prepareAttempted_ = true;
-    if (control_->prepare(this,mac_) != kIOReturnSuccess) return false;
+    creationStage("runtime-prepare",kIOReturnNotReady);
+    const IOReturn preparation=control_->prepare(this,mac_);
+    if(preparation!=kIOReturnSuccess){creationStage("runtime-prepare",preparation);return false;}
     prepared_ = true;
     ether_addr address; memcpy(address.octet,mac_,6);
     virtualInitAttempted_ = true;
+    creationStage("virtual-init");
     if (!IO80211VirtualInterface::init(controller,&address,6,"awdl")) return false;
     setInterfaceId(2);
+    creationStage("provider-attach");
     attached_ = attach(controller);
     return attached_;
 }
 
 bool AirportRTWAwdlInterface::start(IOService *provider)
 {
+    creationStage("start-state",kIOReturnNotReady);
     if (stopping_ || baseStarted_ || !prepared_ || !control_) return false;
     // Native base start can publish the service before queues are registered.
+    creationStage("bsd-deferral",kIOReturnNoMemory);
     deferBSDAttach(true);
     if (!getProperty("IODeferBSDAttach")) return false;
+    creationStage("virtual-start");
     if (!IO80211VirtualInterface::start(provider)) return false;
     baseStarted_ = true;
     // Populate the native MAC agent as well as our HAL's address. Its setter
     // calls setMacAddress; an unchanged address is an idempotent transaction.
     ether_addr nativeAddress;memcpy(nativeAddress.octet,mac_,6);
-    if(IO80211SkywalkInterface::setHardwareAddress(&nativeAddress)!=kIOReturnSuccess)return false;
+    creationStage("native-mac-set");
+    const IOReturn macStatus=IO80211SkywalkInterface::setHardwareAddress(&nativeAddress);
+    if(macStatus!=kIOReturnSuccess){creationStage("native-mac-set",macStatus);return false;}
+    creationStage("native-mac-readback");
     const ether_addr reported=IO80211SkywalkInterface::getSelfMacAddr();
     if(memcmp(reported.octet,mac_,6))return false;
+    creationStage("native-workqueue",kIOReturnNotReady);
     loop_ = rtw_awdl_interface_workloop(this);
     if (!loop_) return false;
+    creationStage("datapath-allocation",kIOReturnNoMemory);
     datapath_ = AirportRTWAwdlDatapath::withWorkLoop(loop_,this,transmit,deliverAction,deliverData);
     if (!datapath_) return false;
+    creationStage("registration-info");
     if (!initRegistrationInfo(reinterpret_cast<IOSkywalkEthernetInterface::RegistrationInfo *>(registration_),1,sizeof(registration_)))
         return false;
     // Native role-6 RegistrationInfo, kept alive for the service's lifetime.
@@ -109,24 +133,31 @@ bool AirportRTWAwdlInterface::start(IOService *provider)
     memcpy(registration_+0x40,&zero,4); memcpy(registration_+0x48,&mtu,4);
     memcpy(registration_+0x4c,&mtu,4); memcpy(registration_+0x108,mac_,6);
     void *queues[3] {datapath_->txSubmission(),datapath_->txCompletion(),datapath_->rxCompletion()};
-    if (rtw_awdl_register_interface(this,registration_,queues,3,datapath_->txPool(),datapath_->rxPool(),0) != kIOReturnSuccess)
-        return false;
+    creationStage("queue-registration");
+    const IOReturn registration=rtw_awdl_register_interface(this,registration_,queues,3,datapath_->txPool(),datapath_->rxPool(),0);
+    if(registration!=kIOReturnSuccess){creationStage("queue-registration",registration);return false;}
     registered_ = true;
     return true;
 }
 
 bool AirportRTWAwdlInterface::publish()
 {
-    if (!registered_ || rtw_awdl_controller_interface(controller_)) return false;
-    rtw_awdl_controller_publish(controller_,this);
+    creationStage("controller-publication",kIOReturnBusy);
+    if (!registered_) return false;
+    auto *current=rtw_awdl_controller_interface(controller_);
+    if(current && current!=this)return false;
+    // The native initializer may already have installed this same object.
+    if(!current)rtw_awdl_controller_publish(controller_,this);
     controllerPublished_ = rtw_awdl_controller_interface(controller_) == this;
     if (!controllerPublished_) return false;
     // Controller ownership and native queue registration precede BSD matching.
     deferBSDAttach(false);
     servicePublished_ = true;
     registerService(kIOServiceSynchronous);
+    creationStage("bsd-name",kIOReturnNotReady);
     const char *name = rtw_awdl_interface_name(this);
-    return name && strncmp(name,"awdl",4) == 0;
+    if(!name || strncmp(name,"awdl",4))return false;
+    creationStage("registered",kIOReturnSuccess);return true;
 }
 
 void AirportRTWAwdlInterface::setHardwareAssists(unsigned int,unsigned int)
@@ -195,11 +226,10 @@ void AirportRTWAwdlInterface::stopImpl(IOService *provider)
     releaseWindowTimer();
     windowOpen_ = false;
     if (datapath_) datapath_->stop();
-    if (controllerPublished_) {
-        if (rtw_awdl_controller_interface(controller_) == this)
-            rtw_awdl_controller_publish(controller_,nullptr);
-        controllerPublished_ = false;
-    }
+    // Also retract publication done by a partially successful native init.
+    if(controller_ && rtw_awdl_controller_interface(controller_)==this)
+        rtw_awdl_controller_publish(controller_,nullptr);
+    controllerPublished_=false;
     if (baseStarted_) { IO80211VirtualInterface::stop(provider); baseStarted_ = false; }
     registered_=false;
     if(controlLock_)IORecursiveLockLock(controlLock_);

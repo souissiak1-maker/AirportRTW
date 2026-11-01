@@ -24,7 +24,7 @@ source+='''
 constexpr int kIOReturnNotFound=8;
 constexpr unsigned APPLE80211_C_FLAG_40MHZ=8,APPLE80211_C_FLAG_80MHZ=16,APPLE80211_C_FLAG_160MHZ=32,APPLE80211_C_FLAG_ACTIVE=64;
 struct RTWCore:RTWAwdl::Radio,RTWAwdl::PeerHardware {
- unsigned support=7,adds=0,closes=0;bool receiver=false;
+ unsigned support=7,adds=0,closes=0,prepares=0,extraBlockers=0,visits=0,actions=0,data=0;bool receiver=false,authorized=true;
  void retain(){}void release(){}
  uint32_t awdlHardwareSupport()const{return support;}
  uint32_t awdlPeerCapacity()const override{return 16;}
@@ -32,9 +32,13 @@ struct RTWCore:RTWAwdl::Radio,RTWAwdl::PeerHardware {
  bool addAwdlInterface(const uint8_t*){++adds;return true;}
  bool quiesceAwdlInterface(){++closes;return true;}
  bool setAwdlReceiver(OSObject*p,RTWAwdl::ReceiveHandler){receiver=p;return true;}
- bool transmitAwdlAction(const uint8_t*,size_t,uint16_t){return true;}
- bool transmitAwdlData(const uint8_t*,size_t,uint16_t,uint64_t){return true;}
- RTWAwdl::RadioState awdlRadioState()const override{return {2437,true,false,0};}
+ bool transmitAwdlAction(const uint8_t*,size_t,uint16_t){++actions;return true;}
+ bool transmitAwdlData(const uint8_t*,size_t,uint16_t,uint64_t){++data;return true;}
+ RTWAwdl::RadioState awdlRadioState()const override{
+  return authorized && !extraBlockers ? RTWAwdl::RadioState{2437,true,false,0} : RTWAwdl::RadioState{0,false,false,extraBlockers|(authorized?0U:unsigned(RTW_AWDL_RADIO_PRIMARY_NOT_AUTHORIZED))};
+ }
+ bool prepareAwdlRadio()override{++prepares;return authorized && !extraBlockers;}
+ RTWAwdl::RadioReservation reserveAwdlRadio(uint16_t,uint32_t)override{assert(authorized && !extraBlockers);++visits;return RTWAwdl::RadioReservation::Rejected;}
  bool awdlChannelAllowed(uint16_t f)const override{return f==2437 || f==5220 || f==5745;}
 };
 '''
@@ -43,7 +47,33 @@ for filename in ['Control.hpp','PeerControl.hpp','Interface.hpp','Peers.hpp','Wi
 source+=strip((ROOT/'AirportRTW/WCL/AirportRTWAwdlInterface.cpp').read_text())
 source+=(ROOT/'tests/host/rtw_awdl_interface_scenarios.hpp').read_text().split('struct Control:',1)[0]
 source+=r'''
+static void earlyRegistrationTest(){
+ using namespace AirportRTWAwdl;
+ RTWCore waiting;waiting.support=15;waiting.authorized=false;
+ auto *backend=new NativeBackend(waiting);auto *runtime=Runtime::withOwnedBackend(backend);
+ auto *controller=new IO80211Controller;const uint8_t mac[6]={2,1,2,3,4,5};
+ AirportRTWAwdlInterface::CreationResult creation;
+ auto *interface=AirportRTWAwdlInterface::withController(controller,runtime,mac,&creation);
+ assert(interface && creation.status==0 && !strcmp(creation.stage,"registered"));
+ assert(backend->ready() && !backend->radioReady());
+ apple80211_channel_data logical{};
+ assert(!interface->getCHANNEL(&logical) && logical.channel.channel==6);
+ assert(!backend->currentChannel()); // no claim of physical channel readiness
+ waiting.extraBlockers=RTW_AWDL_RADIO_STOPPED;
+ assert(!backend->ready() && !backend->radioReady());waiting.extraBlockers=0;
+ assert(backend->ready());
+ assert(!interface->enable(0));
+ apple80211_awdl_sync_enabled sync{};sync.version=1;sync.enabled=1;
+ assert(!interface->setAWDL_SYNC_ENABLED(&sync));assert(waiting.prepares && !backend->radioReady());
+ const unsigned blocked=waiting.prepares;runtime->timerFired();assert(waiting.prepares>blocked);
+ assert(!waiting.visits && !waiting.actions && !waiting.data);
+ // Completed primary authorization unblocks scheduling without recreating VIF.
+ waiting.authorized=true;runtime->timerFired();assert(backend->radioReady() && waiting.adds==1);
+ interface->terminate(0);interface->release();runtime->releaseProvider();controller->release();
+ assert(objects==0 && waiting.closes==1);
+}
 int main(){
+ earlyRegistrationTest();
  using namespace AirportRTWAwdl;
  const uint8_t mac[6]={2,1,2,3,4,5};RTWCore hal;
  auto *backend=new NativeBackend(hal);Runtime runtime(*backend);auto *controller=new IO80211Controller;

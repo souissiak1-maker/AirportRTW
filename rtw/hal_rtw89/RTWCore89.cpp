@@ -360,6 +360,20 @@ RTWAwdl::RadioState RTWCore89::awdlRadioState() const
     return state;
 }
 
+bool RTWCore89::prepareAwdlRadio()
+{
+    const auto &ic=sc.sc_ic;
+    if (ic.ic_state==IEEE80211_S_RUN) {
+        const auto *node=ic.ic_bss;
+        if (!node) return false;
+        const bool authorized=!(ic.ic_flags & IEEE80211_F_RSNON) || node->ni_port_valid;
+        if (!rtw89LinuxSetStationAuthorized(&linuxContext,node->ni_bssid,authorized) || !authorized)
+            return false;
+    }
+    const auto state=awdlRadioState();
+    return state.ready && state.frequency && !state.recoveryRequired;
+}
+
 bool RTWCore89::awdlChannelAllowed(uint16_t frequency) const
 {
     return rtw89LinuxAwdlChannelAllowed(&linuxContext, frequency);

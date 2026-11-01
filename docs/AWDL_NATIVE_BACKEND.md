@@ -85,3 +85,29 @@ inline operations using exported calls; the controller helper binds to the
 native `getBSDName` symbol. The v2 packager checks every import against the host
 kernel libraries and fails on any unresolved symbol. Compilation alone did not
 prove loadability. Native registration still needs a reboot with the fixed kext.
+
+
+v3 startup handling separates native control readiness from radio scheduling.
+A valid installed secondary VIF can register while primary authorization or a
+scan is pending; stopped/missing/invalid/recovery states still reject readiness.
+The scheduler has its own adapter and always checks strict radio readiness.
+Enabling synchronization while authorization is pending parks a bounded timer;
+RTW89 mirrors completed primary authorization before scheduling starts. Revoked
+ports and failed driver transitions still block visits/transmission. Host tests
+cover early registration, parked synchronization and subsequent authorization
+without VIF recreation, plus the underlying HAL transition/error paths.
+
+The native factory retains exact stage/status through rollback (provider,
+prepare, virtual init/start, MAC setter/readback, workqueue, datapath, registration,
+publication or BSD name), rather than replacing failures with generic NotReady.
+The collector includes the HAL snapshot taken at secondary creation. Publication
+accepts the same object if the native initializer already published it, rejects
+other objects, and retracts same-object publication during partial-init rollback.
+These fix identified lifecycle defects; the precise v2 hardware failure stage
+was not available, so v3 still requires a hardware registration test.
+
+The native CHANNEL getter now reports the validated AWDL logical schedule even
+while primary authorization is pending, matching the native reference flow.
+It no longer requires a transmit-ready physical radio during initialization.
+The scheduler's channel getter remains physical and independently gated; the
+logical channel response does not grant a reservation or authorize TX.

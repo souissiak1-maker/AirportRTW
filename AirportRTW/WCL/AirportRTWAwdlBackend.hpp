@@ -15,9 +15,28 @@ namespace AirportRTWAwdl {
 // Heap-own with Runtime in the controller. All methods run on nativeWorkLoop;
 // HAL RX uses AirportRTWAwdlInterface::receiveRadio (staging only). Publication
 // is still gated by the HAL's explicit complete quiescence support bit.
-class NativeBackend final : public RuntimeBackend,public RTWAwdl::WindowDriver {
+class NativeBackend final : public RuntimeBackend {
+    // Registration readiness and radio authorization are separate contracts.
+    // The scheduler must never use the more permissive native control gate.
+    class SchedulerDriver final : public RTWAwdl::WindowDriver {
+        NativeBackend &owner_;
+    public:
+        explicit SchedulerDriver(NativeBackend &owner):owner_(owner){}
+        uint64_t nowUs() const override {return owner_.nowUs();}
+        bool ready() const override {return owner_.radioReady();}
+        bool channelAllowed(uint8_t c) const override {return owner_.channelAllowed(c);}
+        uint8_t currentChannel() const override {return owner_.currentChannel();}
+        Reservation reserve(uint8_t c,uint32_t ms) override {return owner_.reserve(c,ms);}
+        bool restore() override {return owner_.restore();}
+        bool wireTime(uint64_t host,uint32_t &wire) const override {return owner_.wireTime(host,wire);}
+        bool armTimer(uint64_t deadline,uint64_t now) override {return owner_.armTimer(deadline,now);}
+        void cancelTimer() override {owner_.cancelTimer();}
+        bool windowStart(const RTWAwdl::ScheduledWindow &w,uint32_t wire) override {return owner_.windowStart(w,wire);}
+        bool windowEnd(const RTWAwdl::ScheduledWindow &w,uint32_t wire) override {return owner_.windowEnd(w,wire);}
+    };
 public:
-    explicit NativeBackend(RTWCore &hal):RuntimeBackend(&peers_),hal_(hal),peers_(hal),scheduler_(state_,*this) {hal_.retain();}
+    using Reservation=RTWAwdl::WindowDriver::Reservation;
+    explicit NativeBackend(RTWCore &hal):RuntimeBackend(&peers_),hal_(hal),peers_(hal),driver_(*this),scheduler_(state_,driver_) {hal_.retain();}
     ~NativeBackend() override {close();hal_.release();}
     uint32_t capabilities() const override {
         const uint32_t support=hal_.awdlHardwareSupport();
@@ -30,8 +49,15 @@ public:
     bool ready() const override {
         if(fault_ || !hal_.awdlPeerCapacity())return false;
         if(!owns_)return true;
+        if(radioReady())return true;
         const auto radio=hal_.awdlRadioState();
-        return radio.ready && radio.frequency && (!radio.recoveryRequired ||
+        const uint32_t waiting=RTW_AWDL_RADIO_PRIMARY_NOT_AUTHORIZED|RTW_AWDL_RADIO_SCANNING;
+        return !radio.recoveryRequired && radio.blockers && !(radio.blockers&~waiting);
+    }
+    RTWAwdl::RadioState creationRadioSnapshot() const {return startupRadio_;}
+    bool radioReady() const {
+        const auto radio=hal_.awdlRadioState();
+        return !fault_ && radio.ready && radio.frequency && (!radio.recoveryRequired ||
             (scheduler_.phase()!=RTWAwdl::WindowScheduler::Phase::Stopped &&
              scheduler_.phase()!=RTWAwdl::WindowScheduler::Phase::Failed));
     }
@@ -39,7 +65,9 @@ public:
         if(owns_ || interface_ || fault_)return kIOReturnBusy;
         auto *native=OSDynamicCast(AirportRTWAwdlInterface,interface);
         if(!native || !RTWAwdl::Election::unicast(mac))return kIOReturnBadArgument;
-        if(!hal_.addAwdlInterface(mac))return kIOReturnNotReady;
+        const bool added=hal_.addAwdlInterface(mac);
+        startupRadio_=hal_.awdlRadioState();
+        if(!added)return kIOReturnNotReady;
         owns_=true;interface_=native;
         RTWAwdl::Election::Sequence plan;plan.count=16;plan.step=3;
         const uint8_t social[3]={6,44,149};unsigned count=0;
@@ -71,7 +99,7 @@ public:
         if(!hal_.setAwdlReceiver(interface_,AirportRTWAwdlInterface::receiveRadio)) {
             active_=false;return kIOReturnError;
         }
-        if(settings_.synchronize && !scheduler_.start(100000,5000)) {
+        if(settings_.synchronize && !startWhenAuthorized()) {
             hal_.setAwdlReceiver(nullptr,nullptr);active_=false;return kIOReturnError;
         }
         return kIOReturnSuccess;
@@ -95,9 +123,11 @@ public:
         return channelAllowed(number);
     }
     bool currentChannel(apple80211_channel &channel) const override {
-        const auto radio=hal_.awdlRadioState();
-        const uint8_t number=AirportRTWAwdl::WindowDriver::channelFor(radio.frequency);
-        if(!radio.ready || !number)return false;
+        // Native AWDL asks for its logical schedule, including during init.
+        // Physical-channel verification remains in SchedulerDriver and HAL TX.
+        if(!owns_ || fault_)return false;
+        const uint8_t number=state_.channel(nowUs());
+        if(!number || !channelAllowed(number))return false;
         describe(number,channel);return true;
     }
     IOReturn configure(const Settings &next) override {return applySettings(next,nullptr);}
@@ -125,7 +155,7 @@ public:
             state_.selectNativeParent(parent,root,fresh);
         }
         state_.elect(now);const bool start=active_ && next.synchronize && !settings_.synchronize;
-        if(start && !scheduler_.start(100000,5000)){fault_=true;return kIOReturnError;}
+        if(start && !startWhenAuthorized()){fault_=true;return kIOReturnError;}
         settings_=next;nextPsf_=0;miCounterValid_=false;
         if(active_ && next.synchronize){pumpDeadline_=now+1;if(!rearm()){fault_=true;return kIOReturnError;}}
         return kIOReturnSuccess;
@@ -173,8 +203,12 @@ public:
     void timerFired() override {
         if(!active_ || servicing_)return;
         servicing_=true;windowDeadline_=0;pumpDeadline_=0;
+        if(settings_.synchronize && scheduler_.phase()==RTWAwdl::WindowScheduler::Phase::Stopped && !startWhenAuthorized())fault_=true;
         scheduler_.service();
-        if(active_ && scheduler_.phase()==RTWAwdl::WindowScheduler::Phase::Open)serviceTransmit();
+        if(scheduler_.phase()==RTWAwdl::WindowScheduler::Phase::Failed)fault_=true;
+        if(active_ && !fault_ && scheduler_.phase()==RTWAwdl::WindowScheduler::Phase::Open)serviceTransmit();
+        if(active_ && settings_.synchronize && !fault_ && scheduler_.phase()==RTWAwdl::WindowScheduler::Phase::Stopped)
+            pumpDeadline_=nowUs()+100000;
         servicing_=false;
         if(active_)rearm();
     }
@@ -307,31 +341,31 @@ public:
         }
     }
 
-    uint64_t nowUs() const override {return runtimeNowUs();}
-    bool channelAllowed(uint8_t channel) const override {
+    uint64_t nowUs() const {return runtimeNowUs();}
+    bool channelAllowed(uint8_t channel) const {
         const uint16_t frequency=AirportRTWAwdl::WindowDriver::frequencyFor(channel);
         return frequency && hal_.awdlChannelAllowed(frequency);
     }
-    uint8_t currentChannel() const override {
+    uint8_t currentChannel() const {
         const auto radio=hal_.awdlRadioState();
         return radio.ready ? AirportRTWAwdl::WindowDriver::channelFor(radio.frequency) : 0;
     }
-    Reservation reserve(uint8_t channel,uint32_t ms) override {
+    Reservation reserve(uint8_t channel,uint32_t ms) {
         const auto result=hal_.reserveAwdlRadio(AirportRTWAwdl::WindowDriver::frequencyFor(channel),ms);
         return result==RTWAwdl::RadioReservation::Granted ? Reservation::Granted :
             result==RTWAwdl::RadioReservation::Rejected ? Reservation::Rejected : Reservation::RecoveryRequired;
     }
-    bool restore() override {return hal_.restoreAwdlRadio();}
-    bool wireTime(uint64_t host,uint32_t &wire) const override {
+    bool restore() {return hal_.restoreAwdlRadio();}
+    bool wireTime(uint64_t host,uint32_t &wire) const {
         if(host>nowUs())return false;wire=uint32_t(host);return true;
     }
-    bool armTimer(uint64_t deadline,uint64_t) override {windowDeadline_=deadline;return rearm();}
-    void cancelTimer() override {windowDeadline_=0;rearm();}
-    bool windowStart(const RTWAwdl::ScheduledWindow &window,uint32_t wire) override {
+    bool armTimer(uint64_t deadline,uint64_t) {windowDeadline_=deadline;return rearm();}
+    void cancelTimer() {windowDeadline_=0;rearm();}
+    bool windowStart(const RTWAwdl::ScheduledWindow &window,uint32_t wire) {
         apple80211_channel channel{};describe(window.channel,channel);
         return interface_ && interface_->postWindowStart(window.counter,window.role,window.parent,window.root,channel,wire);
     }
-    bool windowEnd(const RTWAwdl::ScheduledWindow &,uint32_t wire) override {
+    bool windowEnd(const RTWAwdl::ScheduledWindow &,uint32_t wire) {
         return interface_ && interface_->postWindowEnd(wire);
     }
 private:
@@ -362,6 +396,10 @@ private:
             if(!channelAllowed(s.channels.seqs[i]))return false;++channels;
         }
         return channels!=0;
+    }
+    bool startWhenAuthorized() {
+        if(!hal_.prepareAwdlRadio()){pumpDeadline_=nowUs()+100000;return rearm();}
+        return scheduler_.start(100000,5000);
     }
     bool rearm() {
         if(!interface_)return false;
@@ -423,9 +461,11 @@ private:
     RTWCore &hal_;
     NativePeers peers_;
     RTWAwdl::Election::State state_{};
+    SchedulerDriver driver_;
     RTWAwdl::WindowScheduler scheduler_;
     AirportRTWAwdlInterface *interface_{nullptr};
     Settings settings_{};
+    RTWAwdl::RadioState startupRadio_{};
     RTWAwdl::TxTemplate psf_,mi_,pendingAction_;
     OobSlot oob_[4]{};unsigned oobHead_{0},oobCount_{0};
     uint64_t miStart_{0};uint16_t lastMiEaw_{0};bool miActive_{false},miCounterValid_{false};

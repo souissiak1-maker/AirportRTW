@@ -15,7 +15,8 @@ struct apple80211_channel;
 class AirportRTWAwdlInterface : public IO80211AWDLProtocol {
     OSDeclareDefaultStructors(AirportRTWAwdlInterface)
 public:
-    static AirportRTWAwdlInterface *withController(IO80211Controller *, AirportRTWAwdl::Control *, const uint8_t mac[6]);
+    struct CreationResult {const char *stage{"not-started"};IOReturn status{kIOReturnNotReady};};
+    static AirportRTWAwdlInterface *withController(IO80211Controller *, AirportRTWAwdl::Control *, const uint8_t mac[6],CreationResult * = nullptr);
     bool start(IOService *) override;
     void stop(IOService *) override;
     void free() override;
@@ -129,6 +130,10 @@ public:
     IOReturn setAWDL_RTG_PEER_STATS_CONFIG(apple80211_rtg_peer_stats_cfg *) override;
 
 private:
+    CreationResult *creation_{nullptr}; // borrowed only during the synchronous factory
+    void creationStage(const char *stage,IOReturn status=kIOReturnError) {
+        if(creation_){creation_->stage=stage;creation_->status=status;}
+    }
     IORecursiveLock *controlLock_ {nullptr};
     using NativeAction=IOReturn (*)(OSObject *,void *,void *,void *,void *);
     struct ControlRequest { AirportRTWAwdl::Request request;bool set;void *payload; };

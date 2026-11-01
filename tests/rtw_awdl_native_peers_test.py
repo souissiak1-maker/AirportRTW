@@ -44,7 +44,7 @@ shim=r'''
 #define OSDynamicCast(T,p) dynamic_cast<T*>(p)
 '''
 extra=r'''
-constexpr int kIOReturnBusy=4,kIOReturnUnsupported=5,kIOReturnNoMemory=6,kIOReturnNoResources=7;
+
 '''
 scenario=r'''
 using namespace AirportRTWAwdl;

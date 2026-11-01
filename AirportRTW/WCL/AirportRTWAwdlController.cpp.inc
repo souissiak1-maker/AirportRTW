@@ -20,11 +20,13 @@ IOReturn AirportRTW::createNativeAwdl(apple80211_virt_if_create_data *request)
     if(request->role!=6 || !nativeAwdlAvailable())return kIOReturnUnsupported;
     if(!nativeAwdlLock_ || !IOLockTryLock(nativeAwdlLock_))return kIOReturnBusy;
     IOReturn result=kIOReturnNotReady;
+    const char *stage="infrastructure-readiness";
     setProperty("RTWAwdlCreateStage","requested");
     if(nativeAwdlInterface_)result=EEXIST;
     else if(nativeAwdlAvailable() && fNetIf && bsdInterface &&
             RTWAwdl::Election::unicast(request->mac)) {
         // The native factory can otherwise wait for IOBSD indefinitely.
+        stage="bsd-resource";
         auto *matching=IOService::resourceMatching("IOBSD");
         auto *bsd=matching ? IOService::copyMatchingService(matching) : nullptr;
         OSSafeReleaseNULL(matching);
@@ -32,22 +34,28 @@ IOReturn AirportRTW::createNativeAwdl(apple80211_virt_if_create_data *request)
         if(bsd && hal) {
             auto *backend=new AirportRTWAwdl::NativeBackend(*hal);
             auto *runtime=AirportRTWAwdl::Runtime::withOwnedBackend(backend);
-            if(!runtime){delete backend;result=kIOReturnNoMemory;}
+            if(!runtime){delete backend;stage="runtime-allocation";result=kIOReturnNoMemory;}
             else {
                 setProperty("RTWAwdlCreateStage","initializing");
-                auto *interface=AirportRTWAwdlInterface::withController(this,runtime,request->mac);
+                AirportRTWAwdlInterface::CreationResult creation;
+                auto *interface=AirportRTWAwdlInterface::withController(this,runtime,request->mac,&creation);
+                stage=creation.stage;
+                const auto snapshot=backend->creationRadioSnapshot();
+                setProperty("RTWAwdlStartupRadioBlockers",uint64_t(snapshot.blockers),32);
+                setProperty("RTWAwdlStartupRadioFrequency",uint64_t(snapshot.frequency),32);
+                setProperty("RTWAwdlStartupRadioReady",snapshot.ready);
                 if(interface){nativeAwdlInterface_=interface;nativeAwdlRuntime_=runtime;result=kIOReturnSuccess;}
-                else {runtime->shutdown();runtime->releaseProvider();result=kIOReturnNotReady;}
+                else {runtime->shutdown();runtime->releaseProvider();result=creation.status;}
             }
         }
         OSSafeReleaseNULL(bsd);
-    } else if(!RTWAwdl::Election::unicast(request->mac))result=kIOReturnBadArgument;
+    } else if(!RTWAwdl::Election::unicast(request->mac)){stage="invalid-mac";result=kIOReturnBadArgument;}
     if(result==kIOReturnSuccess || result==EEXIST) {
         const char *name=rtw_awdl_interface_name(nativeAwdlInterface_);
         memset(request->bsd_name,0,sizeof(request->bsd_name));
         if(name)strlcpy(reinterpret_cast<char *>(request->bsd_name),name,sizeof(request->bsd_name));
     }
-    setProperty("RTWAwdlCreateStage",nativeAwdlInterface_ ? "registered" : "not-ready");
+    setProperty("RTWAwdlCreateStage",nativeAwdlInterface_ ? "registered" : stage);
     setProperty("RTWAwdlCreateStatus",uint64_t(uint32_t(result)),32);
     setProperty("RTWAwdlInterfaceReady",nativeAwdlInterface_!=nullptr);
     IOLockUnlock(nativeAwdlLock_);return result;

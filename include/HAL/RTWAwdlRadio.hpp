@@ -19,6 +19,9 @@ public:
     // Defaults describe a HAL without bounded off-channel scheduling. This is
     // deliberately independent of action RX/TX and must not imply AWDL support.
     virtual RadioState awdlRadioState() const { return {}; }
+    // Synchronize primary authorization before starting secondary scheduling.
+    // This never grants a visit or permits TX on its own.
+    virtual bool prepareAwdlRadio() {const auto s=awdlRadioState();return s.ready && s.frequency && !s.recoveryRequired;}
     virtual bool awdlChannelAllowed(uint16_t) const { return false; }
     virtual RadioReservation reserveAwdlRadio(uint16_t, uint32_t) {
         return RadioReservation::Rejected;

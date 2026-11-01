@@ -37,7 +37,19 @@ int main(){
       auto *early=AirportRTWAwdlInterface::withController(c,&control,mac);
       assert(early && control.prepares==1 && control.requests==1);
       virtualInitHook=nullptr;early->terminate(0);early->release();assert(objects==1);}
-    for(unsigned fault=1;fault<=11;++fault){failAt=fault;Control control;auto*i=AirportRTWAwdlInterface::withController(c,&control,mac);assert(!i);assert(!c->current&&objects==1&&c->refs==1);assert(control.shutdowns==(fault>=2));}
+    {Control co;static IO80211Controller *earlyController;earlyController=c;
+      virtualInitHook=[](OSObject*object){earlyController->current=static_cast<IO80211VirtualInterface*>(object);};
+      auto *early=AirportRTWAwdlInterface::withController(c,&co,mac);
+      assert(early && c->current==early);early->terminate(0);early->release();assert(!c->current&&objects==1);
+      failAt=2;assert(!AirportRTWAwdlInterface::withController(c,&co,mac));assert(!c->current&&objects==1);
+      virtualInitHook=nullptr;failAt=0;}
+    const char *stages[]={"","skywalk-init","virtual-init","provider-attach","runtime-prepare","virtual-start",
+        "native-workqueue","datapath-allocation","registration-info","queue-registration","controller-publication","bsd-name"};
+    for(unsigned fault=1;fault<=11;++fault){failAt=fault;Control control;
+      AirportRTWAwdlInterface::CreationResult result;
+      auto*i=AirportRTWAwdlInterface::withController(c,&control,mac,&result);assert(!i);
+      assert(!strcmp(result.stage,stages[fault]) && result.status!=kIOReturnSuccess);
+      assert(!c->current&&objects==1&&c->refs==1);assert(control.shutdowns==(fault>=2));}
     failAt=15;{Control co;assert(!AirportRTWAwdlInterface::withController(c,&co,mac));
       assert(!co.prepares&&!co.shutdowns&&objects==1&&controlLocks==0);}
     for(unsigned fault=20;fault<=21;++fault){failAt=fault;Control co;

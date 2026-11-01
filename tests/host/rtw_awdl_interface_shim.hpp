@@ -17,6 +17,7 @@ constexpr unsigned APPLE80211_C_FLAG_20MHZ=1,APPLE80211_C_FLAG_2GHZ=2,APPLE80211
 #include <algorithm>
 using IOReturn=int;using UInt=unsigned;using UInt64=uint64_t;
 constexpr int kIOReturnSuccess=0,kIOReturnNotReady=1,kIOReturnError=2,kIOReturnBadArgument=3;
+enum {kIOReturnBusy=4,kIOReturnUnsupported=5,kIOReturnNoMemory=6,kIOReturnNoResources=7};
 constexpr unsigned kIOServiceRequired=1,kIOServiceSynchronous=2;
 struct ether_addr{uint8_t octet[6];};
 struct apple80211_channel{uint32_t version,channel,flags;};

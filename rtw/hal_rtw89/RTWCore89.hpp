@@ -50,6 +50,7 @@ public:
         return RTWAwdl::FrameTransport|RTWAwdl::ManualVisits|RTWAwdl::PeerStations|RTWAwdl::QuiescentRemoval;
     }
     RTWAwdl::RadioState awdlRadioState() const override;
+    bool prepareAwdlRadio() override;
     bool awdlChannelAllowed(uint16_t) const override;
     RTWAwdl::RadioReservation reserveAwdlRadio(uint16_t, uint32_t) override;
     bool restoreAwdlRadio() override;

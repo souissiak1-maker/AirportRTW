@@ -12,6 +12,7 @@ def extract(path,start):
 bridge=extract('rtw/hal_rtw89/Rtw89LinuxBridge.cpp','bool rtw89LinuxSetStationAuthorized(')
 core=''.join(extract('rtw/hal_rtw89/RTWCore89.cpp',s) for s in (
     'RTWAwdl::RadioState RTWCore89::awdlRadioState() const',
+    'bool RTWCore89::prepareAwdlRadio()',
     'RTWAwdl::RadioReservation RTWCore89::reserveAwdlRadio(',
     'bool RTWCore89::addAwdlInterface(',
     'bool RTWCore89::transmitAwdlData('))
@@ -43,6 +44,7 @@ struct RTWCore89 {
  struct {ieee80211com sc_ic;}sc;
  Rtw89LinuxContext linuxContext;
  RTWAwdl::RadioState awdlRadioState()const;
+ bool prepareAwdlRadio();
  RTWAwdl::RadioReservation reserveAwdlRadio(uint16_t,uint32_t);
  bool addAwdlInterface(const uint8_t[6]);
  bool transmitAwdlData(const uint8_t*,size_t,uint16_t,uint64_t);
@@ -67,6 +69,15 @@ struct Fixture {
 cases=r'''
 int main(){
  uint8_t mac[6]={2,7,8,9,10,11};
+ {Fixture f;f.node.ni_port_valid=false;
+  assert(!f.core.prepareAwdlRadio()&&!calls&&!reserves);
+  f.node.ni_port_valid=true;
+  assert(f.core.prepareAwdlRadio()&&calls==1&&!reserves); // authorization alone never reserves a visit
+  assert(f.core.prepareAwdlRadio()&&calls==1); // repeated readiness probe is idempotent
+  f.node.ni_port_valid=false;
+  assert(!f.core.prepareAwdlRadio()&&calls==2&&!reserves);}
+ {Fixture f;error=-9;assert(!f.core.prepareAwdlRadio()&&!reserves && calls==1);}
+
  {Fixture f;assert(f.core.addAwdlInterface(mac));assert(calls==1&&adds==1);
   assert(from==IEEE80211_STA_ASSOC&&to==IEEE80211_STA_AUTHORIZED);
   assert(f.core.linuxContext.stationState==IEEE80211_STA_AUTHORIZED&&f.core.awdlRadioState().ready);
