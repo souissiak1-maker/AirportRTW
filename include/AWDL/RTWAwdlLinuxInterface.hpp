@@ -16,6 +16,7 @@ static inline void removeLinuxInterface(ieee80211_hw *hw, InterfaceState &state)
     state.registered = false;
     if (state.hardwareAdded) hw->ops->remove_interface(hw, vif);
     state.hardwareAdded = false;
+    synchronize_rcu(); // registered readers must finish before VIF reclamation
     if (vif->txq) IOFree(vif->txq, state.txqAllocationSize);
     IOFree(vif, state.allocationSize);
     state = {};

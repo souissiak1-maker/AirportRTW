@@ -35,6 +35,7 @@ static bool rtw88_add_vif(ieee80211_vif *) {
     registryLive=true; return true;
 }
 static void rtw88_remove_vif(ieee80211_vif *) { assert(registryLive); registryLive=false; }
+static void synchronize_rcu() {}
 #include <AWDL/RTWAwdlLinuxInterface.hpp>
 static int add(ieee80211_hw *,ieee80211_vif *vif) {
     ++adds; assert(vif->type==NL80211_IFTYPE_ADHOC && vif->no_beacon);

@@ -109,18 +109,14 @@ int fls(unsigned int x)
     return x ? (32 - __builtin_clz(x)) : 0;
 }
 
-/* thread_call_cancel_wait is declared in kern/thread_call.h but is NOT
- * exported as a kext KPI — the linker cannot resolve it externally.
- * Provide a local definition so the symbol resolves at link time.
- * We cancel any pending invocation and busy-wait briefly for any in-flight
- * execution: timer callbacks are short-lived so a small IODelay suffices. */
-boolean_t thread_call_cancel_wait(thread_call_t call)
-{
-    if (!call) return false;
-    thread_call_cancel(call);
-    IODelay(500);   /* 500 µs: enough for a running callback to exit */
-    return thread_call_cancel(call);
-}
+/* Managed callbacks use only public Mach KPIs. No fixed-delay cancellation. */
+#include "RTWManagedCall.h"
+#define thread_call_allocate(f,p) rtw_managed_allocate((f),(p))
+#define thread_call_enter(c) rtw_managed_enter((c),0,false)
+#define thread_call_enter_delayed(c,d) rtw_managed_enter((c),(d),true)
+#define thread_call_cancel(c) rtw_managed_cancel((c),false,false)
+#define thread_call_cancel_wait(c) rtw_managed_cancel((c),true,false)
+#define thread_call_free(c) rtw_managed_free((c))
 
 /* ------------------------------------------------------------------ */
 /*  Global DMA / PCI / USB ops pointers                                 */
@@ -998,6 +994,7 @@ void rtw88_compat_exit(void)
     destroy_workqueue(system_wq);
     destroy_workqueue(system_long_wq);
     system_wq = system_long_wq = NULL;
+    rtw_managed_cleanup();
     g_irq_handler   = NULL;
     g_irq_thread_fn = NULL;
     g_irq_dev_id    = NULL;

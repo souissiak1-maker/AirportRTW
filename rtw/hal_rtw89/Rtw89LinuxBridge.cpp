@@ -698,6 +698,7 @@ static bool releaseAwdlPeer(Rtw89LinuxContext *context, Rtw89AwdlPeerPool::Entry
         if (hw->ops->sta_state(hw,vif,sta,old,next)) return false;
         entry.state=next;
     }
+    synchronize_rcu(); // exclude NAPI readers of the unlinked station
     IOFree(sta,entry.allocationSize);entry={};return true;
 }
 

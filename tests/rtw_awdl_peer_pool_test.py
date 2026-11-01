@@ -35,7 +35,8 @@ static std::set<ieee80211_sta*> registry;
 static bool allocationFails,registerFails,retainFailedAdd,restoreFails;
 static unsigned depth,closed,removed,flushed,upcalls,downcalls,failUp,failDown,restores,capacity=16;
 static int drainError;
-static unsigned drains;
+static unsigned drains,graces;
+static void synchronize_rcu(){assert(depth);++graces;}
 static int rtw89_macos_awdl_tx_drain(ieee80211_hw*){assert(depth);++drains;return drainError;}
 static unsigned rtw89_macos_awdl_peer_capacity(ieee80211_hw*){assert(depth);return capacity;}
 static void*IOMallocZero(size_t n){if(allocationFails){allocationFails=false;return nullptr;}void*p=calloc(1,n);assert(p);allocations[p]=n;return p;}

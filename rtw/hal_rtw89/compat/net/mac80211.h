@@ -562,6 +562,16 @@ enum nl80211_ext_feature_index {
 
 struct regulatory_request;
 
+struct wiphy;
+struct rtw89_wiphy_queue;
+#ifdef __cplusplus
+extern "C" {
+#endif
+bool rtw89_wiphy_queue_init(struct wiphy *);
+void rtw89_wiphy_queue_shutdown(struct wiphy *);
+#ifdef __cplusplus
+}
+#endif
 struct wiphy {
     void *_dev;  /* rtw_dev pointer — stored at offset 0 so wiphy_to_ieee80211_hw
                   * can return (ieee80211_hw*)wiphy and hw->priv (offset 0) = rtwdev */
@@ -571,6 +581,7 @@ struct wiphy {
      * manual scan thread to race chanctx/interface teardown and corrupt the
      * entity management active-role list. */
     struct mutex serialize_lock;
+    struct rtw89_wiphy_queue *workqueue;
     volatile u32 serialize_lock_acquire_count;
     volatile u32 serialize_lock_contention_count;
     struct ieee80211_supported_band *bands[NL80211_NUM_BANDS];
@@ -1807,6 +1818,10 @@ static inline struct ieee80211_hw *ieee80211_alloc_hw(size_t priv_data_len,
         kfree(hw);
         return NULL;
     }
+    if (!rtw89_wiphy_queue_init(hw->wiphy)) {
+        mutex_destroy(&hw->wiphy->serialize_lock);
+        kfree(hw->wiphy);kfree(hw);return NULL;
+    }
     hw->ops = ops;
     hw->conf.chandef.chan   = &s_default_chan;
     hw->conf.chandef.width  = NL80211_CHAN_WIDTH_20_NOHT;
@@ -1822,6 +1837,7 @@ static inline void ieee80211_free_hw(struct ieee80211_hw *hw)
     if (rtw88_get_hw() == hw)
         rtw88_register_hw(NULL);
     if (hw && hw->wiphy) {
+        rtw89_wiphy_queue_shutdown(hw->wiphy);
         mutex_destroy(&hw->wiphy->serialize_lock);
         kfree(hw->wiphy);
     }
