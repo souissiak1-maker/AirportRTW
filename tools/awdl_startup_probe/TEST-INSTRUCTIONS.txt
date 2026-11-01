@@ -1,4 +1,4 @@
-AirportRTW Tahoe AWDL lifecycle probe v1
+AirportRTW Tahoe AWDL lifecycle probe v2
 
 This is a local experimental diagnostic kext, not working AirDrop. It uses
 Release optimization with general verbose diagnostics disabled and a bounded
@@ -12,8 +12,9 @@ Do not use this package to test AirDrop transfers, sleep, or RTW88 behavior.
 1. Keep your current working AirportRTW.kext as a rollback copy.
 2. Replace only AirportRTW.kext in EFI/OC/Kexts. Keep its existing Kernel/Add
    entry enabled. Do not change other kexts, root patches, or boot arguments.
-3. Reboot and allow your usual Wi-Fi network to auto-join. The probe waits up
-   to 30 seconds for that connection. Keep Wi-Fi on for at least 15 seconds.
+3. Reboot and join your usual Wi-Fi network. There is no startup deadline: the
+   probe waits passively until association and security authorization finish.
+   Keep Wi-Fi connected for at least 15 seconds afterward.
 4. Run collect-awdl.command from this extracted folder. If macOS refuses to
    launch it, open Terminal and type /bin/zsh followed by a space, drag the
    command file into Terminal, and press Return. Python 3 must be installed.
@@ -36,11 +37,11 @@ RTWAwdlProbeStage values:
  6 Unavailable          7 Open failed
  8 RX bind failed       9 Radio not ready / primary connection changed
 10 Cleanup failed      11 Cancelled by disable/stop
-12 Timed out waiting for primary Wi-Fi
+12 Reserved (old v1 timeout; no longer emitted)
 RTWAwdlProbeResult retains the original result when cleanup fails.
 A completed test has Stage=5, Listens=10, CleanupSucceeded=true.
 This does not establish firmware/RF correctness or working AirDrop.
 
-The test runs once per controller lifetime. Powering Wi-Fi off cancels it;
-reboot to repeat. If startup or ordinary Wi-Fi regresses, restore your previous
-kext. If there is a panic, keep its report and stop using this diagnostic build.
+The hardware test runs once per controller lifetime. Wi-Fi off/on before its
+first attempt resumes waiting. After an actual attempt, reboot to repeat.
+If startup or ordinary Wi-Fi regresses, restore your previous kext. If there is a panic, keep its report and stop using this diagnostic build.

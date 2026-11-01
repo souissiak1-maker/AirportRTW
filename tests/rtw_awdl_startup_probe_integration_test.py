@@ -33,7 +33,9 @@ struct IOService:OSObject {
  void setProperty(const char*k,uint64_t n,unsigned){assert(depth);numbers[k]=n;}
  void setProperty(const char*k,OSObject*o){objects[k]=o;}
 };
-struct ieee80211com {int ic_state=IEEE80211_S_RUN;uint8_t ic_myaddr[6]={0,1,2,3,4,5};};
+constexpr unsigned IEEE80211_F_RSNON=1;
+struct ieee80211_node {bool ni_port_valid=true;};
+struct ieee80211com {unsigned ic_flags=0;ieee80211_node*ic_bss=nullptr;int ic_state=IEEE80211_S_RUN;uint8_t ic_myaddr[6]={0,1,2,3,4,5};};
 struct RTWCore:OSObject {
  ieee80211com ic;
  bool openOK=true,bindOK=true,closeOK=true,ready=true,recovery=false;
@@ -58,7 +60,7 @@ struct IOTimerEventSource {
   if(fail)return nullptr;++liveTimers;return new IOTimerEventSource{o,a};
  }
  void enable(){enabled=true;}void disable(){enabled=false;}void cancelTimeout(){armed=false;}
- void setTimeoutMS(unsigned n){assert(depth&&n==1000);armed=true;}
+ void setTimeoutMS(unsigned n){assert(depth&&(n==1000||n==5000));armed=true;}
  void release(){--liveTimers;delete this;}
  void fire(){assert(armed&&enabled);armed=false;action(owner,this);}
 };
@@ -122,6 +124,23 @@ int main(){
   me.setProperty("RTWAwdlProbeEnabled",kOSBooleanTrue);me.startAwdlProbe();
   me.awdlProbeTimer_->fire();me.stopAwdlProbe(true);
   assert(core.owner==&other&&!core.unbinds&&!core.closes&&!liveTimers);}
+ {RTWCore core;AirportRTW me;me.fHalService=&core;core.ic.ic_state=0;
+  me.setProperty("RTWAwdlProbeEnabled",kOSBooleanTrue);me.startAwdlProbe();
+  for(unsigned n=0;n<40;++n)me.awdlProbeTimer_->fire();
+  assert(!core.opens&&me.awdlProbeTimer_->armed);
+  // An off/on before connection may resume waiting, without duplicate timers.
+  me.stopAwdlProbe();assert(!me.awdlProbeTimer_->armed);me.startAwdlProbe();
+  assert(me.awdlProbeTimer_->armed&&liveTimers==1);
+  core.ic.ic_state=IEEE80211_S_RUN;core.ic.ic_flags=IEEE80211_F_RSNON;
+  ieee80211_node node;node.ni_port_valid=false;core.ic.ic_bss=&node;
+  me.awdlProbeTimer_->fire();assert(!core.opens&&me.awdlProbeTimer_->armed);
+  assert(me.getProperty("RTWAwdlProbePrimaryReady")==kOSBooleanFalse);
+  node.ni_port_valid=true;me.awdlProbeTimer_->fire();assert(core.opens==1);
+  assert(me.getProperty("RTWAwdlProbePrimaryReady")==kOSBooleanTrue);
+  for(unsigned n=0;n<10;++n)me.awdlProbeTimer_->fire();
+  assert(!core.owner&&core.closes==1&&!me.awdlProbeTimer_->armed);
+  me.stopAwdlProbe();me.startAwdlProbe();assert(!me.awdlProbeTimer_->armed&&core.opens==1);
+  me.stopAwdlProbe(true);assert(!liveTimers);}
  for(bool failTimer:{false,true}){
   RTWCore core;AirportRTW me;me.fHalService=&core;me.setProperty("RTWAwdlProbeEnabled",kOSBooleanTrue);
   loop.failAdd=!failTimer;IOTimerEventSource::fail=failTimer;me.startAwdlProbe();

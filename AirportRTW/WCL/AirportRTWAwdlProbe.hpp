@@ -12,7 +12,9 @@ public:
     AirportRTWAwdlProbe(RTWCore &core,IOService &owner):state(*this),core_(core),owner_(owner) {}
     bool primaryReady() const override {
         const auto *ic=core_.get80211Controller();
-        return ic && ic->ic_state==IEEE80211_S_RUN;
+        return ic && ic->ic_state==IEEE80211_S_RUN &&
+            (!(ic->ic_flags & IEEE80211_F_RSNON) ||
+             (ic->ic_bss && ic->ic_bss->ni_port_valid));
     }
     uint32_t capacity() const override {return core_.awdlPeerCapacity();}
     bool open() override {
@@ -53,7 +55,10 @@ public:
         else __atomic_fetch_add(&data_,uint32_t(1),__ATOMIC_RELAXED);
     }
     void publish() const {
-        owner_.setProperty("RTWAwdlProbeRevision",uint64_t(1),32);
+        owner_.setProperty("RTWAwdlProbeRevision",uint64_t(2),32);
+        const auto *ic=core_.get80211Controller();
+        owner_.setProperty("RTWAwdlProbePrimaryState",uint64_t(ic?ic->ic_state:UINT32_MAX),32);
+        owner_.setProperty("RTWAwdlProbePrimaryReady",primaryReady()?kOSBooleanTrue:kOSBooleanFalse);
         owner_.setProperty("RTWAwdlProbeStage",uint64_t(state.stage()),32);
         owner_.setProperty("RTWAwdlProbeResult",uint64_t(state.result()),32);
         owner_.setProperty("RTWAwdlProbeWaits",uint64_t(state.waits()),32);

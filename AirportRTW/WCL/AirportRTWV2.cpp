@@ -1250,6 +1250,9 @@ IOReturn AirportRTW::enableAdapter(IONetworkInterface *netif)
 #endif
     watchdogTimer->setTimeoutMS(kWatchDogTimerPeriod);
     watchdogTimer->enable();
+#if defined(AIRPORT_WCL) && __IO80211_TARGET == __MAC_26_0 && (RTW_DIAGNOSTICS || RTW_AWDL_STARTUP_PROBE)
+    startAwdlProbe();
+#endif
     return kIOReturnSuccess;
 }
 
@@ -1439,8 +1442,12 @@ void AirportRTW::startAwdlProbe()
 {
     // Opt-in only in a dedicated diagnostic package. Normal Debug/Release builds
     // retain their previous hardware behavior and native publication gates.
-    if (getProperty("RTWAwdlProbeEnabled") != kOSBooleanTrue || awdlProbe_ || !_fWorkloop)
+    if (getProperty("RTWAwdlProbeEnabled") != kOSBooleanTrue || !_fWorkloop)
         return;
+    if (awdlProbe_) {
+        _fWorkloop->runAction(awdlProbeAction,this,nullptr,nullptr,nullptr,nullptr);
+        return;
+    }
     auto *core=OSDynamicCast(RTWCore,fHalService);
     if (!core) return;
     awdlProbe_=new AirportRTWAwdlProbe(*core,*this);
@@ -1475,7 +1482,12 @@ IOReturn AirportRTW::awdlProbeAction(OSObject *owner,void *operation,void *,void
         me->awdlProbe_->state.stop();break;
     }
     me->awdlProbe_->publish();
-    if (again) {me->awdlProbeTimer_->enable();me->awdlProbeTimer_->setTimeoutMS(1000);}
+    if (again) {
+        me->awdlProbeTimer_->enable();
+        // No hardware work or log traffic while waiting for a late connection.
+        me->awdlProbeTimer_->setTimeoutMS(me->awdlProbe_->state.stage()==
+            RTWAwdl::StartupProbe::Stage::Waiting ? 5000 : 1000);
+    }
     return kIOReturnSuccess;
 }
 

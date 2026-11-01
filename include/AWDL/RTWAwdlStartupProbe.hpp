@@ -26,16 +26,20 @@ public:
     };
     explicit StartupProbe(StartupProbeDriver &driver):driver_(driver) {}
     bool arm() {
-        if (stage_ != Stage::Idle) return false; // once per controller lifetime
+        // Power-off before the first hardware attempt may cancel waiting.
+        // Re-enable can resume it; an actual test attempt is never repeated.
+        if (stage_ != Stage::Idle && !(stage_==Stage::Cancelled && !tested_)) return false;
         stage_=Stage::Waiting;return true;
     }
     bool tick() {
         if (stage_ == Stage::Waiting) {
-            if (++waits_ > 30) {stage_=Stage::TimedOut;return false;}
+            // Waiting is passive and has no boot deadline. Only the actual
+            // hardware test is bounded; login/auto-join may happen much later.
+            if (waits_ != UINT32_MAX) ++waits_;
             if (!driver_.primaryReady()) return true;
             capacity_=driver_.capacity();
             if (!capacity_) {stage_=Stage::Unavailable;return false;}
-            stage_=Stage::Opening;attempted_=true;
+            stage_=Stage::Opening;attempted_=true;tested_=true;
             if (!driver_.open()) {finish(Stage::OpenFailed);return false;}
             stage_=Stage::Binding;
             if (!driver_.bind()) {finish(Stage::BindFailed);return false;}
@@ -75,7 +79,7 @@ private:
     StartupProbeDriver &driver_;
     Stage stage_{Stage::Idle},result_{Stage::Idle};
     uint32_t waits_{0},listens_{0},capacity_{0};
-    bool attempted_{false},cleaned_{false};
+    bool attempted_{false},cleaned_{false},tested_{false};
 };
 }
 #endif

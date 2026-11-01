@@ -10,6 +10,7 @@ fixture=[{'RTW88AuthTxCount':3,'RTW88RxDecryptFailures':2,
  'RTW88PMKWord':1234,'RTW88Key':'secret-key','RTW88Payload':b'secret-payload',
  'RTWIdentityNameCalls':2,'RTWIdentityNameLength':4,
  'RTWIdentityNamePayload':b'secret-identity','RTWIdentityPeerResult':0,
+ 'RTWAwdlProbePrimaryState':4, 'RTWAwdlProbePrimaryReady':True,
  'RTWAwdlProbeStage':5, 'RTWAwdlProbeActionRx':20, 'RTWAwdlProbePeerCapacity':14,
  'RTWAwdlProbeCleanupSucceeded':True, 'RTWAwdlProbePayload':b'secret-frame',
  'RTWAwdlSyncDecoded':3,'RTWAwdlSyncDecodeFailures':1,'RTWAwdlTimedActions':2,'RTWAwdlLastRadioTimestamp':4294967280,
@@ -22,6 +23,8 @@ filtered=module.filter_registry(fixture);text=json.dumps(filtered)
 assert filtered[0]['RTW88AuthTxCount']==3
 assert filtered[0]['RTWAwdlValidActions']==4
 assert filtered[0]['RTWAwdlProbeStage']==5
+assert filtered[0]['RTWAwdlProbePrimaryState']==4
+assert filtered[0]['RTWAwdlProbePrimaryReady'] is True
 assert filtered[0]['RTWAwdlProbeActionRx']==20
 assert filtered[0]['RTWAwdlProbePeerCapacity']==14
 assert filtered[0]['RTWAwdlProbeCleanupSucceeded'] is True

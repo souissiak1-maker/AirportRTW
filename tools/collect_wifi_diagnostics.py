@@ -40,6 +40,7 @@ def filter_registry(tree):
                              'RTWAwdlLastRadioTimestamp', 'RTWAwdlProbeEnabled',
                              'RTWAwdlProbeSetupFailed', 'RTWAwdlProbeRevision',
                              'RTWAwdlProbeStage', 'RTWAwdlProbeResult',
+                             'RTWAwdlProbePrimaryState', 'RTWAwdlProbePrimaryReady',
                              'RTWAwdlProbeWaits', 'RTWAwdlProbeListens',
                              'RTWAwdlProbePeerCapacity', 'RTWAwdlProbeCleanupSucceeded',
                              'RTWAwdlProbeActionRx', 'RTWAwdlProbeDataRx'} and isinstance(item, (int, bool)):

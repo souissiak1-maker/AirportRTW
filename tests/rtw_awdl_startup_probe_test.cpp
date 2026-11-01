@@ -26,8 +26,10 @@ int main(){
      assert(p.listens()==10&&d.events==std::vector<char>({'o','b','u','c'}));
      p.stop();assert(!p.arm()&&!p.tick()&&d.closes==1);}
     {Driver d;d.primary=false;Probe p(d);assert(p.arm());
-     for(unsigned i=0;i<30;++i)assert(p.tick());
-     assert(!p.tick()&&p.stage()==Stage::TimedOut&&!d.opens&&!d.closes);}
+     for(unsigned i=0;i<1000;++i)assert(p.tick());
+     assert(p.stage()==Stage::Waiting&&!d.opens&&!d.closes);
+     d.primary=true;assert(p.tick()&&p.stage()==Stage::Listening&&d.opens==1);
+     p.stop();assert(d.closes==1&&!p.arm());}
     {Driver d;d.cap=0;Probe p(d);p.arm();assert(!p.tick());
      assert(p.stage()==Stage::Unavailable&&!d.opens&&!d.closes);}
     for(auto failure:{Stage::OpenFailed,Stage::BindFailed,Stage::RadioFailed}){
@@ -40,7 +42,8 @@ int main(){
     {Driver d;d.openOK=false;d.closeOK=false;Probe p(d);p.arm();assert(!p.tick());
      assert(p.stage()==Stage::CleanupFailed&&p.result()==Stage::OpenFailed&&!p.cleanupSucceeded());
      p.stop();assert(!p.arm()&&!p.tick()&&d.closes==1);}
-    {Driver d;Probe p(d);p.arm();p.stop();assert(p.stage()==Stage::Cancelled&&!d.opens&&!d.closes);}
+    {Driver d;Probe p(d);p.arm();p.stop();assert(p.stage()==Stage::Cancelled&&!d.opens&&!d.closes);
+     assert(p.arm());assert(p.tick()&&p.stage()==Stage::Listening);p.stop();assert(!p.arm()&&d.closes==1);}
     {Driver d;Probe p(d);p.arm();assert(p.tick());d.primary=false;
      assert(!p.tick()&&p.stage()==Stage::RadioFailed&&d.closes==1);}
     {Driver d;Probe p(d);p.arm();assert(p.tick());p.stop();
