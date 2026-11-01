@@ -6,6 +6,8 @@
 #include <net80211/ieee80211_he_policy.hpp>
 
 #include <IOKit/IOLib.h>
+#include <kern/clock.h>
+#include <mach/mach_time.h>
 #include <AWDL/RTWAwdlRxPolicy.hpp>
 
 extern "C" {
@@ -26,6 +28,7 @@ void rtw89_macos_get_tx_rate(struct ieee80211_hw *, struct RTWTxRate *);
 int rtw89_macos_awdl_reserve(struct ieee80211_hw *, struct ieee80211_vif *,
                             const struct ieee80211_channel *, unsigned);
 int rtw89_macos_awdl_restore(struct ieee80211_hw *, struct ieee80211_vif *);
+int rtw89_macos_awdl_tx_drain(struct ieee80211_hw *);
 unsigned int rtw89_macos_awdl_channel_blockers(struct ieee80211_hw *, struct ieee80211_vif *);
 unsigned int rtw89_macos_awdl_peer_capacity(struct ieee80211_hw *);
 bool rtw89_macos_awdl_peer_retained(struct ieee80211_vif *, struct ieee80211_sta *);
@@ -37,6 +40,7 @@ void rtw89_macos_peer_audit(struct ieee80211_hw *, struct ieee80211_vif *, uint3
 
 #include <AWDL/RTWAwdlLinuxInterface.hpp>
 #include <AWDL/RTWAwdlLinuxActionTx.hpp>
+#include <AWDL/RTWAwdlLinuxDataTx.hpp>
 #include <AWDL/RTWAwdlReceiveRegistration.hpp>
 
 struct Rtw89AwdlPeerPool {
@@ -682,6 +686,10 @@ static bool releaseAwdlPeer(Rtw89LinuxContext *context, Rtw89AwdlPeerPool::Entry
     auto *vif=static_cast<ieee80211_vif *>(context->awdlInterface.vif);
     auto *sta=static_cast<ieee80211_sta *>(entry.station);
     entry.retiring=true;
+    // Data submissions require this gate and a manual visit. After a successful
+    // restore the queues have already drained; while away drain before freeing
+    // any station potentially referenced by DMA/MAC, including failed cleanup.
+    if (context->awdlTxGate.isPaused() && rtw89_macos_awdl_tx_drain(hw)) return false;
     if (entry.registered) { rtw88_remove_sta(sta);entry.registered=false; }
     if (entry.state>=IEEE80211_STA_NONE) rtw89_macos_flush_rx_ba(sta);
     while (entry.state>IEEE80211_STA_NOTEXIST) {
@@ -823,6 +831,38 @@ bool rtw89LinuxAwdlTransmitAction(Rtw89LinuxContext *context,
     if (!channel || !awdlFrequencyChannel(hw,channel->center_freq)) return false;
     return RTWAwdl::submitLinuxAction(hw,vif,frame,length,expectedFrequency,channel) ==
         RTWAwdl::ActionSubmission::Submitted;
+}
+
+static uint64_t awdlDataNowUs()
+{
+    uint64_t ns=0;absolutetime_to_nanoseconds(mach_absolute_time(),&ns);return ns/1000;
+}
+
+bool rtw89LinuxAwdlTransmitData(Rtw89LinuxContext *context,const uint8_t *frame,
+                                size_t length,uint16_t frequency,uint64_t deadlineUs)
+{
+    if (!context || !context->hardware || !frame || length<26) return false;
+    auto *hw=static_cast<ieee80211_hw *>(context->hardware);
+    WiphyGuard guard(hw);
+    if (!context->started || !context->interfaceAdded || context->scanning || context->awdlRecovery ||
+        !context->awdlInterface.hardwareAdded || !context->awdlInterface.registered ||
+        !context->awdlTxGate.isPaused() || !context->awdlTxGate.drained()) return false;
+    auto *vif=static_cast<ieee80211_vif *>(context->awdlInterface.vif);
+    if (!vif || !rtw89_macos_awdl_needs_restore(hw,vif)) return false;
+    auto *channel=rtw89_macos_awdl_current_channel(hw,vif);
+    if (!channel || !awdlFrequencyChannel(hw,channel->center_freq)) return false;
+    ieee80211_sta *peer=nullptr;
+    if (!(frame[4]&1)) {
+        if (!context->awdlPeers) return false;
+        for (const auto &entry:context->awdlPeers->entries)
+            if (entry.station && entry.registered && !entry.retiring &&
+                entry.state==IEEE80211_STA_AUTHORIZED && !memcmp(entry.address,frame+4,6)) {
+                peer=static_cast<ieee80211_sta *>(entry.station);break;
+            }
+        if (!peer) return false;
+    }
+    return RTWAwdl::submitLinuxData(hw,vif,peer,frame,length,frequency,channel,deadlineUs,awdlDataNowUs)==
+        RTWAwdl::DataSubmission::Submitted;
 }
 
 bool rtw89LinuxAwdlSetReceiver(Rtw89LinuxContext *context,

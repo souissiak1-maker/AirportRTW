@@ -55,6 +55,7 @@ public:
     void removeAwdlInterface() override;
     bool setAwdlReceiver(OSObject *, RTWAwdl::ReceiveHandler) override;
     bool transmitAwdlAction(const uint8_t *, size_t, uint16_t) override;
+    bool transmitAwdlData(const uint8_t *, size_t, uint16_t, uint64_t) override;
 
     void clearScanningFlags() override;
     IOReturn setMulticastList(IOEthernetAddress *addresses, int count) override;

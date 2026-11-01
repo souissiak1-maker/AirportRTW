@@ -36,5 +36,8 @@ public:
     virtual bool quiesceAwdlInterface() { return false; }
     virtual bool setAwdlReceiver(OSObject *, RTWAwdl::ReceiveHandler) = 0;
     virtual bool transmitAwdlAction(const uint8_t *, size_t, uint16_t) = 0;
+    // Copied raw IPv6 AWDL MPDU, valid only inside an owned manual visit.
+    // deadlineUs is software monotonic microseconds; true is not an RF ACK.
+    virtual bool transmitAwdlData(const uint8_t *, size_t, uint16_t, uint64_t) { return false; }
 };
 #endif

@@ -34,6 +34,9 @@ static std::map<void*,size_t> allocations;
 static std::set<ieee80211_sta*> registry;
 static bool allocationFails,registerFails,retainFailedAdd,restoreFails;
 static unsigned depth,closed,removed,flushed,upcalls,downcalls,failUp,failDown,restores,capacity=16;
+static int drainError;
+static unsigned drains;
+static int rtw89_macos_awdl_tx_drain(ieee80211_hw*){assert(depth);++drains;return drainError;}
 static unsigned rtw89_macos_awdl_peer_capacity(ieee80211_hw*){assert(depth);return capacity;}
 static void*IOMallocZero(size_t n){if(allocationFails){allocationFails=false;return nullptr;}void*p=calloc(1,n);assert(p);allocations[p]=n;return p;}
 static void IOFree(void*p,size_t n){assert(p&&allocations.at(p)==n);allocations.erase(p);free(p);}
@@ -152,6 +155,15 @@ int main(){
   f.c.awdlRecovery=true;assert(rtw89LinuxAwdlPeerCapacity(&f.c)==0);}
  assert(rtw89LinuxAwdlPeerCapacity(nullptr)==0);
  assert(rtw89LinuxAwdlSetPeer(nullptr,remote,true)==Result::Invalid);
+ {Fixture f;assert(rtw89LinuxAwdlSetPeer(&f.c,remote,true)==Result::Success);
+  f.c.awdlTxGate.paused=true;drainError=-EIO;
+  auto *station=f.c.awdlPeers->entries[0].station;
+  assert(rtw89LinuxAwdlSetPeer(&f.c,remote,false)==Result::RecoveryRequired);
+  assert(f.c.awdlPeers->entries[0].station==station&&registry.count(static_cast<ieee80211_sta*>(station)));
+  assert(!downcalls&&!flushed&&f.c.awdlPeers->entries[0].retiring);
+  drainError=0;
+  assert(rtw89LinuxAwdlSetPeer(&f.c,remote,false)==Result::Success);
+  assert(!f.c.awdlPeers->entries[0].station&&downcalls==4&&drains>=2);}
  puts("PASS: production RTW89 peer allocation, registration, rollback, bounded capacity and checked quiesce");
 }
 '''

@@ -13,7 +13,8 @@ bridge=extract('rtw/hal_rtw89/Rtw89LinuxBridge.cpp','bool rtw89LinuxSetStationAu
 core=''.join(extract('rtw/hal_rtw89/RTWCore89.cpp',s) for s in (
     'RTWAwdl::RadioState RTWCore89::awdlRadioState() const',
     'RTWAwdl::RadioReservation RTWCore89::reserveAwdlRadio(',
-    'bool RTWCore89::addAwdlInterface('))
+    'bool RTWCore89::addAwdlInterface(',
+    'bool RTWCore89::transmitAwdlData('))
 shim=r'''
 #include <HAL/RTWAwdlRadio.hpp>
 #include <cassert>
@@ -44,6 +45,7 @@ struct RTWCore89 {
  RTWAwdl::RadioState awdlRadioState()const;
  RTWAwdl::RadioReservation reserveAwdlRadio(uint16_t,uint32_t);
  bool addAwdlInterface(const uint8_t[6]);
+ bool transmitAwdlData(const uint8_t*,size_t,uint16_t,uint64_t);
 };
 static RTWAwdl::RadioState rtw89LinuxAwdlRadioState(const Rtw89LinuxContext*c){
  bool ready=c->stationState==IEEE80211_STA_AUTHORIZED;
@@ -54,6 +56,8 @@ static RTWAwdl::RadioReservation rtw89LinuxAwdlReserveRadio(Rtw89LinuxContext*c,
  assert(c->stationState==IEEE80211_STA_AUTHORIZED&&f==2437&&ms==20);++reserves;
  return RTWAwdl::RadioReservation::Granted;
 }
+static unsigned dataCalls;
+static bool rtw89LinuxAwdlTransmitData(Rtw89LinuxContext*,const uint8_t*,size_t,uint16_t,uint64_t){++dataCalls;return true;}
 struct Fixture {
  Ops ops{transition};ieee80211_hw hw{&ops};ieee80211_vif vif;ieee80211_sta sta;ieee80211_node node;
  RTWCore89 core{{{IEEE80211_S_RUN,IEEE80211_F_RSNON,&node}},{&hw,&vif,&sta,true,IEEE80211_STA_ASSOC}};
@@ -103,6 +107,9 @@ int main(){
  {Fixture f;f.ops.sta_state=nullptr;
   assert(!rtw89LinuxSetStationAuthorized(&f.core.linuxContext,f.node.ni_bssid,true)&&!calls);}
  assert(!rtw89LinuxSetStationAuthorized(nullptr,mac,true));
+ {Fixture f;dataCalls=0;assert(f.core.transmitAwdlData(mac,6,2437,20000)&&dataCalls==1);
+  f.node.ni_port_valid=false;assert(!f.core.transmitAwdlData(mac,6,2437,20000)&&dataCalls==1);
+  f.core.sc.sc_ic.ic_bss=nullptr;assert(!f.core.transmitAwdlData(mac,6,2437,20000)&&dataCalls==1);}
  puts("PASS: actual AWDL entry points mirror completed port authorization, bind the peer, and reject revocation/driver faults");
 }
 '''

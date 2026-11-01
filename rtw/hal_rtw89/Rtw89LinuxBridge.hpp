@@ -165,6 +165,7 @@ bool rtw89LinuxAwdlSetReceiver(Rtw89LinuxContext *, OSObject *, RTWAwdl::Receive
 // true transfers a copied frame to the driver; it does not report an RF ACK.
 bool rtw89LinuxAwdlTransmitAction(Rtw89LinuxContext *, const uint8_t *,
                                        size_t, uint16_t expectedFrequency);
+bool rtw89LinuxAwdlTransmitData(Rtw89LinuxContext *, const uint8_t *, size_t, uint16_t, uint64_t);
 
 
 

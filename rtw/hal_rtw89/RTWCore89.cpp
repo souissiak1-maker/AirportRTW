@@ -425,6 +425,17 @@ bool RTWCore89::transmitAwdlAction(const uint8_t *frame, size_t length,
     return rtw89LinuxAwdlTransmitAction(&linuxContext, frame, length, frequency);
 }
 
+bool RTWCore89::transmitAwdlData(const uint8_t *frame,size_t length,
+                                uint16_t frequency,uint64_t deadlineUs)
+{
+    // A port revocation after reservation must stop data immediately. Keep
+    // restoration independent so an invalid port cannot strand the radio.
+    const auto &ic=sc.sc_ic;
+    if (ic.ic_state==IEEE80211_S_RUN && (ic.ic_flags & IEEE80211_F_RSNON) &&
+        (!ic.ic_bss || !ic.ic_bss->ni_port_valid)) return false;
+    return rtw89LinuxAwdlTransmitData(&linuxContext,frame,length,frequency,deadlineUs);
+}
+
 void RTWCore89::clearScanningFlags()
 {
     sc.sc_flags &= ~RTW89_FLAG_SCANNING;
