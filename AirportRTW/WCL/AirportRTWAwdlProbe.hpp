@@ -33,7 +33,10 @@ public:
         return okay;
     }
     bool radioReady() const override {
-        const auto radio=core_.awdlRadioState();
+        // Save under the HAL's lock, before cleanup changes every VIF flag.
+        radio_=core_.awdlRadioState();sampled_=true;
+        if (radioChecks_!=UINT32_MAX) ++radioChecks_;
+        const auto &radio=radio_;
         return radio.ready && !radio.recoveryRequired && radio.frequency;
     }
     void unbind() override {
@@ -55,7 +58,7 @@ public:
         else __atomic_fetch_add(&data_,uint32_t(1),__ATOMIC_RELAXED);
     }
     void publish() const {
-        owner_.setProperty("RTWAwdlProbeRevision",uint64_t(2),32);
+        owner_.setProperty("RTWAwdlProbeRevision",uint64_t(3),32);
         const auto *ic=core_.get80211Controller();
         owner_.setProperty("RTWAwdlProbePrimaryState",uint64_t(ic?ic->ic_state:UINT32_MAX),32);
         owner_.setProperty("RTWAwdlProbePrimaryReady",primaryReady()?kOSBooleanTrue:kOSBooleanFalse);
@@ -64,6 +67,12 @@ public:
         owner_.setProperty("RTWAwdlProbeWaits",uint64_t(state.waits()),32);
         owner_.setProperty("RTWAwdlProbeListens",uint64_t(state.listens()),32);
         owner_.setProperty("RTWAwdlProbePeerCapacity",uint64_t(state.peerCapacity()),32);
+        owner_.setProperty("RTWAwdlProbeRadioSampled",sampled_?kOSBooleanTrue:kOSBooleanFalse);
+        owner_.setProperty("RTWAwdlProbeRadioReady",radio_.ready?kOSBooleanTrue:kOSBooleanFalse);
+        owner_.setProperty("RTWAwdlProbeRadioRecoveryRequired",radio_.recoveryRequired?kOSBooleanTrue:kOSBooleanFalse);
+        owner_.setProperty("RTWAwdlProbeRadioFrequency",uint64_t(radio_.frequency),32);
+        owner_.setProperty("RTWAwdlProbeRadioBlockers",uint64_t(radio_.blockers),32);
+        owner_.setProperty("RTWAwdlProbeRadioChecks",uint64_t(radioChecks_),32);
         owner_.setProperty("RTWAwdlProbeCleanupSucceeded",state.cleanupSucceeded()?kOSBooleanTrue:kOSBooleanFalse);
         owner_.setProperty("RTWAwdlProbeActionRx",uint64_t(__atomic_load_n(&actions_,__ATOMIC_RELAXED)),32);
         owner_.setProperty("RTWAwdlProbeDataRx",uint64_t(__atomic_load_n(&data_,__ATOMIC_RELAXED)),32);
@@ -76,6 +85,9 @@ private:
     RTWAwdl::ReceiveHandler receive_{nullptr};
     bool receiving_{false},ownsInterface_{false};
     uint32_t actions_{0},data_{0};
+    mutable RTWAwdl::RadioState radio_{};
+    mutable uint32_t radioChecks_{0};
+    mutable bool sampled_{false};
 };
 #endif
 #endif

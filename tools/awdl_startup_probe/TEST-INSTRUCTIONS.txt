@@ -1,4 +1,4 @@
-AirportRTW Tahoe AWDL lifecycle probe v2
+AirportRTW Tahoe AWDL lifecycle probe v3
 
 This is a local experimental diagnostic kext, not working AirDrop. It uses
 Release optimization with general verbose diagnostics disabled and a bounded
@@ -45,3 +45,26 @@ This does not establish firmware/RF correctness or working AirDrop.
 The hardware test runs once per controller lifetime. Wi-Fi off/on before its
 first attempt resumes waiting. After an actual attempt, reboot to repeat.
 If startup or ordinary Wi-Fi regresses, restore your previous kext. If there is a panic, keep its report and stop using this diagnostic build.
+
+Revision 3 retains a radio snapshot from the last readiness check BEFORE cleanup.
+RTWAwdlProbeRadioSampled indicates whether that check ran. When sampled, inspect
+RadioReady, RadioRecoveryRequired, RadioFrequency, RadioChecks and RadioBlockers.
+RadioBlockers is a bitmask; several decimal values can be added together:
+      1 HAL/hardware unavailable
+      2 hardware not started
+      4 primary hardware interface not added
+      8 scanning active
+     16 recovery required
+     32 secondary VIF missing
+     64 secondary VIF not added to hardware
+    128 secondary VIF not registered with the compatibility bridge
+    256 primary HAL station not yet authorized
+    512 primary transmit gate paused
+   1024 current channel unavailable (see additional channel-specific bits)
+   2048 secondary ROC active but not a native manual visit
+   4096 secondary ROC active without confirmed on-channel state
+   8192 another VIF has an active ROC
+  16384 home channel definition missing
+  32768 invalid secondary VIF type/configuration
+These are observations, not a relaxation of the readiness checks. Channel details
+are queried only when the bridge is otherwise ready, under the same HAL lock.

@@ -11,6 +11,7 @@ hooks=source[source.index('void AirportRTW::startAwdlProbe()'):source.rindex('#e
 shim=r'''
 #include <AWDL/RTWAwdlStartupProbe.hpp>
 #include <HAL/RTWAwdlReceive.hpp>
+#include <HAL/RTWAwdlRadio.hpp>
 #include <cassert>
 #include <cstring>
 #include <string>
@@ -48,9 +49,9 @@ struct RTWCore:OSObject {
   assert(depth);if(!o){++unbinds;if(owner)owner->release();owner=nullptr;handler=nullptr;return true;}
   assert(!owner&&h);if(!bindOK)return false;owner=o;handler=h;owner->retain();return true;
  }
- struct Radio {bool ready,recoveryRequired;uint16_t frequency;};
- Radio awdlRadioState(){assert(depth);return {ready,recovery,2437};}
- bool quiesceAwdlInterface(){assert(depth&&!owner&&!handler);++closes;return closeOK;}
+ RTWAwdl::RadioState awdlRadioState(){assert(depth);return {2437,ready,recovery,
+   unsigned(!ready?RTW_AWDL_RADIO_PRIMARY_NOT_AUTHORIZED:recovery?RTW_AWDL_RADIO_TX_PAUSED:0)};}
+ bool quiesceAwdlInterface(){assert(depth&&!owner&&!handler);++closes;ready=true;recovery=false;return closeOK;}
 };
 struct IOTimerEventSource {
  using Action=void(*)(OSObject*,IOTimerEventSource*);
@@ -113,6 +114,16 @@ int main(){
     mode==5?RTWAwdl::StartupProbe::Stage::Unavailable:RTWAwdl::StartupProbe::Stage::RadioFailed));
   assert(core.opens==unsigned(mode!=5)&&core.closes==unsigned(mode!=5&&mode!=1));
   if(!mode){assert(me.numbers["RTWAwdlProbeActionRx"]==10);assert(me.numbers["RTWAwdlProbePeerCapacity"]==14);}
+  if(mode==3){
+   assert(me.getProperty("RTWAwdlProbeRadioReady")==kOSBooleanFalse);
+   assert(me.numbers["RTWAwdlProbeRadioBlockers"]==RTW_AWDL_RADIO_PRIMARY_NOT_AUTHORIZED);
+   assert(me.numbers["RTWAwdlProbeRadioChecks"]==1&&core.ready);
+  }
+  if(mode==6){
+   assert(me.getProperty("RTWAwdlProbeRadioRecoveryRequired")==kOSBooleanTrue);
+   assert(me.numbers["RTWAwdlProbeRadioBlockers"]==RTW_AWDL_RADIO_TX_PAUSED&&!core.recovery);
+  }
+  if(!mode)assert(me.numbers["RTWAwdlProbeRadioChecks"]==11&&me.numbers["RTWAwdlProbeRadioBlockers"]==0);
   me.stopAwdlProbe(true);assert(!me.awdlProbe_&&!me.awdlProbeTimer_&&!liveTimers);
  }
  {RTWCore core;AirportRTW me;me.fHalService=&core;me.setProperty("RTWAwdlProbeEnabled",kOSBooleanTrue);

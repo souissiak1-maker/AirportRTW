@@ -2,6 +2,7 @@
 #ifndef RTW_AWDL_RADIO_HPP
 #define RTW_AWDL_RADIO_HPP
 #include <stdint.h>
+#include <HAL/RTWAwdlRadioStatus.h>
 namespace RTWAwdl {
 // One serialized owner on the controller workloop. Frequencies are MHz; no
 // Apple or Linux channel structures cross the shared HAL boundary.
@@ -9,6 +10,7 @@ struct RadioState {
     uint16_t frequency {0};
     // recoveryRequired means restoration is owed, including a live visit.
     bool ready {false}, recoveryRequired {false};
+    uint32_t blockers {RTW_AWDL_RADIO_UNAVAILABLE};
 };
 enum class RadioReservation { Granted, Rejected, RecoveryRequired };
 class Radio {

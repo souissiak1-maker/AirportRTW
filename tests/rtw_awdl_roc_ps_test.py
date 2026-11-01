@@ -10,6 +10,7 @@ glue=(ROOT/'rtw/hal_rtw89/driver/Senmiko.c').read_text()
 code+=glue[glue.index('int rtw89_macos_awdl_reserve('):glue.index('#endif /* RTW89_MACOS */')]
 shim=r'''
 #include <cassert>
+#include <HAL/RTWAwdlRadioStatus.h>
 #include <vector>
 #include <utility>
 #include <cstdio>
@@ -197,6 +198,26 @@ int main(){
     assert(!rtw89_macos_awdl_current_channel(nullptr,&secondary.native));
     assert(rtw89_macos_awdl_reserve(nullptr,&secondary.native,&channel,50)==-EINVAL);
     assert(rtw89_macos_awdl_restore(nullptr,&secondary.native)==-EINVAL);
+    for(auto *v:dev.vifs)v->roc.state=RTW89_ROC_IDLE;
+    hw.conf.chandef.chan=&home;
+    assert(!rtw89_macos_awdl_channel_blockers(&hw,&secondary.native));
+    hw.conf.chandef.chan=nullptr;
+    assert(rtw89_macos_awdl_channel_blockers(&hw,&secondary.native)==RTW_AWDL_RADIO_HOME_CHANNEL_MISSING);
+    primary.roc.state=RTW89_ROC_NORMAL;
+    assert(rtw89_macos_awdl_channel_blockers(&hw,&secondary.native)==RTW_AWDL_RADIO_OTHER_ROC_ACTIVE);
+    secondary.roc.state=RTW89_ROC_NORMAL;
+    for(bool manual:{false,true})for(bool on:{false,true}){
+     secondary.roc.manual=manual;secondary.roc.on_channel=on;
+     auto flags=rtw89_macos_awdl_channel_blockers(&hw,&secondary.native);
+     unsigned expected=(manual?0:RTW_AWDL_RADIO_SECONDARY_ROC_NOT_MANUAL)|
+         (on?0:RTW_AWDL_RADIO_SECONDARY_ROC_NOT_ON_CHANNEL);
+     assert(flags==expected);
+     assert(bool(rtw89_macos_awdl_current_channel(&hw,&secondary.native))==!expected);
+    }
+    assert(rtw89_macos_awdl_channel_blockers(nullptr,&secondary.native)==RTW_AWDL_RADIO_UNAVAILABLE);
+    assert(rtw89_macos_awdl_channel_blockers(&hw,nullptr)==RTW_AWDL_RADIO_SECONDARY_INVALID);
+    secondary.native.no_beacon=false;
+    assert(rtw89_macos_awdl_channel_blockers(&hw,&secondary.native)==RTW_AWDL_RADIO_SECONDARY_INVALID);
     puts("PASS: RTW89 secondary ROC uses real associated stations and rejects failed PS admission");
 }
 '''
@@ -204,5 +225,5 @@ with tempfile.TemporaryDirectory(prefix='rtw-roc-ps-') as tmp:
     source=Path(tmp)/'test.cpp';binary=Path(tmp)/'test'
     source.write_text(shim+code+cases)
     subprocess.run(['xcrun','clang++','-std=c++20','-Wall','-Wextra','-Werror',
-                    '-Wno-unused-parameter','-fsanitize=address,undefined',str(source),'-o',str(binary)],check=True)
+                    '-Wno-unused-parameter','-fsanitize=address,undefined','-I'+str(ROOT/'include'),str(source),'-o',str(binary)],check=True)
     subprocess.run([str(binary)],check=True,timeout=15)

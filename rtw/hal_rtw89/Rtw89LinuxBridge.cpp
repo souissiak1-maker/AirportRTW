@@ -26,6 +26,7 @@ void rtw89_macos_get_tx_rate(struct ieee80211_hw *, struct RTWTxRate *);
 int rtw89_macos_awdl_reserve(struct ieee80211_hw *, struct ieee80211_vif *,
                             const struct ieee80211_channel *, unsigned);
 int rtw89_macos_awdl_restore(struct ieee80211_hw *, struct ieee80211_vif *);
+unsigned int rtw89_macos_awdl_channel_blockers(struct ieee80211_hw *, struct ieee80211_vif *);
 unsigned int rtw89_macos_awdl_peer_capacity(struct ieee80211_hw *);
 bool rtw89_macos_awdl_peer_retained(struct ieee80211_vif *, struct ieee80211_sta *);
 bool rtw89_macos_awdl_needs_restore(struct ieee80211_hw *, struct ieee80211_vif *);
@@ -620,6 +621,17 @@ RTWAwdl::RadioState rtw89LinuxAwdlRadioState(const Rtw89LinuxContext *context)
     auto *hw=static_cast<ieee80211_hw *>(context->hardware);
     WiphyGuard guard(hw);
     auto *vif=static_cast<ieee80211_vif *>(context->awdlInterface.vif);
+    state.blockers=0;
+    if (!context->started) state.blockers|=RTW_AWDL_RADIO_STOPPED;
+    if (!context->interfaceAdded) state.blockers|=RTW_AWDL_RADIO_PRIMARY_MISSING;
+    if (context->scanning) state.blockers|=RTW_AWDL_RADIO_SCANNING;
+    if (context->awdlRecovery) state.blockers|=RTW_AWDL_RADIO_RECOVERY;
+    if (!vif) state.blockers|=RTW_AWDL_RADIO_SECONDARY_MISSING;
+    if (!context->awdlInterface.hardwareAdded) state.blockers|=RTW_AWDL_RADIO_SECONDARY_NOT_ADDED;
+    if (!context->awdlInterface.registered) state.blockers|=RTW_AWDL_RADIO_SECONDARY_NOT_REGISTERED;
+    if (context->station && context->stationState<IEEE80211_STA_AUTHORIZED)
+        state.blockers|=RTW_AWDL_RADIO_PRIMARY_NOT_AUTHORIZED;
+    if (context->awdlTxGate.isPaused()) state.blockers|=RTW_AWDL_RADIO_TX_PAUSED;
     state.recoveryRequired=context->awdlRecovery || context->awdlTxGate.isPaused();
     state.ready=context->started && context->interfaceAdded && !context->scanning && !context->awdlRecovery &&
         context->awdlInterface.hardwareAdded && context->awdlInterface.registered && vif &&
@@ -627,6 +639,8 @@ RTWAwdl::RadioState rtw89LinuxAwdlRadioState(const Rtw89LinuxContext *context)
     if (state.ready) {
         auto *channel=rtw89_macos_awdl_current_channel(hw,vif);
         if (channel) state.frequency=channel->center_freq;
+        else state.blockers|=RTW_AWDL_RADIO_CHANNEL_MISSING |
+            rtw89_macos_awdl_channel_blockers(hw,vif);
     }
     return state;
 }

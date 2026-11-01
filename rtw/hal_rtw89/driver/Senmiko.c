@@ -24,6 +24,7 @@
 #include "ps.h"
 #include "txrx.h"
 #include "util.h"
+#include "../../../include/HAL/RTWAwdlRadioStatus.h"
 
 /* The kext-facing API (declared in rtw88_compat.h, force-included) passes
  * an opaque "struct rtw_dev *"; here it is really a struct rtw89_dev. */
@@ -909,6 +910,38 @@ rtw89_macos_awdl_current_channel(struct ieee80211_hw *hw, struct ieee80211_vif *
         if (other != rtwvif && other->roc.state != RTW89_ROC_IDLE)
             return NULL;
     return hw->conf.chandef.chan;
+}
+
+/* RAM-only explanation of current_channel's refusal. Called with the same
+ * WiphyGuard as the channel query, before the probe tears the VIF down.
+ * No state changes, register accesses or additional firmware commands.
+ */
+unsigned int rtw89_macos_awdl_channel_blockers(struct ieee80211_hw *hw,
+                                              struct ieee80211_vif *vif)
+{
+    struct rtw89_dev *dev;
+    struct rtw89_vif *rtwvif, *other;
+    unsigned int blockers = 0;
+
+    if (!hw || !hw->priv)
+        return RTW_AWDL_RADIO_UNAVAILABLE;
+    if (!vif || vif->type != NL80211_IFTYPE_ADHOC || !vif->no_beacon)
+        return RTW_AWDL_RADIO_SECONDARY_INVALID;
+    dev = to_rtw89(hw->priv);
+    rtwvif = vif_to_rtwvif(vif);
+    if (rtwvif->roc.state != RTW89_ROC_IDLE) {
+        if (!rtwvif->roc.manual)
+            blockers |= RTW_AWDL_RADIO_SECONDARY_ROC_NOT_MANUAL;
+        if (!rtwvif->roc.on_channel)
+            blockers |= RTW_AWDL_RADIO_SECONDARY_ROC_NOT_ON_CHANNEL;
+        return blockers;
+    }
+    rtw89_for_each_rtwvif(dev, other)
+        if (other != rtwvif && other->roc.state != RTW89_ROC_IDLE)
+            return RTW_AWDL_RADIO_OTHER_ROC_ACTIVE;
+    if (!hw->conf.chandef.chan)
+        blockers |= RTW_AWDL_RADIO_HOME_CHANNEL_MISSING;
+    return blockers;
 }
 
 #endif /* RTW89_MACOS */

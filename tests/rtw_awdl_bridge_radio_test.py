@@ -48,6 +48,9 @@ static int rtw89_macos_awdl_reserve(ieee80211_hw*,ieee80211_vif*,ieee80211_chann
 }
 static bool rtw89_macos_awdl_needs_restore(ieee80211_hw*,ieee80211_vif*){assert(depth);return recovering;}
 static ieee80211_channel *rtw89_macos_awdl_current_channel(ieee80211_hw*hw,ieee80211_vif*){assert(depth);return driverLive?liveChannel:(recovering?nullptr:hw->conf.chandef.chan);}
+static unsigned rtw89_macos_awdl_channel_blockers(ieee80211_hw*,ieee80211_vif*){
+ assert(depth);return RTW_AWDL_RADIO_HOME_CHANNEL_MISSING;
+}
 static int rtw89_macos_awdl_restore(ieee80211_hw*,ieee80211_vif*){
     assert(depth);++restores;if(!restoreError){driverLive=recovering=false;}return restoreError;
 }
@@ -122,6 +125,20 @@ int main(){
     {Fixture f;assert(f.c.awdlTxGate.enter());
      assert(rtw89LinuxAwdlReserve(&f.c,5180,50)==-EBUSY&&sleeps==100&&!reserves);
      assert(!f.c.awdlTxGate.isPaused()&&wakes==1);f.c.awdlTxGate.leave();}
+    {Fixture f;assert(!rtw89LinuxAwdlRadioState(&f.c).blockers);}
+    {Fixture f;f.c.started=false;assert(rtw89LinuxAwdlRadioState(&f.c).blockers==RTW_AWDL_RADIO_STOPPED);}
+    {Fixture f;f.c.interfaceAdded=false;assert(rtw89LinuxAwdlRadioState(&f.c).blockers==RTW_AWDL_RADIO_PRIMARY_MISSING);}
+    {Fixture f;f.c.scanning=true;assert(rtw89LinuxAwdlRadioState(&f.c).blockers==RTW_AWDL_RADIO_SCANNING);}
+    {Fixture f;f.c.awdlRecovery=true;assert(rtw89LinuxAwdlRadioState(&f.c).blockers==RTW_AWDL_RADIO_RECOVERY);}
+    {Fixture f;f.c.awdlInterface.vif=nullptr;assert(rtw89LinuxAwdlRadioState(&f.c).blockers==RTW_AWDL_RADIO_SECONDARY_MISSING);}
+    {Fixture f;f.c.awdlInterface.hardwareAdded=false;assert(rtw89LinuxAwdlRadioState(&f.c).blockers==RTW_AWDL_RADIO_SECONDARY_NOT_ADDED);}
+    {Fixture f;f.c.awdlInterface.registered=false;assert(rtw89LinuxAwdlRadioState(&f.c).blockers==RTW_AWDL_RADIO_SECONDARY_NOT_REGISTERED);}
+    {Fixture f;f.c.station=&f;f.c.stationState=3;assert(rtw89LinuxAwdlRadioState(&f.c).blockers==RTW_AWDL_RADIO_PRIMARY_NOT_AUTHORIZED);}
+    {Fixture f;f.c.awdlTxGate.pause();auto state=rtw89LinuxAwdlRadioState(&f.c);
+     assert(state.ready&&state.recoveryRequired&&state.blockers==RTW_AWDL_RADIO_TX_PAUSED);}
+    {Fixture f;f.hw.conf.chandef.chan=nullptr;auto state=rtw89LinuxAwdlRadioState(&f.c);
+     assert(state.ready&&!state.frequency&&state.blockers==(RTW_AWDL_RADIO_CHANNEL_MISSING|RTW_AWDL_RADIO_HOME_CHANNEL_MISSING));}
+    {Fixture f;f.c.hardware=nullptr;assert(rtw89LinuxAwdlRadioState(&f.c).blockers==RTW_AWDL_RADIO_UNAVAILABLE);}
     puts("PASS: RTW89 bridge drains primary submissions and retains recovery ownership on failure");
 }
 '''
