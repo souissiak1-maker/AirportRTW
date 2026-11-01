@@ -117,7 +117,7 @@ test+='''
     }
     scheduledControl.onTick=nullptr;scheduledControl.context=nullptr;
     scheduledInterface->terminate(0);scheduledInterface->release();scheduledController->release();
-    assert(objects==0&&!IOTimerEventSource::last);
+    assert(objects==0&&!IOTimerEventSource::last&&controlLocks==0);
     puts("PASS: native interface capability gate, rollback, all 63 requests, enable/disable and teardown");
 }
 '''

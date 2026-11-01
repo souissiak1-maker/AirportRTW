@@ -2,6 +2,7 @@
 #ifndef AIRPORTRTW_AWDL_RUNTIME_HPP
 #define AIRPORTRTW_AWDL_RUNTIME_HPP
 #include "AirportRTWAwdlControl.hpp"
+#include "AirportRTWAwdlPeerControl.hpp"
 #include "AirportRTWAwdlWindowDriver.hpp"
 #if defined(AIRPORT_WCL) && __IO80211_TARGET == __MAC_26_0
 #include <libkern/libkern.h>
@@ -28,7 +29,16 @@ struct Settings {
 // No implementation may advertise a capability supplied only by a stub.
 class RuntimeBackend {
 public:
+    // Optional concrete native peer owner; backend/controller owns its lifetime.
+    explicit RuntimeBackend(PeerControl *peers=nullptr):peers_(peers) {}
     virtual ~RuntimeBackend() = default;
+    bool peersReady() const { return !peers_ || peers_->ready(); }
+    IOReturn bindPeers(IO80211VirtualInterface *interface,const uint8_t mac[6]) {
+        return peers_ ? peers_->bind(interface,mac) : kIOReturnSuccess;
+    }
+    IOReturn enablePeers(bool enabled) { return peers_ ? peers_->enable(enabled) : kIOReturnSuccess; }
+    void revokePeers() { if (peers_) peers_->revoke(); }
+    void abandonPeers() { if (peers_) peers_->abandon(); }
     virtual uint32_t capabilities() const = 0;
     virtual bool ready() const = 0;
     // open may fail part way; close must unwind that case as well. No RX callback
@@ -54,12 +64,16 @@ public:
     // successful cache change must update data admission/hardware peer ownership
     // and deliver the native cache completion. Copy the borrowed request first.
     // Unsupported defaults keep incomplete backends from claiming peer support.
-    virtual IOReturn cachePeer(uint32_t, const uint8_t[6]) { return kIOReturnUnsupported; }
-    virtual IOReturn registerTraffic(const apple80211_awdl_peer_traffic_registration &) {
-        return kIOReturnUnsupported;
+    virtual IOReturn cachePeer(uint32_t operation, const uint8_t address[6]) {
+        return peers_ ? peers_->cache(operation,address) : kIOReturnUnsupported;
     }
-    virtual uint32_t peerCapacity() const { return 0; }
+    virtual IOReturn registerTraffic(const apple80211_awdl_peer_traffic_registration &d) {
+        return peers_ ? peers_->traffic(d) : kIOReturnUnsupported;
+    }
+    virtual uint32_t peerCapacity() const { return peers_ ? peers_->capacity() : 0; }
     virtual void timerFired() {}
+private:
+    PeerControl *peers_;
 };
 
 // Concrete native control provider. Publication still requires a complete,
@@ -69,53 +83,74 @@ public:
     explicit Runtime(RuntimeBackend &backend) : backend_(backend) {}
     ~Runtime() override { shutdown(); }
     uint32_t capabilities() const override { return backend_.capabilities(); }
-    bool ready() const override { return !stopped_ && backend_.ready(); }
+    bool ready() const override { return !stopped_ && backend_.ready() && backend_.peersReady(); }
     IOReturn prepare(IO80211VirtualInterface *interface, const uint8_t mac[6]) override {
         if (stopped_ || opened_ || !interface || !validAddress(mac))
             return kIOReturnBadArgument;
         if (!ready() || (capabilities() & requiredCapabilities) != requiredCapabilities)
             return kIOReturnNotReady;
+        interface_=interface;
+        Call call(*this);
         attempted_ = true;
         const IOReturn result = backend_.open(interface,mac);
         if (result != kIOReturnSuccess) { shutdown(); return result; }
+        if (stopped_) return kIOReturnNotReady;
+        const IOReturn peerResult=backend_.bindPeers(interface,mac);
+        if (peerResult!=kIOReturnSuccess) {shutdown();return peerResult;}
         for (unsigned i=0;i<6;++i) address_[i]=mac[i];
         if (!backend_.configuration(settings_)) { shutdown(); return kIOReturnNotReady; }
+        if (stopped_) return kIOReturnNotReady;
         opened_=true;
         return kIOReturnSuccess;
     }
     IOReturn enable(bool value) override {
-        if (!opened_ || stopped_ || (value && !backend_.ready())) return kIOReturnNotReady;
+        if (!opened_ || stopped_ || (value && !ready())) return kIOReturnNotReady;
         if (value==enabled_) return kIOReturnSuccess;
+        Call call(*this);
+        if (!value) {enabled_=false;backend_.revokePeers();}
         const IOReturn result=backend_.activate(value);
-        if (result==kIOReturnSuccess) enabled_=value;
-        return result;
+        if (stopped_) return kIOReturnNotReady;
+        if (!value) {
+            const IOReturn peers=backend_.enablePeers(false);
+            return result!=kIOReturnSuccess ? result : peers;
+        }
+        if (result!=kIOReturnSuccess) return result;
+        const IOReturn peers=backend_.enablePeers(true);
+        if (peers!=kIOReturnSuccess) {backend_.activate(false);return peers;}
+        if (stopped_) return kIOReturnNotReady;
+        enabled_=true;return kIOReturnSuccess;
     }
     void shutdown() override {
         if (stopped_) return;
-        stopped_=true; enabled_=false; opened_=false;
-        if (attempted_) { backend_.close(); attempted_=false; }
-        pendingTemplate_.clear(); settings_={};
-        for (auto &b:address_) b=0;
+        stopped_=true;enabled_=false;opened_=false;
+        backend_.revokePeers();
+        // Native cache completion may re-enter shutdown from postMessage. Keep
+        // backend/VIF ownership until the outer request/dispatch has returned.
+        if (!calls_) finishShutdown();
     }
     IOReturn setAddress(const uint8_t mac[6]) override {
         if (!validAddress(mac)) return kIOReturnBadArgument;
         if (!opened_ || stopped_) return kIOReturnNotReady;
         if (enabled_) return kIOReturnBusy;
+        Call call(*this);
         const IOReturn result=backend_.setAddress(mac);
+        if (stopped_) return kIOReturnNotReady;
         if (result==kIOReturnSuccess)
             for (unsigned i=0;i<6;++i) address_[i]=mac[i];
         return result;
     }
     bool transmitEthernet(const uint8_t *bytes, size_t length) override {
-        return opened_ && enabled_ && !stopped_ && backend_.ready() && RTWAwdl::DataCodec::validEthernet(bytes,length) &&
-            backend_.transmitEthernet(bytes,length);
+        if (!opened_ || !enabled_ || !ready() || !RTWAwdl::DataCodec::validEthernet(bytes,length)) return false;
+        Call call(*this);
+        return backend_.transmitEthernet(bytes,length);
     }
     void timerFired() override {
-        if (opened_ && enabled_ && !stopped_) backend_.timerFired();
+        if (opened_ && enabled_ && !stopped_) {Call call(*this);backend_.timerFired();}
     }
     IOReturn request(Request request, bool set, void *payload) override {
         if (!payload) return kIOReturnBadArgument;
         if (!opened_ || stopped_) return kIOReturnNotReady;
+        Call call(*this);
         if (!backend_.configuration(settings_)) return kIOReturnNotReady;
         if (!set) return get(request,payload);
         uint32_t version=0; memcpy(&version,payload,sizeof(version));
@@ -205,6 +240,32 @@ public:
         return result;
     }
 private:
+    struct Call {
+        Runtime &owner;
+        IO80211VirtualInterface *interface;
+        explicit Call(Runtime &runtime):owner(runtime),interface(runtime.interface_) {
+            if(interface)interface->retain();
+            ++owner.calls_;
+        }
+        ~Call() {
+            if (!--owner.calls_ && owner.stopped_) owner.finishShutdown();
+            if(interface)interface->release();
+        }
+    };
+    void finishShutdown() {
+        auto *interface=interface_;
+        if(interface)interface->retain();
+        if (attempted_) {
+            attempted_=false;
+            // close owns the producer drain and the entire HAL VIF/peer pool.
+            // Do not delete peers before close has stopped those producers.
+            backend_.abandonPeers();backend_.close();
+        }
+        interface_=nullptr;
+        pendingTemplate_.clear();settings_={};
+        for(auto &b:address_)b=0;
+        if(interface)interface->release();
+    }
     static bool validAddress(const uint8_t *mac) {
         if (!mac || (mac[0]&1)) return false;
         uint8_t bits=0; for (unsigned i=0;i<6;++i) bits|=mac[i];
@@ -228,7 +289,7 @@ private:
         case Request::STATE: {
             auto &d=*static_cast<apple80211_state_data *>(payload);
             d={}; d.version=APPLE80211_VERSION;
-            d.state=enabled_ && backend_.ready() ? APPLE80211_S_RUN : APPLE80211_S_INIT;
+            d.state=enabled_ && ready() ? APPLE80211_S_RUN : APPLE80211_S_INIT;
             return kIOReturnSuccess;
         }
         case Request::CHANNEL: {
@@ -272,9 +333,11 @@ private:
         return kIOReturnSuccess;
     }
     RuntimeBackend &backend_;
+    IO80211VirtualInterface *interface_ {nullptr};
     Settings settings_ {};
     RTWAwdl::TxTemplate pendingTemplate_;
     uint8_t address_[6] {};
+    unsigned calls_ {0};
     bool attempted_ {false}, opened_ {false}, enabled_ {false}, stopped_ {false};
 };
 }

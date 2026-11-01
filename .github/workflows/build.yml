@@ -74,6 +74,7 @@ jobs:
           /tmp/rtw_awdl_window_scheduler_test
           python3 tests/rtw_awdl_interface_test.py
           python3 tests/rtw_awdl_runtime_test.py
+          python3 tests/rtw_awdl_native_peers_test.py
           python3 tests/rtw_awdl_roc_ps_test.py
           python3 tests/rtw_awdl_bridge_radio_test.py
           python3 tests/rtw_awdl_window_driver_test.py

@@ -17,7 +17,8 @@ constexpr int RTW_MIN_DBM = -100;
 class RTWCore : public ItlHalService,
                 public ItlDriverInfo,
                 public ItlDriverController,
-                public RTWAwdl::Radio {
+                public RTWAwdl::Radio,
+                public RTWAwdl::PeerHardware {
     OSDeclareAbstractStructors(RTWCore)
 public:
     ItlDriverInfo *getDriverInfo() override { return this; }
@@ -32,10 +33,6 @@ public:
     virtual void removeAwdlInterface() = 0;
     // Peer operations run on the owner workloop after stopping peer TX. A
     // recovery error retains hardware allocations until cleanup/device teardown.
-    virtual uint32_t awdlPeerCapacity() const { return 0; }
-    virtual RTWAwdl::PeerResult setAwdlPeer(const uint8_t[6], bool) {
-        return RTWAwdl::PeerResult::Unsupported;
-    }
     virtual bool quiesceAwdlInterface() { return false; }
     virtual bool setAwdlReceiver(OSObject *, RTWAwdl::ReceiveHandler) = 0;
     virtual bool transmitAwdlAction(const uint8_t *, size_t, uint16_t) = 0;

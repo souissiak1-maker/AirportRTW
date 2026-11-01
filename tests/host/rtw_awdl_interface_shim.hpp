@@ -1,5 +1,6 @@
 // IOKit/family lifecycle adapters; real ABI layout is checked by the kernel build.
 #include <cassert>
+#include <atomic>
 #include <cstdint>
 #include <cstring>
 #include <cstdio>
@@ -14,8 +15,15 @@ struct apple80211_channel{uint32_t version,channel,flags;};
 enum IO80211LinkState{Down=1,Up=2};enum apple80211_wme_ac:unsigned int;
 static unsigned objects=0,baseStarts=0,baseStops=0,services=0,addressUpdates=0;
 static unsigned failAt=0;
+using IORecursiveLock=std::recursive_mutex;
+static unsigned controlLocks=0;
+static IORecursiveLock*IORecursiveLockAlloc(){if(failAt==15)return nullptr;++controlLocks;return new IORecursiveLock;}
+static void IORecursiveLockFree(IORecursiveLock*p){assert(controlLocks);--controlLocks;delete p;}
+static void IORecursiveLockLock(IORecursiveLock*p){p->lock();}
+static void IORecursiveLockUnlock(IORecursiveLock*p){p->unlock();}
+
 struct OSObject{
-    unsigned refs=1;OSObject(){++objects;}virtual~OSObject(){--objects;}
+    std::atomic<unsigned> refs{1};OSObject(){++objects;}virtual~OSObject(){--objects;}
     virtual bool init(){return true;}virtual void free(){delete this;}
     void retain(){++refs;}void release(){assert(refs);if(!--refs)free();}
 };

@@ -7,6 +7,7 @@
 #include "AirportRTWAwdlControl.hpp"
 #include "AirportRTWAwdlDatapath.hpp"
 #include <IOKit/IOTimerEventSource.h>
+#include <IOKit/IOLocks.h>
 
 struct apple80211_channel;
 
@@ -49,6 +50,10 @@ public:
     bool postWindowStart(uint16_t counter,uint32_t role,const uint8_t parent[6],
                          const uint8_t root[6],const apple80211_channel &,uint32_t wireTime);
     bool postWindowEnd(uint32_t wireTime);
+    bool canPostPeerCacheCompletion() const {
+        return enabled_ && !stopping_ && registered_ && baseStarted_;
+    }
+    bool postPeerCacheCompletion(const uint8_t address[6],bool present);
     bool armWindowTimer(uint64_t deadlineUs,uint64_t nowUs);
     void cancelWindowTimer();
     IOWorkLoop *nativeWorkLoop() const { return loop_; }
@@ -117,6 +122,18 @@ public:
     IOReturn setAWDL_RTG_PEER_STATS_CONFIG(apple80211_rtg_peer_stats_cfg *) override;
 
 private:
+    IORecursiveLock *controlLock_ {nullptr};
+    using NativeAction=IOReturn (*)(OSObject *,void *,void *,void *,void *);
+    struct ControlRequest { AirportRTWAwdl::Request request;bool set;void *payload; };
+    struct ToggleRequest { bool enable;unsigned flags; };
+    struct AddressRequest { ether_addr *address;uintptr_t result; };
+    IOReturn gatedAction(NativeAction,void *);
+    static IOReturn dispatchGated(OSObject *,void *,void *,void *,void *);
+    static IOReturn toggleGated(OSObject *,void *,void *,void *,void *);
+    static IOReturn addressGated(OSObject *,void *,void *,void *,void *);
+    IOReturn enableImpl(unsigned int);
+    IOReturn disableImpl(unsigned int);
+    uintptr_t setMacAddressImpl(ether_addr &);
     bool initialize(IO80211Controller *, AirportRTWAwdl::Control *, const uint8_t *);
     bool publish();
     static IOReturn stopGated(OSObject *, void *, void *, void *, void *);

@@ -26,4 +26,16 @@ int main(){
     assert(E::end(0xaabbccdd,end,40));
     for(unsigned i=0;i<40;++i)
         assert(end[i]==(i>=4&&i<8?uint8_t(0xaabbccddU>>(8*(7-i))):0));
+    uint8_t completion[E::cacheSize];
+    assert(E::cache(root,true,completion,sizeof(completion)));
+    assert(completion[0]==1&&completion[4]==1&&!memcmp(completion+8,root,6));
+    for(unsigned i=0;i<E::cacheSize;++i)
+        if(i!=0&&i!=4&&(i<8||i>=14))assert(completion[i]==0);
+    assert(E::cache(completion+8,false,completion,sizeof(completion)));
+    assert(completion[4]==3&&!memcmp(completion+8,root,6));
+    for(size_t n=0;n<=E::cacheSize+1;++n)
+        if(n!=E::cacheSize)assert(!E::cache(root,true,completion,n));
+    assert(!E::cache(nullptr,true,completion,E::cacheSize));
+    assert(!E::cache(root,true,nullptr,E::cacheSize));
+    root[0]|=1;assert(!E::cache(root,true,completion,E::cacheSize));
 }

@@ -76,7 +76,11 @@ def verify_family(path):
     traffic_code = bytes_at(traffic_manager,0x1000)
     assert bytes.fromhex('4d8d7e04') in traffic_code, 'Inline traffic MAC offset changed'
     assert bytes.fromhex('418b86a8000000') in traffic_code, 'Traffic active offset changed'
-    print('PASS: installed x86_64 family matches AWDL slots and native peer-traffic size/offsets')
+    cache_handler=values['__ZN25IO80211P2PDataPathManager26handleCacheControlMessagesEP29apple80211_peer_cache_control']
+    cache_code=bytes_at(cache_handler,48)
+    assert bytes.fromhex('8b5604') in cache_code, 'Cache completion operation offset changed'
+    assert bytes.fromhex('83fa03') in cache_code and bytes.fromhex('83fa01') in cache_code, 'Cache completion values changed'
+    print('PASS: installed x86_64 family matches AWDL slots, traffic layout and cache completion values')
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
@@ -90,6 +94,7 @@ def main():
     with tempfile.TemporaryDirectory(prefix='rtw-awdl-abi-') as directory:
         source = Path(directory) / 'probe.cpp'
         source.write_text('#include "'+str(ROOT/'AirportRTW/WCL/AirportRTWAwdlRuntime.hpp')+'"\n'
+                          '#include "'+str(ROOT/'AirportRTW/WCL/AirportRTWAwdlPeers.hpp')+'"\n'
                           '#include <Airport/apple80211_var.h>\n'
                           '#include <Airport/apple80211_ioctl.h>\n'
                           'static_assert(APPLE80211_M_AWDL_AVAILABILITY_WINDOW_START==41, "native start event");\n'

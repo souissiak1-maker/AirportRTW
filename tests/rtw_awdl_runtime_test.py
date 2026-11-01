@@ -33,7 +33,7 @@ shim=r'''
 using IOReturn=int;
 constexpr int kIOReturnSuccess=0,kIOReturnNotReady=1,kIOReturnError=2;
 constexpr int kIOReturnBadArgument=3,kIOReturnBusy=4,kIOReturnUnsupported=5;
-struct IO80211VirtualInterface {};
+struct IO80211VirtualInterface {void retain(){}void release(){}};
 struct apple80211_channel { uint32_t version,channel,flags; };
 '''
 scenario=r'''
@@ -188,6 +188,7 @@ with tempfile.TemporaryDirectory(prefix='rtw-awdl-runtime-') as tmp:
     source=Path(tmp)/'test.cpp';binary=Path(tmp)/'test'
     source.write_text(shim+'\n'.join(structs)+
         strip((ROOT/'AirportRTW/WCL/AirportRTWAwdlControl.hpp').read_text())+
+        strip((ROOT/'AirportRTW/WCL/AirportRTWAwdlPeerControl.hpp').read_text())+
         strip((ROOT/'AirportRTW/WCL/AirportRTWAwdlRuntime.hpp').read_text())+scenario)
     subprocess.run(['xcrun','clang++','-std=c++14','-Wall','-Wextra','-Werror',
         '-fsanitize=address,undefined','-DAIRPORT_WCL','-D__MAC_26_0=260000',

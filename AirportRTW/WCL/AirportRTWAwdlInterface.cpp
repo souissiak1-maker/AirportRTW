@@ -6,6 +6,7 @@
 #include "AirportRTWAwdlInterface.hpp"
 #include "AirportRTWAwdlActionInput.hpp"
 #include "AirportRTWAwdlRuntime.hpp"
+#include "AirportRTWAwdlPeers.hpp"
 #include <net/ethernet.h>
 #include <Airport/apple80211_var.h>
 #include <AWDL/RTWAwdlNativeRxMetadata.hpp>
@@ -57,6 +58,8 @@ bool AirportRTWAwdlInterface::initialize(IO80211Controller *controller,
     if (!bits || (mac[0] & 1)) return false;
     controller_ = controller; control_ = control; memcpy(mac_,mac,6);
     if (!IO80211SkywalkInterface::init()) return false;
+    controlLock_=IORecursiveLockAlloc();
+    if (!controlLock_) return false;
     ether_addr address; memcpy(address.octet,mac_,6);
     virtualInitAttempted_ = true;
     if (!IO80211VirtualInterface::init(controller,&address,6,"awdl")) return false;
@@ -109,7 +112,7 @@ bool AirportRTWAwdlInterface::publish()
     return name && strncmp(name,"awdl",4) == 0;
 }
 
-IOReturn AirportRTWAwdlInterface::enable(unsigned int)
+IOReturn AirportRTWAwdlInterface::enableImpl(unsigned int)
 {
     if (stopping_ || !registered_ || !prepared_ || !control_ || !datapath_ || !isChipInterfaceReady())
         return kIOReturnNotReady;
@@ -122,7 +125,7 @@ IOReturn AirportRTWAwdlInterface::enable(unsigned int)
     return kIOReturnSuccess;
 }
 
-IOReturn AirportRTWAwdlInterface::disable(unsigned int)
+IOReturn AirportRTWAwdlInterface::disableImpl(unsigned int)
 {
     enabled_ = false;
     cancelWindowTimer();
@@ -133,11 +136,7 @@ IOReturn AirportRTWAwdlInterface::disable(unsigned int)
 
 void AirportRTWAwdlInterface::stop(IOService *provider)
 {
-    if (loop_) {
-        auto *loop = loop_; loop->retain();
-        loop->runAction(stopGated,this,provider);
-        loop->release();
-    } else stopImpl(provider);
+    (void)gatedAction(stopGated,provider);
 }
 
 IOReturn AirportRTWAwdlInterface::stopGated(OSObject *owner, void *provider, void *, void *, void *)
@@ -161,25 +160,87 @@ void AirportRTWAwdlInterface::stopImpl(IOService *provider)
         controllerPublished_ = false;
     }
     if (baseStarted_) { IO80211VirtualInterface::stop(provider); baseStarted_ = false; }
-    registered_ = false; loop_ = nullptr;
+    registered_=false;
+    if(controlLock_)IORecursiveLockLock(controlLock_);
+    loop_=nullptr;
+    if(controlLock_)IORecursiveLockUnlock(controlLock_);
 }
 
 void AirportRTWAwdlInterface::free()
 {
     releaseWindowTimer();
     if (datapath_) { datapath_->stop(); datapath_->release(); datapath_ = nullptr; }
+    if(controlLock_){auto *lock=controlLock_;controlLock_=nullptr;IORecursiveLockFree(lock);}
     if (virtualInitAttempted_) IO80211VirtualInterface::free();
     else IO80211SkywalkInterface::free();
 }
 
-IOReturn AirportRTWAwdlInterface::dispatch(AirportRTWAwdl::Request request, bool set, void *payload)
+IOReturn AirportRTWAwdlInterface::gatedAction(NativeAction action,void *context)
+{
+    // Pin the workloop while holding the lifecycle lock, before stop can clear
+    // it and release the native base. Never wait on its gate with this lock held.
+    retain();
+    auto *lock=controlLock_;
+    if(lock)IORecursiveLockLock(lock);
+    auto *loop=loop_;
+    if (!loop) {
+        const IOReturn result=action(this,context,nullptr,nullptr,nullptr);
+        if(lock)IORecursiveLockUnlock(lock);
+        release();return result;
+    }
+    loop->retain();
+    if(lock)IORecursiveLockUnlock(lock);
+    const IOReturn result=loop->runAction(action,this,context);
+    release();loop->release();return result;
+}
+
+IOReturn AirportRTWAwdlInterface::dispatch(AirportRTWAwdl::Request request,bool set,void *payload)
 {
     if (!payload) return kIOReturnBadArgument;
-    if (!control_ || !prepared_) return kIOReturnNotReady;
-    return control_->request(request,set,payload);
+    ControlRequest context {request,set,payload};
+    return gatedAction(dispatchGated,&context);
+}
+
+IOReturn AirportRTWAwdlInterface::dispatchGated(OSObject *owner,void *request,void *,void *,void *)
+{
+    auto *me=static_cast<AirportRTWAwdlInterface *>(owner);
+    const auto &context=*static_cast<ControlRequest *>(request);
+    if (!me->control_ || !me->prepared_ || me->stopping_) return kIOReturnNotReady;
+    return me->control_->request(context.request,context.set,context.payload);
+}
+
+IOReturn AirportRTWAwdlInterface::enable(unsigned int flags)
+{
+    ToggleRequest context {true,flags};return gatedAction(toggleGated,&context);
+}
+
+IOReturn AirportRTWAwdlInterface::disable(unsigned int flags)
+{
+    ToggleRequest context {false,flags};return gatedAction(toggleGated,&context);
+}
+
+IOReturn AirportRTWAwdlInterface::toggleGated(OSObject *owner,void *request,void *,void *,void *)
+{
+    auto *me=static_cast<AirportRTWAwdlInterface *>(owner);
+    const auto &context=*static_cast<ToggleRequest *>(request);
+    return context.enable ? me->enableImpl(context.flags) : me->disableImpl(context.flags);
 }
 
 uintptr_t AirportRTWAwdlInterface::setMacAddress(ether_addr &address)
+{
+    AddressRequest context {&address,static_cast<uint32_t>(kIOReturnNotReady)};
+    const IOReturn result=gatedAction(addressGated,&context);
+    return result==kIOReturnSuccess ? context.result : static_cast<uint32_t>(result);
+}
+
+IOReturn AirportRTWAwdlInterface::addressGated(OSObject *owner,void *request,void *,void *,void *)
+{
+    auto &context=*static_cast<AddressRequest *>(request);
+    context.result=static_cast<AirportRTWAwdlInterface *>(owner)->setMacAddressImpl(*context.address);
+    return kIOReturnSuccess;
+}
+
+uintptr_t AirportRTWAwdlInterface::setMacAddressImpl(ether_addr &address)
 {
     uint8_t bits = 0; for (unsigned i = 0; i < 6; ++i) bits |= address.octet[i];
     if (!bits || (address.octet[0] & 1)) return static_cast<uint32_t>(kIOReturnBadArgument);
@@ -272,6 +333,17 @@ bool AirportRTWAwdlInterface::postWindowEnd(uint32_t wireTime)
     postMessage(APPLE80211_M_AWDL_AVAILABILITY_WINDOW_EXTENSIONS_END,payload,sizeof(payload),true);
     release();
     return true;
+}
+
+bool AirportRTWAwdlInterface::postPeerCacheCompletion(const uint8_t address[6],bool present)
+{
+    if (!canPostPeerCacheCompletion()) return false;
+    uint8_t payload[RTWAwdl::NativeEvents::cacheSize];
+    if (!RTWAwdl::NativeEvents::cache(address,present,payload,sizeof(payload))) return false;
+    retain();
+    postMessage(RTWAwdl::NativeEvents::cacheEvent,payload,sizeof(payload),true);
+    release();
+    return true; // Handoff only; the native peer manager owns semantic acceptance.
 }
 
 bool AirportRTWAwdlInterface::armWindowTimer(uint64_t deadlineUs,uint64_t nowUs)

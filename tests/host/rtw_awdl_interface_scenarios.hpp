@@ -31,6 +31,8 @@ int main(){
     for(unsigned bit=0;bit<7;++bit){Control control;control.caps&=~(1U<<bit);assert(!AirportRTWAwdlInterface::withController(c,&control,mac));assert(!control.prepares&&objects==1);}
     {Control control;uint8_t bad[6]{};assert(!AirportRTWAwdlInterface::withController(c,&control,bad));bad[0]=1;assert(!AirportRTWAwdlInterface::withController(c,&control,bad));assert(objects==1);}
     for(unsigned fault=1;fault<=11;++fault){failAt=fault;Control control;auto*i=AirportRTWAwdlInterface::withController(c,&control,mac);assert(!i);assert(!c->current&&objects==1&&c->refs==1);assert(control.shutdowns==(fault>=4));}
+    failAt=15;{Control co;assert(!AirportRTWAwdlInterface::withController(c,&co,mac));
+      assert(!co.prepares&&!co.shutdowns&&objects==1&&controlLocks==0);}
     failAt=0;Control control;
     auto*i=AirportRTWAwdlInterface::withController(c,&control,mac);assert(i&&c->current==i&&control.prepares==1);
     assert(i->isChipInterfaceReady()&&i->getNumTxQueues()==1&&i->getMaxTransferUnit()==1428);

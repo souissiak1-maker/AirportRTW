@@ -9,8 +9,18 @@ namespace RTWAwdl {
 // Packing a payload does not establish a lease, authorize a channel or emit it.
 class NativeEvents {
 public:
-    static constexpr unsigned startEvent=41,endEvent=43;
-    static constexpr size_t startSize=36,endSize=40;
+    static constexpr unsigned startEvent=41,endEvent=43,cacheEvent=51;
+    static constexpr size_t startSize=36,endSize=40,cacheSize=0x1d0;
+    // Emit only after a real peer transaction has completed. Unknown native
+    // key/cipher fields stay zero for the unencrypted AWDL hardware path.
+    static bool cache(const uint8_t address[6],bool present,uint8_t *out,size_t capacity) {
+        if (!address || !out || capacity!=cacheSize || !unicast(address)) return false;
+        uint8_t saved[6];for(unsigned i=0;i<6;++i)saved[i]=address[i];
+        for(unsigned i=0;i<cacheSize;++i)out[i]=0;
+        putLE(out,1);putLE(out+4,present ? 1 : 3);
+        for(unsigned i=0;i<6;++i)out[8+i]=saved[i];
+        return true;
+    }
     static bool start(uint16_t counter,uint32_t role,const uint8_t parent[6],
                       const uint8_t root[6],const uint8_t *channel,size_t channelLength,
                       uint32_t wireTime,uint8_t *out,size_t capacity) {
