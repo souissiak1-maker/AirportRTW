@@ -6,7 +6,11 @@ import tempfile
 root = Path(__file__).resolve().parents[1]
 source = (root / 'rtw/hal_rtw89/driver/Senmiko.c').read_text()
 start = source.index('static void rtw89_copy_tx_rate(')
-production = source[start:source.index('#endif /* RTW89_MACOS */', start)]
+# Bound the fixture to the rate reader, not the entire macOS section: unrelated
+# HAL helpers appended later require real hardware structures.
+reader = source.index('void rtw89_macos_get_tx_rate(', start)
+end = source.index('\n}', reader) + len('\n}')
+production = source[start:end]
 fixture = r'''
 #include <assert.h>
 #include <stdint.h>

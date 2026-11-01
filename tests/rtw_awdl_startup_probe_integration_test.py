@@ -7,7 +7,9 @@ ROOT=Path(__file__).resolve().parents[1]
 header=(ROOT/'AirportRTW/WCL/AirportRTWAwdlProbe.hpp').read_text()
 adapter=header[header.index('class AirportRTWAwdlProbe final'):header.rindex('#endif\n#endif')]
 source=(ROOT/'AirportRTW/WCL/AirportRTWV2.cpp').read_text()
-hooks=source[source.index('void AirportRTW::startAwdlProbe()'):source.rindex('#endif')]
+start=source.index('void AirportRTW::startAwdlProbe()')
+# Stop at this probe block, excluding later native-controller conditionals.
+hooks=source[start:source.index('\n#endif',start)]
 shim=r'''
 #include <AWDL/RTWAwdlStartupProbe.hpp>
 #include <HAL/RTWAwdlReceive.hpp>
