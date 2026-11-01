@@ -3526,6 +3526,8 @@ struct rtw89_sta_link {
 	u8 mac_id;
 	u8 tx_retry;
 	bool er_cap;
+	/* Quiet ADHOC: firmware role may exist until REMOVE is accepted. */
+	bool awdl_role_pending;
 	struct rtw89_vif_link *rtwvif_link;
 	struct rtw89_ra_info ra;
 	struct rtw89_ra_report ra_report;

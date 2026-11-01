@@ -5182,7 +5182,9 @@ int rtw89_core_sta_link_add(struct rtw89_dev *rtwdev,
 	struct rtw89_hal *hal = &rtwdev->hal;
 	u8 ant_num = hal->ant_diversity ? 2 : rtwdev->chip->rf_path_num;
 	int i;
-	int ret;
+	bool awdl_peer = vif->type == NL80211_IFTYPE_ADHOC &&
+			 vif->no_beacon && !sta->tdls;
+	int ret, rollback_ret;
 
 	rtwsta_link->prev_rssi = 0;
 	INIT_LIST_HEAD(&rtwsta_link->ba_cam_list);
@@ -5218,23 +5220,38 @@ int rtw89_core_sta_link_add(struct rtw89_dev *rtwdev,
 			return ret;
 		}
 
+		/* A failed command can be ambiguous. Retain ownership until an
+		 * explicit REMOVE has been accepted, including CREATE failure. */
+		if (awdl_peer)
+			rtwsta_link->awdl_role_pending = true;
 		ret = rtw89_fw_h2c_role_maintain(rtwdev, rtwvif_link, rtwsta_link,
 						 RTW89_ROLE_CREATE);
 		if (ret) {
 			rtw89_warn(rtwdev, "failed to send h2c role info\n");
-			return ret;
+			goto role_failure;
 		}
 
 		ret = rtw89_chip_h2c_default_cmac_tbl(rtwdev, rtwvif_link, rtwsta_link);
 		if (ret)
-			return ret;
+			goto role_failure;
 
 		ret = rtw89_chip_h2c_default_dmac_tbl(rtwdev, rtwvif_link, rtwsta_link);
 		if (ret)
-			return ret;
+			goto role_failure;
 	}
 
 	return 0;
+
+role_failure:
+	if (awdl_peer) {
+		rollback_ret = rtw89_fw_h2c_role_maintain(rtwdev, rtwvif_link, rtwsta_link,
+						RTW89_ROLE_REMOVE);
+		if (!rollback_ret)
+			rtwsta_link->awdl_role_pending = false;
+		else
+			rtw89_warn(rtwdev, "AWDL peer role rollback requires recovery\n");
+	}
+	return ret;
 }
 
 int rtw89_core_sta_link_disassoc(struct rtw89_dev *rtwdev,
@@ -5431,12 +5448,17 @@ int rtw89_core_sta_link_remove(struct rtw89_dev *rtwdev,
 			rtw89_mac_set_tx_retry_limit(rtwdev, rtwsta_link, false,
 						     rtwsta_link->tx_retry);
 	} else if (rtw89_vif_has_peer_context(vif) || sta->tdls) {
+		if (vif->type == NL80211_IFTYPE_ADHOC && vif->no_beacon && !sta->tdls &&
+			!rtwsta_link->awdl_role_pending)
+			return 0;
 		ret = rtw89_fw_h2c_role_maintain(rtwdev, rtwvif_link, rtwsta_link,
 						 RTW89_ROLE_REMOVE);
 		if (ret) {
 			rtw89_warn(rtwdev, "failed to send h2c role info\n");
 			return ret;
 		}
+		if (vif->type == NL80211_IFTYPE_ADHOC && vif->no_beacon && !sta->tdls)
+			rtwsta_link->awdl_role_pending = false;
 	}
 
 	return 0;

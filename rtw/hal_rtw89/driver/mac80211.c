@@ -508,6 +508,14 @@ static int __rtw89_ops_sta_add(struct rtw89_dev *rtwdev,
 	int ret;
 	int i;
 
+	/* A repeated native add must not reinitialize a live/recovery link or
+	 * acquire a second MAC-ID. Quiet-ADHOC private storage starts zeroed. */
+	if (vif->type == NL80211_IFTYPE_ADHOC && vif->no_beacon && !sta->tdls) {
+		for (i = 0; i < ARRAY_SIZE(rtwsta->links); i++)
+			if (rtwsta->links[i])
+				return -EBUSY;
+	}
+
 	if (vif->type == NL80211_IFTYPE_STATION && !sta->tdls) {
 		rtwvif->mlo_mode = RTW89_MLO_MODE_MLSR;
 
@@ -540,8 +548,15 @@ static int __rtw89_ops_sta_add(struct rtw89_dev *rtwdev,
 	rtwvif_link = rtwsta_link->rtwvif_link;
 
 	ret = rtw89_core_sta_link_add(rtwdev, rtwvif_link, rtwsta_link);
-	if (ret)
+	if (ret) {
+		/* The native quiet-ADHOC allocator must query retained state after
+		 * failed add and retry NONE -> NOTEXIST before freeing this station.
+		 * Do not recycle a link/MAC-ID while firmware may still own its role. */
+		if (vif->type == NL80211_IFTYPE_ADHOC && vif->no_beacon && !sta->tdls &&
+			rtwsta_link->awdl_role_pending)
+			return ret;
 		goto unset_link;
+	}
 
 	if (rtw89_vif_has_peer_context(vif) || sta->tdls)
 		rtw89_queue_chanctx_change(rtwdev, RTW89_CHANCTX_REMOTE_STA_CHANGE);

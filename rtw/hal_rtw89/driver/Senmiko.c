@@ -774,6 +774,25 @@ void rtw89_macos_get_tx_rate(struct ieee80211_hw *hw, struct RTWTxRate *out)
     if (hw) ieee80211_iterate_stations_atomic(hw, rtw89_copy_tx_rate, out);
 }
 
+/* Called under WiphyGuard after a quiet-ADHOC sta_state add failure.
+ * true requires the native allocator to retain sta and its VIF, and retry
+ * NONE -> NOTEXIST cleanup (or fence/reset the device) before freeing either.
+ * This is firmware command ownership, not a positive firmware/RF ACK. */
+bool rtw89_macos_awdl_peer_retained(struct ieee80211_vif *vif,
+                                   struct ieee80211_sta *sta)
+{
+    struct rtw89_sta *rtwsta;
+    unsigned int i;
+
+    if (!vif || !sta || vif->type != NL80211_IFTYPE_ADHOC || !vif->no_beacon || sta->tdls)
+        return false;
+    rtwsta = sta_to_rtwsta(sta);
+    for (i = 0; i < IEEE80211_MLD_MAX_NUM_LINKS; ++i)
+        if (rtwsta->links[i])
+            return true;
+    return false;
+}
+
 /* Native AWDL calls are serialized by the bridge's WiphyGuard. The native
  * owner supplies the timer and must release the visit before tearing down VIFs.
  */

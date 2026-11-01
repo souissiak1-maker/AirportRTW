@@ -28,7 +28,7 @@ struct ieee80211_sta { bool tdls; };
 struct rtw89_vif_link { ieee80211_vif vif; };
 struct rtw89_sta_link {
     ieee80211_sta sta; int prev_rssi,ba_cam_list,avg_rssi,avg_snr,evm_1ss;
-    int rssi[2],evm_min[2],evm_max[2]; u8 mac_id,tx_retry;
+    int rssi[2],evm_min[2],evm_max[2]; u8 mac_id,tx_retry; bool awdl_role_pending;
 };
 struct rtw89_hal { bool ant_diversity; };
 struct Chip { u8 rf_path_num; };
@@ -38,7 +38,7 @@ static const ieee80211_sta *rtwsta_link_to_sta(rtw89_sta_link *p) { return &p->s
 static void ewma_rssi_init(int *p) { *p=0; }
 static void ewma_snr_init(int *p) { *p=0; }
 static void ewma_evm_init(int *p) { *p=0; }
-static unsigned step,failStep,creates,removes;
+static unsigned step,failStep,creates,removes;static bool failRemove;
 static int next() { ++step; return step==failStep?-42:0; }
 static int rtw89_reg_6ghz_recalc(rtw89_dev *,rtw89_vif_link *,bool) { return 0; }
 static void rtw89_btc_ntfy_role_info(rtw89_dev *,rtw89_vif_link *,rtw89_sta_link *,int) {}
@@ -48,7 +48,7 @@ static void rtw89_mac_set_tx_retry_limit(rtw89_dev *,rtw89_sta_link *,bool,unsig
 static void rtw89_phy_dig_suspend(rtw89_dev *) {}
 static int rtw89_mac_set_macid_pause(rtw89_dev *,u8,bool) { return next(); }
 static int rtw89_fw_h2c_role_maintain(rtw89_dev *,rtw89_vif_link *,rtw89_sta_link *,int command) {
-    if(command==RTW89_ROLE_CREATE) ++creates; else ++removes; return next();
+    if(command==RTW89_ROLE_CREATE) ++creates; else ++removes; int rc=next();return command==RTW89_ROLE_REMOVE&&failRemove?-71:rc;
 }
 static int rtw89_chip_h2c_default_cmac_tbl(rtw89_dev *,rtw89_vif_link *,rtw89_sta_link *) { return next(); }
 static int rtw89_chip_h2c_default_dmac_tbl(rtw89_dev *,rtw89_vif_link *,rtw89_sta_link *) { return next(); }
@@ -69,10 +69,27 @@ int main() {
     for(unsigned failure=1;failure<=4;++failure) {
         step=0; failStep=failure;
         assert(rtw89_core_sta_link_add(&dev,&vif,&peer)==-42);
-        assert(step==failure);
+        assert(step==failure+unsigned(failure>=2));
+        assert(!peer.awdl_role_pending);
+        unsigned old=removes;assert(!rtw89_core_sta_link_remove(&dev,&vif,&peer));
+        assert(removes==old); // clean rollback is idempotent
+
     }
+    for(unsigned failure=2;failure<=4;++failure) {
+        step=0;failStep=failure;failRemove=true;
+        assert(rtw89_core_sta_link_add(&dev,&vif,&peer)==-42);
+        assert(peer.awdl_role_pending);
+        // Firmware delete failure must retain ownership for another retry.
+        assert(rtw89_core_sta_link_remove(&dev,&vif,&peer)==-71);
+        assert(peer.awdl_role_pending);
+        failRemove=false;failStep=0;
+        assert(!rtw89_core_sta_link_remove(&dev,&vif,&peer));assert(!peer.awdl_role_pending);
+    }
+    step=failStep=0;assert(!rtw89_core_sta_link_add(&dev,&vif,&peer));
     step=0;failStep=1;
     assert(rtw89_core_sta_link_remove(&dev,&vif,&peer)==-42);
+    assert(peer.awdl_role_pending);
+
 }
 '''
 with tempfile.TemporaryDirectory(prefix='rtw-awdl-role-') as tmp:
