@@ -40,6 +40,8 @@ int main(){
     for(unsigned fault=1;fault<=11;++fault){failAt=fault;Control control;auto*i=AirportRTWAwdlInterface::withController(c,&control,mac);assert(!i);assert(!c->current&&objects==1&&c->refs==1);assert(control.shutdowns==(fault>=2));}
     failAt=15;{Control co;assert(!AirportRTWAwdlInterface::withController(c,&co,mac));
       assert(!co.prepares&&!co.shutdowns&&objects==1&&controlLocks==0);}
+    for(unsigned fault=20;fault<=21;++fault){failAt=fault;Control co;
+      assert(!AirportRTWAwdlInterface::withController(c,&co,mac));assert(co.shutdowns==1 && objects==1);}
     failAt=0;Control control;
     auto*i=AirportRTWAwdlInterface::withController(c,&control,mac);assert(i&&c->current==i&&control.prepares==1);
     assert(!i->deferred && !i->getHardwareAssists());

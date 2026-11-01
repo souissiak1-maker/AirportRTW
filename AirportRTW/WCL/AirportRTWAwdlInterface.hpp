@@ -160,7 +160,7 @@ private:
     uint8_t mac_[6] {};
     uint8_t registration_[0x130] {};
     bool attached_ {false}, baseStarted_ {false}, prepareAttempted_ {false};
-    bool prepared_ {false}, virtualInitAttempted_ {false};
+    bool prepared_ {false}, virtualInitAttempted_ {false}, providerHeld_{false};
     bool controllerPublished_ {false}, servicePublished_ {false};
     bool registered_ {false}, enabled_ {false}, stopping_ {false};
 };

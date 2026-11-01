@@ -117,7 +117,18 @@ private:
 class Runtime final : public Control {
 public:
     explicit Runtime(RuntimeBackend &backend) : backend_(backend) {}
-    ~Runtime() override { shutdown(); }
+    ~Runtime() override { shutdown();if(ownsBackend_)delete &backend_; }
+    // Takes backend ownership only on success. The caller owns the initial ref.
+    static Runtime *withOwnedBackend(RuntimeBackend *backend) {
+        if(!backend)return nullptr;
+        auto *runtime=new Runtime(*backend);
+        if(runtime)runtime->ownsBackend_=true;
+        return runtime;
+    }
+    void retainProvider() override {if(ownsBackend_)__atomic_fetch_add(&providerRefs_,1,__ATOMIC_RELAXED);}
+    void releaseProvider() override {
+        if(ownsBackend_ && __atomic_fetch_sub(&providerRefs_,1,__ATOMIC_ACQ_REL)==1)delete this;
+    }
     uint32_t capabilities() const override { return backend_.capabilities(); }
     bool ready() const override { return !stopped_ && backend_.ready() && backend_.peersReady(); }
     IOReturn prepare(IO80211VirtualInterface *interface, const uint8_t mac[6]) override {
@@ -390,6 +401,7 @@ private:
         return kIOReturnSuccess;
     }
     RuntimeBackend &backend_;
+    bool ownsBackend_{false};unsigned providerRefs_{1};
     IO80211VirtualInterface *interface_ {nullptr};
     Settings settings_ {};
     RTWAwdl::TxTemplate pendingTemplate_;

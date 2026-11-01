@@ -98,6 +98,7 @@ def main():
                           '#include <Airport/apple80211_var.h>\n'
                           '#include <Airport/apple80211_ioctl.h>\n'
                           'static_assert(APPLE80211_M_AWDL_AVAILABILITY_WINDOW_START==41, "native start event");\n'
+                          'static_assert(__is_same(decltype(((IO80211SkywalkInterface*)0)->getSelfMacAddr()),ether_addr), "native MAC is a value, not a pointer");\n'
                           'static_assert(sizeof(apple80211_awdl_peer_traffic_registration)==184, "native traffic size");\n'
                           'static_assert(__builtin_offsetof(apple80211_awdl_peer_traffic_registration,addr)==4, "inline peer");\n'
                           'static_assert(__builtin_offsetof(apple80211_awdl_peer_traffic_registration,name_len)==12, "name length");\n'

@@ -25,6 +25,9 @@ IOCommandGate *_fCommandGate;
 
 void AirportRTW::releaseAll()
 {
+#if defined(AIRPORT_WCL) && __IO80211_TARGET == __MAC_26_0
+    __atomic_store_n(&nativeAwdlShutdown_,true,__ATOMIC_RELEASE);stopNativeAwdl();
+#endif
 #if defined(AIRPORT_WCL) && __IO80211_TARGET == __MAC_26_0 && (RTW_DIAGNOSTICS || RTW_AWDL_STARTUP_PROBE)
     stopAwdlProbe(true);
 #endif
@@ -143,6 +146,13 @@ bool AirportRTW::init(OSDictionary *properties)
 {
     XYLog("%s\n", __PRETTY_FUNCTION__);
     bool ret = super::init(properties);
+#if defined(AIRPORT_WCL) && __IO80211_TARGET == __MAC_26_0
+    if(!ret)return false;
+    nativeAwdlLock_=IOLockAlloc();if(!nativeAwdlLock_)return false;
+    auto *option=OSDynamicCast(OSBoolean,getProperty("RTWAwdlEnabled"));
+    nativeAwdlEnabled_=option && option->isTrue();
+    setProperty("RTWAwdlEnabled",nativeAwdlEnabled_);
+#endif
     awdlSyncEnable = true;
     power_state = 0;
     memset(geo_location_cc, 0, sizeof(geo_location_cc));
@@ -558,6 +568,9 @@ bool AirportRTW::start(IOService *provider)
 
 void AirportRTW::stop(IOService *provider)
 {
+#if defined(AIRPORT_WCL) && __IO80211_TARGET == __MAC_26_0
+    __atomic_store_n(&nativeAwdlShutdown_,true,__ATOMIC_RELEASE);stopNativeAwdl();
+#endif
 #if defined(AIRPORT_WCL) && __IO80211_TARGET == __MAC_26_0 && (RTW_DIAGNOSTICS || RTW_AWDL_STARTUP_PROBE)
     stopAwdlProbe();
 #endif
@@ -579,6 +592,9 @@ void AirportRTW::stop(IOService *provider)
 
 void AirportRTW::free()
 {
+#if defined(AIRPORT_WCL) && __IO80211_TARGET == __MAC_26_0
+    __atomic_store_n(&nativeAwdlShutdown_,true,__ATOMIC_RELEASE);stopNativeAwdl();
+#endif
 #if defined(AIRPORT_WCL) && __IO80211_TARGET == __MAC_26_0 && (RTW_DIAGNOSTICS || RTW_AWDL_STARTUP_PROBE)
     stopAwdlProbe(true);
 #endif
@@ -600,6 +616,9 @@ void AirportRTW::free()
         IOFree(btcProfile, sizeof(struct apple80211_btc_profiles_data));
         btcProfile = NULL;
     }
+#if defined(AIRPORT_WCL) && __IO80211_TARGET == __MAC_26_0
+    if(nativeAwdlLock_){IOLockFree(nativeAwdlLock_);nativeAwdlLock_=nullptr;}
+#endif
     super::free();
 }
 
@@ -1040,6 +1059,12 @@ getCARD_CAPABILITIES(OSObject *object,
         (1 << APPLE80211_CAP_AES_CCM) | (1 << APPLE80211_CAP_TKIP) : 0;
     cd->capabilities[1] &= ~(1 << (APPLE80211_CAP_WPA1 - 8));
     cd->capabilities[5] = 0x40; // Scan completion events.
+#if __IO80211_TARGET == __MAC_26_0
+    if(nativeAwdlAvailable()) {
+        cd->capabilities[4]|=0x01; // Native proximity interface request (role 6).
+        if(fHalService->getDriverInfo()->is5GBandSupport())cd->capabilities[3]|=0x20;
+    }
+#endif
     if (caps & IEEE80211_C_MFP) {
         cd->capabilities[6] |= 0x01; // PMF
         cd->capabilities[9] |= 0x18; // SAE authentication and key management
@@ -1258,6 +1283,9 @@ IOReturn AirportRTW::enableAdapter(IONetworkInterface *netif)
 
 void AirportRTW::disableAdapter(IONetworkInterface *netif)
 {
+#if defined(AIRPORT_WCL) && __IO80211_TARGET == __MAC_26_0
+    stopNativeAwdl();
+#endif
 #if defined(AIRPORT_WCL) && __IO80211_TARGET == __MAC_26_0 && (RTW_DIAGNOSTICS || RTW_AWDL_STARTUP_PROBE)
     stopAwdlProbe();
 #endif
@@ -1510,4 +1538,8 @@ void AirportRTW::awdlProbeReceive(OSObject *owner,const uint8_t *,size_t,
     // setAwdlReceiver(nullptr,nullptr) drains this registration before disposal.
     if (me->awdlProbe_) me->awdlProbe_->receive(metadata);
 }
+#endif
+
+#if defined(AIRPORT_WCL) && __IO80211_TARGET == __MAC_26_0
+#include "AirportRTWAwdlController.cpp.inc"
 #endif

@@ -45,9 +45,9 @@ public:
     uint32_t getTxQueueSize() override;
 
     uint32_t awdlHardwareSupport() const override {
-        // QuiescentRemoval stays off until compat worker cancellation and
-        // secondary-VIF lifetime serialization have a complete barrier.
-        return RTWAwdl::FrameTransport|RTWAwdl::ManualVisits|RTWAwdl::PeerStations;
+        // Serialized wiphy dispatch, tracked timer/IRQ/NAPI callbacks and
+        // reader grace periods protect native secondary-role reclamation.
+        return RTWAwdl::FrameTransport|RTWAwdl::ManualVisits|RTWAwdl::PeerStations|RTWAwdl::QuiescentRemoval;
     }
     RTWAwdl::RadioState awdlRadioState() const override;
     bool awdlChannelAllowed(uint16_t) const override;

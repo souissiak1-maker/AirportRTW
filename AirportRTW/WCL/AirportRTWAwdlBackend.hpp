@@ -17,8 +17,8 @@ namespace AirportRTWAwdl {
 // is still gated by the HAL's explicit complete quiescence support bit.
 class NativeBackend final : public RuntimeBackend,public RTWAwdl::WindowDriver {
 public:
-    explicit NativeBackend(RTWCore &hal):RuntimeBackend(&peers_),hal_(hal),peers_(hal),scheduler_(state_,*this) {}
-    ~NativeBackend() override {close();}
+    explicit NativeBackend(RTWCore &hal):RuntimeBackend(&peers_),hal_(hal),peers_(hal),scheduler_(state_,*this) {hal_.retain();}
+    ~NativeBackend() override {close();hal_.release();}
     uint32_t capabilities() const override {
         const uint32_t support=hal_.awdlHardwareSupport();
         const uint32_t needed=RTWAwdl::FrameTransport|RTWAwdl::ManualVisits|RTWAwdl::PeerStations;

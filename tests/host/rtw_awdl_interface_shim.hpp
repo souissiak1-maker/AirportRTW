@@ -100,6 +100,11 @@ struct IO80211SkywalkInterface:IOService{
     virtual IOReturn enable(unsigned){return 0;}virtual IOReturn disable(unsigned){return 0;}
     virtual uintptr_t setMacAddress(ether_addr&)=0;
     virtual IOReturn getHardwareAddress(ether_addr*){return 0;}
+    ether_addr nativeAddress{};
+    IOReturn setHardwareAddress(ether_addr*p){if(failAt==20)return kIOReturnError;
+        auto result=setMacAddress(*p);if(!result)nativeAddress=*p;return IOReturn(result);}
+    ether_addr getSelfMacAddr(){auto result=nativeAddress;if(failAt==21)result.octet[5]^=1;return result;}
+
     virtual const char*getBSDNamePrefix(){return "en";}virtual UInt getMaxTransferUnit(){return 1500;}
     virtual bool isChipInterfaceReady(){return false;}
     virtual void*getTxSubQueue(apple80211_wme_ac){return nullptr;}

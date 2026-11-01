@@ -36,6 +36,11 @@
 class AirportRTWAwdlProbe;
 #endif
 
+#if defined(AIRPORT_WCL) && __IO80211_TARGET == __MAC_26_0
+class AirportRTWAwdlInterface;
+namespace AirportRTWAwdl {class Runtime;}
+#endif
+
 
 #include "AirportRTWEthernetInterface.hpp"
 
@@ -83,6 +88,19 @@ IOReturn get##REQ(OSObject *object, struct DATA_TYPE *data);
 IOReturn set##REQ(OSObject *object, struct DATA_TYPE *data);
 
 public:
+#if defined(AIRPORT_WCL) && __IO80211_TARGET == __MAC_26_0
+    bool nativeAwdlAvailable() const;
+    IOReturn createNativeAwdl(apple80211_virt_if_create_data *);
+    void stopNativeAwdl();
+    IO80211VirtualInterface *createVirtualInterface(ether_addr *,unsigned int) override;
+    SInt32 enableVirtualInterface(IO80211VirtualInterface *) override;
+    SInt32 disableVirtualInterface(IO80211VirtualInterface *) override;
+    IOLock *nativeAwdlLock_{nullptr};
+    AirportRTWAwdlInterface *nativeAwdlInterface_{nullptr};
+    AirportRTWAwdl::Runtime *nativeAwdlRuntime_{nullptr};
+    thread_t nativeAwdlStopThread_{nullptr};
+    bool nativeAwdlEnabled_{false},nativeAwdlShutdown_{false},nativeAwdlStopping_{false};
+#endif
     virtual bool init(OSDictionary *properties) override;
     virtual void free() override;
     virtual IOService* probe(IOService* provider, SInt32* score) override;

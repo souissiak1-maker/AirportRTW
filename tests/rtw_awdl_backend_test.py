@@ -25,6 +25,7 @@ constexpr int kIOReturnNotFound=8;
 constexpr unsigned APPLE80211_C_FLAG_40MHZ=8,APPLE80211_C_FLAG_80MHZ=16,APPLE80211_C_FLAG_160MHZ=32,APPLE80211_C_FLAG_ACTIVE=64;
 struct RTWCore:RTWAwdl::Radio,RTWAwdl::PeerHardware {
  unsigned support=7,adds=0,closes=0;bool receiver=false;
+ void retain(){}void release(){}
  uint32_t awdlHardwareSupport()const{return support;}
  uint32_t awdlPeerCapacity()const override{return 16;}
  RTWAwdl::PeerResult setAwdlPeer(const uint8_t*,bool)override{return RTWAwdl::PeerResult::Success;}

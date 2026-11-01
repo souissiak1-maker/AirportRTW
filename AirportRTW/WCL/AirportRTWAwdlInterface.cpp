@@ -60,7 +60,7 @@ bool AirportRTWAwdlInterface::initialize(IO80211Controller *controller,
     uint8_t bits = 0;
     for (unsigned i = 0; i < 6; ++i) bits |= mac[i];
     if (!bits || (mac[0] & 1)) return false;
-    controller_ = controller; control_ = control; memcpy(mac_,mac,6);
+    controller_ = controller; control_ = control;control_->retainProvider();providerHeld_=true;memcpy(mac_,mac,6);
     if (!IO80211SkywalkInterface::init()) return false;
     controlLock_=IORecursiveLockAlloc();
     if (!controlLock_) return false;
@@ -85,6 +85,12 @@ bool AirportRTWAwdlInterface::start(IOService *provider)
     if (!getProperty("IODeferBSDAttach")) return false;
     if (!IO80211VirtualInterface::start(provider)) return false;
     baseStarted_ = true;
+    // Populate the native MAC agent as well as our HAL's address. Its setter
+    // calls setMacAddress; an unchanged address is an idempotent transaction.
+    ether_addr nativeAddress;memcpy(nativeAddress.octet,mac_,6);
+    if(IO80211SkywalkInterface::setHardwareAddress(&nativeAddress)!=kIOReturnSuccess)return false;
+    const ether_addr reported=IO80211SkywalkInterface::getSelfMacAddr();
+    if(memcmp(reported.octet,mac_,6))return false;
     loop_ = rtw_awdl_interface_workloop(this);
     if (!loop_) return false;
     datapath_ = AirportRTWAwdlDatapath::withWorkLoop(loop_,this,transmit,deliverAction,deliverData);
@@ -206,8 +212,12 @@ void AirportRTWAwdlInterface::free()
     releaseWindowTimer();
     if (datapath_) { datapath_->stop(); datapath_->release(); datapath_ = nullptr; }
     if(controlLock_){auto *lock=controlLock_;controlLock_=nullptr;IORecursiveLockFree(lock);}
+    auto *provider=providerHeld_ ? control_ : nullptr;
+    providerHeld_=false;
     if (virtualInitAttempted_) IO80211VirtualInterface::free();
     else IO80211SkywalkInterface::free();
+    // Only locals after base free: host adapters and OSObject may delete this.
+    if(provider)provider->releaseProvider();
 }
 
 IOReturn AirportRTWAwdlInterface::gatedAction(NativeAction action,void *context)

@@ -69,6 +69,10 @@ public:
         ClockAndSynchronization | RadioScheduling | RegulatoryEnforcement |
         PeerState | QuiescentShutdown;
     virtual ~Control() = default;
+    // Heap providers can follow native interface lifetime, including in-flight
+    // dispatch pins. Stack/externally owned providers keep the default no-op.
+    virtual void retainProvider() {}
+    virtual void releaseProvider() {}
     virtual uint32_t capabilities() const = 0;
     virtual bool ready() const = 0;
     // Prepare runs before native virtual base initialization: do not access its workqueue yet.

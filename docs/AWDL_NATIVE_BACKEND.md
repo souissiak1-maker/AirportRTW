@@ -20,24 +20,27 @@ that initializer can invoke configuration getters. Preparation cannot access
 the native workqueue or start asynchronous producers. Partial initialization
 still calls shutdown exactly once before releasing the interface.
 
-## Publication remains disabled
+## Experimental native publication
 
-The RTW89 HAL currently declares frame transport, manual radio visits and peer
-stations, **not** quiescent removal. RTW88 declares none of these AWDL hardware
-capabilities. The native factory requires all capabilities, including a genuine
-producer/lifetime barrier; it cannot publish this backend yet. There is no new
-controller factory call and no AirDrop-supported flag enabled by this work.
+The native Tahoe controller now implements role-6 creation, duplicate-request
+recovery, native enable/disable and teardown before primary Wi-Fi shutdown.
+Publication is opt-in through the controller personality's `RTWAwdlEnabled`
+boolean. It requires the complete hardware capability mask; RTW89 now provides
+serialized work dispatch, tracked callback cancellation and reader grace periods
+(see `AWDL_CALLBACK_LIFETIME.md`). RTW88 still provides no AWDL hardware capability
+mask and cannot enter this path.
 
-In particular, the compatibility layer's delay-based replacement for
-`thread_call_cancel_wait` is not a synchronous lifetime barrier. Wiphy workers
-also do not yet implement upstream's mutex/cancellation ordering. Adding a
-mutex around their callbacks alone would deadlock cancellation under that mutex.
-These require a coordinated work/timer lifetime implementation before enabling
-native publication. BSD attachment is deferred until queue registration and
-controller publication; checksum/segmentation assists are disabled and the BSD
-offload/capability masks are checked after preparation. Actual discovery and
-bidirectional transfer testing remain outstanding. Build or host-test
-success does not establish functioning AirDrop.
+The AWDL request capability is advertised only with opt-in and the full HAL mask.
+The factory registers genuine native queues and the native MAC agent. BSD
+attachment is deferred until registration succeeds. Raw transport checksum and
+segmentation assists remain disabled. Heap providers follow interface lifetime,
+including an in-flight dispatch that re-enters teardown.
+
+The experimental package is intended for the first native registration/discovery
+test. A successful build and the supported indication do not establish an AirDrop
+file transfer. Actual native peer-manager configuration, off-channel operation,
+discovery and bidirectional transfer remain hardware validation requirements.
+No new RTW88 AWDL or legacy-macOS AirDrop support is claimed.
 
 ## Evidence
 
@@ -64,3 +67,11 @@ a setter that silently retains enabled bits, and supported-mask setter errors.
 They verify failed preparation is reported and unrelated capabilities survive.
 Native base start is tested with BSD deferral already active; successful
 publication releases that deferral only after controller and queues are ready.
+
+
+Native MAC getter audit: the Darwin 25.5 boot-family implementation of
+`IO80211SkywalkInterface::getSelfMacAddr` loads MAC bytes into RAX and returns
+that value; it does not return an address pointer. The Tahoe header is corrected
+to return `ether_addr`, with a compile-time type assertion. Registration writes
+the native MAC agent and checks the returned value before exposing queues/BSD.
+Failure of either setter or readback unwinds the interface.

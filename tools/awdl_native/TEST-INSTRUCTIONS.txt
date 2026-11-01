@@ -1,0 +1,19 @@
+AirportRTW 2.3.0 — experimental native AWDL registration (Tahoe / RTW89)
+
+This package enables RTWAwdlEnabled in the controller personality. It handles
+native role-6 requests, registers actual AWDL queues and enables the proximity
+capability on RTW89. RTW88 remains supported for ordinary Wi-Fi, but has no AWDL
+HAL and will not advertise AWDL with this build.
+
+1. Keep a copy of your current working AirportRTW.kext.
+2. Replace the enabled AirportRTW.kext in EFI/OC/Kexts with this package's kext.
+3. Reboot into Tahoe and turn Wi-Fi on. Connect to your usual network first.
+4. Open System Information > Network > Wi-Fi and check the AirDrop indication.
+5. Run collect-awdl.command from this folder. Send the resulting Desktop JSON.
+   It contains driver identity, native AWDL registration status and the AirDrop
+   support indication, not SSIDs, MAC addresses, passwords or packet payloads.
+
+The supported indication alone does not establish discovery or file transfer.
+This is the first native registration/discovery test build, not a certified
+AirDrop release. Do not test sleep yet. If startup or primary Wi-Fi regresses,
+restore your previous kext using the EFI access method you already use.
