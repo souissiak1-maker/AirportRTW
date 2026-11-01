@@ -820,6 +820,39 @@ bool rtw89_macos_awdl_peer_retained(struct ieee80211_vif *vif,
 /* Native AWDL calls are serialized by the bridge's WiphyGuard. The native
  * owner supplies the timer and must release the visit before tearing down VIFs.
  */
+/* The bridge has paused/drained primary software producers before taking
+ * this manual lease; AWDL submissions share its native workloop/Wiphy lock.
+ * DMA completion alone is insufficient: packets may still be in MAC queues.
+ * Use the generation-specific AX/BE MAC query, never the AX-only void flush.
+ * Failure retains the off-channel lease and its producer gate for recovery.
+ */
+int rtw89_macos_awdl_tx_drain(struct ieee80211_hw *hw)
+{
+    struct rtw89_dev *dev;
+    const struct rtw89_mac_gen_def *mac;
+    unsigned int attempt;
+    int ret;
+
+    if (!hw || !hw->priv)
+        return -EINVAL;
+    dev = to_rtw89(hw->priv);
+    mac = dev->chip->mac_def;
+    if (!mac->is_txq_empty)
+        return -EOPNOTSUPP;
+    ret = rtw89_pci_awdl_tx_drain(dev);
+    if (ret)
+        return ret;
+    for (attempt = 0; attempt < 20; ++attempt) {
+        if (!test_bit(RTW89_FLAG_POWERON, dev->flags) ||
+            !test_bit(RTW89_FLAG_RUNNING, dev->flags))
+            return -ENODEV;
+        if (mac->is_txq_empty(dev))
+            return rtw89_pci_awdl_tx_drain(dev);
+        udelay(50);
+    }
+    return -ETIMEDOUT;
+}
+
 int rtw89_macos_awdl_reserve(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
                             const struct ieee80211_channel *channel,
                             unsigned int duration_ms)
@@ -841,6 +874,12 @@ int rtw89_macos_awdl_restore(struct ieee80211_hw *hw, struct ieee80211_vif *vif)
         return 0;
     if (!rtwvif->roc.manual)
         return -EBUSY;
+    if (rtwvif->roc.on_channel) {
+        int ret = rtw89_macos_awdl_tx_drain(hw);
+
+        if (ret)
+            return ret;
+    }
     return rtw89_roc_end(to_rtw89(hw->priv), rtwvif);
 }
 

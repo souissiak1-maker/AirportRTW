@@ -61,6 +61,9 @@ int rtw89_roc_end(rtw89_dev*,rtw89_vif*);
 static std::vector<std::pair<unsigned,bool>>sent;
 static bool target=false,failTarget=false,failRestore=false;
 static unsigned expiries=0;
+static int drainError;
+static unsigned drains;
+static int rtw89_macos_awdl_tx_drain(ieee80211_hw*){++drains;return drainError;}
 static unsigned failSleep=999,failWake=999,pauses=0,resumes=0,retunes=0,ready=0,queued=0;
 #define to_rtw89(p) static_cast<rtw89_dev *>(p)
 static rtw89_vif *vif_to_rtwvif(ieee80211_vif*v){return v->owner;}
@@ -177,6 +180,12 @@ int main(){
     assert(rtw89_macos_awdl_reserve(&hw,&secondary.native,&channel,50)==-EINVAL);
     channel.center_freq=2437;primary.native.cfg.assoc=true;
     assert(!rtw89_macos_awdl_reserve(&hw,&secondary.native,&channel,50));
+    drainError=-ETIMEDOUT;
+    unsigned beforeRetune=retunes;
+    assert(rtw89_macos_awdl_restore(&hw,&secondary.native)==-ETIMEDOUT);
+    assert(secondary.roc.on_channel && secondary.offchan && retunes==beforeRetune);
+    assert(rtw89_macos_awdl_needs_restore(&hw,&secondary.native));
+    drainError=0;
     failWake=1;
     assert(rtw89_macos_awdl_restore(&hw,&secondary.native)==-7);
     assert(rtw89_macos_awdl_needs_restore(&hw,&secondary.native));
