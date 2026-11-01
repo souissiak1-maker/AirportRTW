@@ -64,7 +64,19 @@ def verify_family(path):
                        (464,'12setLinkStateE16IO80211LinkStatej')]:
         target = pointer_at(table+8*index)
         assert '__ZN23IO80211VirtualInterface'+name in addresses.get(target,[]), (index,addresses.get(target))
-    print('PASS: installed x86_64 family matches AWDL pure-slot and virtual-interface boundaries')
+    def bytes_at(address, length):
+        for va, size, file_offset, file_size in segments:
+            if va <= address and address+length <= va+min(size,file_size):
+                return data[file_offset+address-va:file_offset+address-va+length]
+        raise AssertionError('Native ABI evidence outside file-backed sections')
+    traffic_wrapper = values['__ZL33setAWDL_PEER_TRAFFIC_REGISTRATIONP17IO80211ControllerP23IO80211SkywalkInterfaceP20IO80211APIUserClientP13apple80211req']
+    # cmp dword [rcx+0x18],0xb8: native request-length check.
+    assert bytes.fromhex('817918b8000000') in bytes_at(traffic_wrapper,64), 'Traffic request size changed'
+    traffic_manager = values['__ZN22IO80211AWDLPeerManager30setAwdlPeerTrafficRegistrationEP41apple80211_awdl_peer_traffic_registration']
+    traffic_code = bytes_at(traffic_manager,0x1000)
+    assert bytes.fromhex('4d8d7e04') in traffic_code, 'Inline traffic MAC offset changed'
+    assert bytes.fromhex('418b86a8000000') in traffic_code, 'Traffic active offset changed'
+    print('PASS: installed x86_64 family matches AWDL slots and native peer-traffic size/offsets')
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
@@ -81,6 +93,10 @@ def main():
                           '#include <Airport/apple80211_var.h>\n'
                           '#include <Airport/apple80211_ioctl.h>\n'
                           'static_assert(APPLE80211_M_AWDL_AVAILABILITY_WINDOW_START==41, "native start event");\n'
+                          'static_assert(sizeof(apple80211_awdl_peer_traffic_registration)==184, "native traffic size");\n'
+                          'static_assert(__builtin_offsetof(apple80211_awdl_peer_traffic_registration,addr)==4, "inline peer");\n'
+                          'static_assert(__builtin_offsetof(apple80211_awdl_peer_traffic_registration,name_len)==12, "name length");\n'
+                          'static_assert(__builtin_offsetof(apple80211_awdl_peer_traffic_registration,active)==168, "traffic active");\n'
                           'static_assert(sizeof(apple80211_awdl_sync_state)==24, "sync state");\n'
                           'static_assert(__builtin_offsetof(apple80211_awdl_sync_state,master)==8, "parent address");\n'
                           'static_assert(__builtin_offsetof(apple80211_awdl_sync_state,mode_flags)==20, "mode flags");\n'
@@ -125,6 +141,8 @@ def main():
                           '#include <Airport/apple80211_var.h>\n'
                           '#include <Airport/apple80211_ioctl.h>\n'
                           'static_assert(APPLE80211_M_AWDL_AVAILABILITY_WINDOW_START==42, "legacy start event preserved");\n'
+                          'static_assert(sizeof(apple80211_awdl_peer_traffic_registration)==172, "legacy traffic size");\n'
+                          'static_assert(sizeof(((apple80211_awdl_peer_traffic_registration*)0)->addr)==sizeof(void*), "legacy pointer preserved");\n'
                           'static_assert(sizeof(apple80211_awdl_sync_state)==8, "legacy sync state");\n'
                           'static_assert(sizeof(apple80211_awdl_sync_params)==20, "legacy sync params");\n'
                           'static_assert(sizeof(apple80211_awdl_election_rssi_thresholds)==16, "legacy RSSI");\n'

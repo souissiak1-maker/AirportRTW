@@ -50,6 +50,15 @@ public:
     virtual IOReturn installTemplate(const RTWAwdl::TxTemplate &) = 0;
     virtual IOReturn setAddress(const uint8_t mac[6]) = 0;
     virtual bool transmitEthernet(const uint8_t *, size_t) = 0;
+    // These are real backend transactions, not merely accepted ioctls. A
+    // successful cache change must update data admission/hardware peer ownership
+    // and deliver the native cache completion. Copy the borrowed request first.
+    // Unsupported defaults keep incomplete backends from claiming peer support.
+    virtual IOReturn cachePeer(uint32_t, const uint8_t[6]) { return kIOReturnUnsupported; }
+    virtual IOReturn registerTraffic(const apple80211_awdl_peer_traffic_registration &) {
+        return kIOReturnUnsupported;
+    }
+    virtual uint32_t peerCapacity() const { return 0; }
     virtual void timerFired() {}
 };
 
@@ -161,6 +170,25 @@ public:
             if (next.thresholds.peer_rssi_threshold < -127 || next.thresholds.peer_rssi_threshold > -1)
                 return kIOReturnBadArgument;
             break;
+        case Request::PEER_CACHE_CONTROL: {
+            // Native Tahoe's 0x1d0-byte request: version/op/MAC prefix only.
+            // Never reinterpret the MAC as a kernel pointer or copy opaque keys.
+            if (!enabled_) return kIOReturnNotReady;
+            uint32_t operation=0; uint8_t address[6];
+            memcpy(&operation,static_cast<const uint8_t *>(payload)+4,4);
+            memcpy(address,static_cast<const uint8_t *>(payload)+8,6);
+            if (!validAddress(address) || !memcmp(address,address_,6)) return kIOReturnBadArgument;
+            if (operation!=0 && operation!=2 && operation!=6) return kIOReturnUnsupported;
+            return backend_.cachePeer(operation,address);
+        }
+        case Request::AWDL_PEER_TRAFFIC_REGISTRATION: {
+            if (!enabled_) return kIOReturnNotReady;
+            const auto d=*static_cast<const apple80211_awdl_peer_traffic_registration *>(payload);
+            if (d.active>1 || d.name_len>sizeof(d.name) || !d.name_len ||
+                (d.active && (!validAddress(d.addr) || !memcmp(d.addr,address_,6))))
+                return kIOReturnBadArgument;
+            return backend_.registerTraffic(d);
+        }
         case Request::AWDL_SYNC_FRAME_TEMPLATE: {
             const auto d=*static_cast<apple80211_awdl_sync_frame_template *>(payload);
             if (!d.payload || !d.payload_len ||
@@ -187,6 +215,12 @@ private:
     }
     IOReturn get(Request request, void *payload) {
         switch (request) {
+        case Request::PEER_CACHE_MAXIMUM_SIZE: {
+            const uint32_t capacity=backend_.peerCapacity();
+            if (!capacity) return kIOReturnUnsupported;
+            auto &d=*static_cast<apple80211_peer_cache_maximum_size *>(payload);
+            d={};d.version=APPLE80211_VERSION;d.max_peers=capacity;return kIOReturnSuccess;
+        }
         case Request::SSID: {
             auto &d=*static_cast<apple80211_ssid_data *>(payload);
             d={}; d.version=APPLE80211_VERSION; return kIOReturnSuccess;

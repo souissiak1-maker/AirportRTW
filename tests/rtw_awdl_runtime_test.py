@@ -10,7 +10,7 @@ ioctl=(ROOT/'include/Airport/apple80211_ioctl.h').read_text()
 names=['ssid_data','state_data','channel_data','awdl_sync_params','awdl_sync_state',
        'awdl_sync_channel_sequence','awdl_election_rssi_thresholds','awdl_sync_enabled',
        'awdl_presence_mode','awdl_election_id','awdl_election_metric','awdl_af_tx_mode',
-       'awdl_sync_frame_template']
+       'awdl_sync_frame_template','awdl_peer_traffic_registration','peer_cache_maximum_size']
 structs=[]
 for suffix in names:
     match=re.search(r'\bstruct apple80211_'+suffix+r'\s*\{.*?\}\s*(?:__attribute__\(\(packed\)\))?;',ioctl,re.S)
@@ -21,6 +21,7 @@ shim=r'''
 #include <cstdint>
 #include <cstring>
 #include <cstdio>
+#include <initializer_list>
 #include <sys/types.h>
 #include <AWDL/RTWAwdlTxTemplate.hpp>
 #include <AWDL/RTWAwdlData.hpp>
@@ -39,6 +40,15 @@ scenario=r'''
 using namespace AirportRTWAwdl;
 struct Backend : RuntimeBackend {
     unsigned opens=0,closes=0,activations=0,configures=0,templates=0,sends=0,ticks=0;
+    unsigned cached=0,traffic=0;int peerResult=0;uint32_t capacity=16,lastOperation=99;
+    uint8_t lastPeer[6]{};apple80211_awdl_peer_traffic_registration lastTraffic{};
+    uint32_t peerCapacity()const override{return capacity;}
+    IOReturn cachePeer(uint32_t op,const uint8_t address[6])override{
+        ++cached;lastOperation=op;memcpy(lastPeer,address,6);return peerResult;
+    }
+    IOReturn registerTraffic(const apple80211_awdl_peer_traffic_registration&value)override{
+        ++traffic;lastTraffic=value;return peerResult;
+    }
     void timerFired()override{++ticks;}
     uint32_t caps=Control::requiredCapabilities;
     int openResult=0,activateResult=0,configureResult=0,templateResult=0;
@@ -126,11 +136,47 @@ int main(){
     r.timerFired();assert(b.ticks==1);
     assert(!r.enable(true) && b.activations==changes);
     assert(r.setAddress(mac)==kIOReturnBusy);
+    apple80211_peer_cache_maximum_size maximum{};
+    assert(!r.request(Request::PEER_CACHE_MAXIMUM_SIZE,false,&maximum)&&maximum.max_peers==16);
+    b.capacity=0;assert(r.request(Request::PEER_CACHE_MAXIMUM_SIZE,false,&maximum)==kIOReturnUnsupported);
+    b.capacity=16;
+    // Opaque cache bytes are never interpreted as pointers or copied to backend.
+    alignas(8) uint8_t cache[0x1d0]{};cache[0]=1;cache[8]=2;cache[13]=9;
+    for(unsigned op:{0U,2U,6U}){
+        cache[4]=uint8_t(op);assert(!r.request(Request::PEER_CACHE_CONTROL,true,cache));
+        assert(b.lastOperation==op&&b.lastPeer[5]==9);
+    }
+    b.peerResult=kIOReturnError;assert(r.request(Request::PEER_CACHE_CONTROL,true,cache)==kIOReturnError);
+    b.peerResult=0;unsigned oldCached=b.cached;
+    cache[4]=1;assert(r.request(Request::PEER_CACHE_CONTROL,true,cache)==kIOReturnUnsupported);
+    cache[4]=0;cache[8]=3;assert(r.request(Request::PEER_CACHE_CONTROL,true,cache)==kIOReturnBadArgument);
+    memcpy(cache+8,mac,6);assert(r.request(Request::PEER_CACHE_CONTROL,true,cache)==kIOReturnBadArgument);
+    assert(b.cached==oldCached);
+    apple80211_awdl_peer_traffic_registration tr{};
+    static_assert(sizeof(tr)==184,"native Tahoe traffic record");
+    tr.version=1;tr.addr[0]=2;tr.addr[5]=9;tr.name_len=7;memcpy(tr.name,"AirDrop",7);tr.active=1;
+    tr.native_parameters[23]=0x74;tr.native_tail[11]=0x82;
+    assert(!r.request(Request::AWDL_PEER_TRAFFIC_REGISTRATION,true,&tr));
+    assert(b.lastTraffic.addr[5]==9&&b.lastTraffic.native_parameters[23]==0x74&&b.lastTraffic.native_tail[11]==0x82);
+    tr.addr[5]=8;assert(b.lastTraffic.addr[5]==9); // owned snapshot
+    b.peerResult=kIOReturnError;assert(r.request(Request::AWDL_PEER_TRAFFIC_REGISTRATION,true,&tr)==kIOReturnError);
+    b.peerResult=0;unsigned oldTraffic=b.traffic;
+    tr.name_len=129;assert(r.request(Request::AWDL_PEER_TRAFFIC_REGISTRATION,true,&tr)==kIOReturnBadArgument);
+    tr.name_len=0;assert(r.request(Request::AWDL_PEER_TRAFFIC_REGISTRATION,true,&tr)==kIOReturnBadArgument);
+    tr.name_len=7;tr.active=2;assert(r.request(Request::AWDL_PEER_TRAFFIC_REGISTRATION,true,&tr)==kIOReturnBadArgument);
+    tr.active=1;memcpy(tr.addr,mac,6);
+    assert(r.request(Request::AWDL_PEER_TRAFFIC_REGISTRATION,true,&tr)==kIOReturnBadArgument);
+    assert(b.traffic==oldTraffic);
+    // An inactive notification may have no peer address.
+    tr.active=0;memset(tr.addr,0,6);assert(!r.request(Request::AWDL_PEER_TRAFFIC_REGISTRATION,true,&tr));
+
     uint8_t eth[54]{};eth[0]=0x33;eth[6]=2;eth[12]=0x86;eth[13]=0xdd;eth[14]=0x60;
     assert(r.transmitEthernet(eth,sizeof(eth)) && b.sends==1);
     b.online=false;assert(!r.transmitEthernet(eth,sizeof(eth)) && b.sends==1);b.online=true;
     eth[12]=8;assert(!r.transmitEthernet(eth,sizeof(eth)) && b.sends==1);
     assert(!r.enable(false) && !r.transmitEthernet(eth,sizeof(eth)));
+    assert(r.request(Request::PEER_CACHE_CONTROL,true,cache)==kIOReturnNotReady);
+    assert(r.request(Request::AWDL_PEER_TRAFFIC_REGISTRATION,true,&tr)==kIOReturnNotReady);
     assert(!r.setAddress(mac));r.shutdown();r.shutdown();
     r.timerFired();assert(b.ticks==1);
     assert(b.closes==1 && !r.ready() && r.enable(true)==kIOReturnNotReady);

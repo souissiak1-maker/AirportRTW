@@ -50,3 +50,34 @@ isolation tests also pass.
 These changes do not implement the missing control provider, radio scheduler,
 peer admission or hardware synchronization. Native capability advertising stays
 disabled. They must not be described as completed or working AirDrop support.
+
+## Peer-traffic record and backend transactions
+
+The same IO80211Family binary exposes a concrete difference from the older
+header and the local MtkWireless declaration. Native Tahoe's user request
+wrapper at 0x105e89 requires 0xb8 (184) bytes. In
+`IO80211AWDLPeerManager::setAwdlPeerTrafficRegistration`, 0x861dc addresses the
+inline MAC at +4; 0x85f2b reads name length at +12; 0x86039 addresses the name at
++16; 0x85f38 limits it to 128 bytes; 0x862e1 reads activity at +0xa8. The path at
+0x88d26 copies the full 0xb8 bytes. `populateTrafficRegV2` separately accesses
+parameters at +0x90..+0xb2; their semantics remain opaque here.
+
+The Tahoe-only declaration now preserves the full record, uses a six-byte inline
+MAC and a 128-byte name, and retains opaque parameter/tail bytes. The older
+172-byte pointer-based declaration is unchanged for older targets. This avoids
+casting a remote address into a kernel pointer or truncating the native record.
+It does not establish support for every native traffic parameter.
+
+The native runtime now validates and dispatches peer cache operations 0/2/6
+and bounded traffic records to backend transactions, propagating errors. It
+rejects local/group/zero active-peer addresses, invalid activity/name lengths
+and peer writes while disabled. Cache operations copy only the verified
+version/op/MAC prefix, not key material in the opaque request tail. Capacity is
+reported only when the backend supplies it. The default backend implementations
+return Unsupported; no hardware peer, cache completion or capability is faked.
+The concrete production hardware/data backend remains unfinished.
+
+Regression tests compile the real native/legacy declarations, verify the native
+size and offsets, and execute runtime requests under ASan/UBSan. They cover
+inline address bytes, caller-storage mutation, preserved opaque traffic bytes,
+backend failures, unsupported operations, capacity and disabled-state behavior.

@@ -897,6 +897,20 @@ struct apple80211_nss_data
     uint8_t     nss;
 };
 
+#if __IO80211_TARGET == __MAC_26_0
+// Native Tahoe request is 0xb8 bytes. The address at +4 is inline, not a
+// borrowed pointer. Only verified fields are named; preserve opaque parameters.
+struct apple80211_awdl_peer_traffic_registration
+{
+    uint32_t version;
+    uint8_t addr[6], pad[2];
+    uint32_t name_len;
+    char name[128];
+    uint8_t native_parameters[24];
+    uint32_t active;
+    uint8_t native_tail[12];
+} __attribute__((packed));
+#else
 struct apple80211_awdl_peer_traffic_registration
 {
     uint32_t    version;
@@ -905,6 +919,7 @@ struct apple80211_awdl_peer_traffic_registration
     char        name[152];
     uint32_t    active;
 } __attribute__((packed));
+#endif
 
 struct apple80211_awdl_election_metric
 {
