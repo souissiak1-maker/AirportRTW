@@ -12,11 +12,11 @@ RTW88:
 RTL8723DE, RTL8812AE, RTL8814AE, RTL8821AE, RTL8821CE, RTL8822BE, RTL8822CE
 
 RTW89:
-8851BE, 8852AE, 8852BE, 8852CE, and 8922AE
+RTL8851BE, RTL8852AE, RTL8852BE, RTL8852CE, and RTL8922AE
 
 ## How to Use
 
-1- Copy AirportRTW.kext from the Ventura 13 build to EFI/OC/Kexts.
+1- Copy AirportRTW.kext to EFI/OC/Kexts.
 
 2- In OpenCore Kernel -> Add, load the kexts in this order: Lilu, AMFIPass, AirportRTW.
 
