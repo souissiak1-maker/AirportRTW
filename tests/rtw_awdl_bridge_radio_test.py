@@ -5,7 +5,7 @@ import subprocess
 import tempfile
 ROOT=Path(__file__).resolve().parents[1]
 s=(ROOT/'rtw/hal_rtw89/Rtw89LinuxBridge.cpp').read_text()
-code=s[s.index('static struct ieee80211_channel *awdlFrequencyChannel('):s.index('bool rtw89LinuxAwdlAddInterface(')]
+code=s[s.index('static struct ieee80211_channel *awdlFrequencyChannel('):s.index('uint32_t rtw89LinuxAwdlPeerCapacity(')]
 start=s.index('unsigned int rtw89LinuxTxAvailableSlots(')
 code+=s[start:s.index('bool rtw89LinuxAmpduStart(',start)]
 shim=r'''
@@ -31,7 +31,7 @@ struct ieee80211_vif { struct{ieee80211_channel*chandef_chan;int chandef_width;}
 struct Rtw89LinuxContext {
     void *hardware;bool started,interfaceAdded,scanning;void *station;unsigned stationState;
     struct{bool hardwareAdded,registered;void *vif;}awdlInterface;
-    RTWAwdl::TxGate awdlTxGate;void *nativeOwner;void(*txResume)(void*);
+    RTWAwdl::TxGate awdlTxGate;void *nativeOwner;void(*txResume)(void*);bool awdlRecovery=false;
 };
 static unsigned depth,sleeps,reserves,restores,wakes;
 static bool recovering,driverLive;

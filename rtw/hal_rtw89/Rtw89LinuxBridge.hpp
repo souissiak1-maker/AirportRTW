@@ -6,6 +6,7 @@
 #include <stdint.h>
 #include "../../include/HAL/RTWAwdlReceive.hpp"
 #include "../../include/HAL/RTWAwdlRadio.hpp"
+#include "../../include/HAL/RTWAwdlPeer.hpp"
 #include "../../include/HAL/RTWAwdlInterfaceState.hpp"
 #include "../../include/AWDL/RTWAwdlTxGate.hpp"
 bool rtw89LinuxSetCountry(struct Rtw89LinuxContext *, const char cc[2]);
@@ -43,6 +44,7 @@ struct Rtw89NativePeer {
     uint16_t heBasicMCS;
 };
 
+struct Rtw89AwdlPeerPool;
 struct Rtw89LinuxContext {
     typedef void (*ReceiveCallback)(void *, const uint8_t *, size_t,
                                     int32_t, uint16_t, bool, bool, uint32_t, bool);
@@ -51,6 +53,8 @@ struct Rtw89LinuxContext {
     void *device;
     void *vif;
     RTWAwdl::InterfaceState awdlInterface;
+    Rtw89AwdlPeerPool *awdlPeers;
+    bool awdlRecovery;
     RTWAwdl::TxGate awdlTxGate;
     RTWAwdl::ReceiveRegistration *awdlReceive;
     void *station;
@@ -152,6 +156,9 @@ bool rtw89LinuxAwdlChannelAllowed(const Rtw89LinuxContext *, uint16_t);
 RTWAwdl::RadioReservation rtw89LinuxAwdlReserveRadio(Rtw89LinuxContext *, uint16_t, uint32_t);
 int rtw89LinuxAwdlReserve(Rtw89LinuxContext *, uint16_t frequency, unsigned durationMs);
 int rtw89LinuxAwdlRestore(Rtw89LinuxContext *);
+uint32_t rtw89LinuxAwdlPeerCapacity(const Rtw89LinuxContext *);
+RTWAwdl::PeerResult rtw89LinuxAwdlSetPeer(Rtw89LinuxContext *, const uint8_t[6], bool);
+bool rtw89LinuxAwdlQuiesce(Rtw89LinuxContext *);
 bool rtw89LinuxAwdlAddInterface(Rtw89LinuxContext *, const uint8_t mac[6]);
 void rtw89LinuxAwdlRemoveInterface(Rtw89LinuxContext *);
 bool rtw89LinuxAwdlSetReceiver(Rtw89LinuxContext *, OSObject *, RTWAwdl::ReceiveHandler);

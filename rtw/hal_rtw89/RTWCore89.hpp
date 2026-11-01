@@ -48,6 +48,9 @@ public:
     bool awdlChannelAllowed(uint16_t) const override;
     RTWAwdl::RadioReservation reserveAwdlRadio(uint16_t, uint32_t) override;
     bool restoreAwdlRadio() override;
+    uint32_t awdlPeerCapacity() const override;
+    RTWAwdl::PeerResult setAwdlPeer(const uint8_t[6], bool) override;
+    bool quiesceAwdlInterface() override;
     bool addAwdlInterface(const uint8_t mac[6]) override;
     void removeAwdlInterface() override;
     bool setAwdlReceiver(OSObject *, RTWAwdl::ReceiveHandler) override;

@@ -26,6 +26,8 @@ void rtw89_macos_get_tx_rate(struct ieee80211_hw *, struct RTWTxRate *);
 int rtw89_macos_awdl_reserve(struct ieee80211_hw *, struct ieee80211_vif *,
                             const struct ieee80211_channel *, unsigned);
 int rtw89_macos_awdl_restore(struct ieee80211_hw *, struct ieee80211_vif *);
+unsigned int rtw89_macos_awdl_peer_capacity(struct ieee80211_hw *);
+bool rtw89_macos_awdl_peer_retained(struct ieee80211_vif *, struct ieee80211_sta *);
 bool rtw89_macos_awdl_needs_restore(struct ieee80211_hw *, struct ieee80211_vif *);
 struct ieee80211_channel *rtw89_macos_awdl_current_channel(struct ieee80211_hw *,
                                                           struct ieee80211_vif *);
@@ -35,6 +37,39 @@ void rtw89_macos_peer_audit(struct ieee80211_hw *, struct ieee80211_vif *, uint3
 #include <AWDL/RTWAwdlLinuxInterface.hpp>
 #include <AWDL/RTWAwdlLinuxActionTx.hpp>
 #include <AWDL/RTWAwdlReceiveRegistration.hpp>
+
+struct Rtw89AwdlPeerPool {
+    Rtw89DeferredRelease deferred;
+    struct Entry {
+        void *station;
+        size_t allocationSize;
+        uint8_t address[6];
+        unsigned state;
+        bool registered,retiring;
+    } entries[16];
+    RTWAwdl::InterfaceState detachedInterface;
+    void *primaryVif,*primaryStation;
+    size_t primaryVifSize,primaryStationSize;
+};
+static_assert(offsetof(Rtw89AwdlPeerPool,deferred)==0,"deferred ownership header");
+
+// Only the transport invokes this, after compatibility worker shutdown. No
+// driver/hardware operation may occur once the PCI core has been removed.
+static void releaseAwdlPeerPool(Rtw89DeferredRelease *deferred)
+{
+    auto *pool=reinterpret_cast<Rtw89AwdlPeerPool *>(deferred);
+    for (auto &entry:pool->entries)
+        if (entry.station) IOFree(entry.station,entry.allocationSize);
+    auto &state=pool->detachedInterface;
+    if (state.vif) {
+        auto *vif=static_cast<ieee80211_vif *>(state.vif);
+        if (vif->txq) IOFree(vif->txq,state.txqAllocationSize);
+        IOFree(vif,state.allocationSize);
+    }
+    if (pool->primaryStation) IOFree(pool->primaryStation,pool->primaryStationSize);
+    if (pool->primaryVif) IOFree(pool->primaryVif,pool->primaryVifSize);
+    IOFree(pool,sizeof(*pool));
+}
 
 namespace {
 static Rtw89LinuxContext *activeContext;
@@ -406,13 +441,20 @@ void rtw89LinuxDetach(Rtw89PciTransport *transport,
 
     rtw89LinuxPowerDown(context);
 
-    if (vif) {
-        IOFree(vif, context->vifAllocationSize);
-        context->vif = nullptr;
-        context->vifAllocationSize = 0;
-    }
-    if (context->probed && transport)
-        rtw_pci_remove(transport->linuxDevice());
+    if ((context->probed || context->awdlPeers) && !transport) return; // No safe device fence available.
+    if (context->probed) rtw_pci_remove(transport->linuxDevice());
+    if (context->awdlPeers) {
+        auto *pool=context->awdlPeers;
+        pool->detachedInterface=context->awdlInterface;
+        pool->primaryVif=vif;pool->primaryVifSize=context->vifAllocationSize;
+        pool->primaryStation=context->station;pool->primaryStationSize=context->stationAllocationSize;
+        transport->deferRelease(&pool->deferred);
+        context->awdlPeers=nullptr;context->awdlInterface={};
+        context->station=nullptr;context->stationAllocationSize=0;
+        context->stationState=IEEE80211_STA_NOTEXIST;
+    } else if (vif) IOFree(vif,context->vifAllocationSize);
+    context->vif=nullptr;context->vifAllocationSize=0;
+    context->interfaceAdded=false;context->awdlRecovery=false;
     if (context->awdlReceive) {
         RTWAwdl::destroyReceiver(*context->awdlReceive);
         IOFree(context->awdlReceive, sizeof(RTWAwdl::ReceiveRegistration));
@@ -448,7 +490,7 @@ bool rtw89LinuxSetMacAddress(Rtw89LinuxContext *context, const uint8_t address[6
 
 bool rtw89LinuxPowerUp(Rtw89LinuxContext *context)
 {
-    if (!context)
+    if (!context || context->awdlRecovery)
         return false;
     auto *hw = static_cast<struct ieee80211_hw *>(context->hardware);
     auto *vif = static_cast<struct ieee80211_vif *>(context->vif);
@@ -526,7 +568,7 @@ int rtw89LinuxAwdlReserve(Rtw89LinuxContext *context, uint16_t frequency, unsign
     auto *hw=static_cast<ieee80211_hw *>(context->hardware);
     {
         WiphyGuard guard(hw);
-        if (context->started && context->interfaceAdded && !context->scanning &&
+        if (context->started && context->interfaceAdded && !context->scanning && !context->awdlRecovery &&
             context->awdlInterface.hardwareAdded && context->awdlInterface.registered &&
             (!context->station || context->stationState>=IEEE80211_STA_AUTHORIZED)) {
             auto *channel=awdlFrequencyChannel(hw,frequency);
@@ -578,8 +620,8 @@ RTWAwdl::RadioState rtw89LinuxAwdlRadioState(const Rtw89LinuxContext *context)
     auto *hw=static_cast<ieee80211_hw *>(context->hardware);
     WiphyGuard guard(hw);
     auto *vif=static_cast<ieee80211_vif *>(context->awdlInterface.vif);
-    state.recoveryRequired=context->awdlTxGate.isPaused();
-    state.ready=context->started && context->interfaceAdded && !context->scanning &&
+    state.recoveryRequired=context->awdlRecovery || context->awdlTxGate.isPaused();
+    state.ready=context->started && context->interfaceAdded && !context->scanning && !context->awdlRecovery &&
         context->awdlInterface.hardwareAdded && context->awdlInterface.registered && vif &&
         (!context->station || context->stationState>=IEEE80211_STA_AUTHORIZED);
     if (state.ready) {
@@ -606,8 +648,124 @@ RTWAwdl::RadioReservation rtw89LinuxAwdlReserveRadio(Rtw89LinuxContext *context,
     if (!result) return RTWAwdl::RadioReservation::Granted;
     // reserve retains the primary submission gate only when restoration is
     // still owed. Do not classify such a failure as an ordinary rejected visit.
-    return context->awdlTxGate.isPaused() ? RTWAwdl::RadioReservation::RecoveryRequired :
+    return (context->awdlRecovery || context->awdlTxGate.isPaused()) ? RTWAwdl::RadioReservation::RecoveryRequired :
                                           RTWAwdl::RadioReservation::Rejected;
+}
+
+uint32_t rtw89LinuxAwdlPeerCapacity(const Rtw89LinuxContext *context)
+{
+    if (!context || !context->hardware) return 0;
+    auto *hw=static_cast<ieee80211_hw *>(context->hardware);
+    WiphyGuard guard(hw);
+    return context->started && !context->awdlRecovery ? rtw89_macos_awdl_peer_capacity(hw) : 0;
+}
+
+// Called under WiphyGuard. Stop peer TX producers before removing a peer.
+static bool releaseAwdlPeer(Rtw89LinuxContext *context, Rtw89AwdlPeerPool::Entry &entry)
+{
+    if (!entry.station) return true;
+    auto *hw=static_cast<ieee80211_hw *>(context->hardware);
+    auto *vif=static_cast<ieee80211_vif *>(context->awdlInterface.vif);
+    auto *sta=static_cast<ieee80211_sta *>(entry.station);
+    entry.retiring=true;
+    if (entry.registered) { rtw88_remove_sta(sta);entry.registered=false; }
+    if (entry.state>=IEEE80211_STA_NONE) rtw89_macos_flush_rx_ba(sta);
+    while (entry.state>IEEE80211_STA_NOTEXIST) {
+        const auto old=static_cast<ieee80211_sta_state>(entry.state);
+        const auto next=static_cast<ieee80211_sta_state>(entry.state-1);
+        if (hw->ops->sta_state(hw,vif,sta,old,next)) return false;
+        entry.state=next;
+    }
+    IOFree(sta,entry.allocationSize);entry={};return true;
+}
+
+RTWAwdl::PeerResult rtw89LinuxAwdlSetPeer(Rtw89LinuxContext *context,
+                                         const uint8_t address[6], bool add)
+{
+    using Result=RTWAwdl::PeerResult;
+    if (!context || !address || (address[0]&1)) return Result::Invalid;
+    uint8_t bits=0;for (unsigned i=0;i<6;++i) bits|=address[i];
+    if (!bits) return Result::Invalid;
+    auto *hw=static_cast<ieee80211_hw *>(context->hardware);
+    WiphyGuard guard(hw);
+    auto *vif=static_cast<ieee80211_vif *>(context->awdlInterface.vif);
+    auto *primary=static_cast<ieee80211_vif *>(context->vif);
+    if (!hw || !hw->ops || !hw->ops->sta_state || !context->started ||
+        !vif || !context->awdlInterface.hardwareAdded || !context->awdlInterface.registered ||
+        !context->awdlPeers) return Result::NotReady;
+    if (!memcmp(address,vif->addr,6) || (primary && !memcmp(address,primary->addr,6)))
+        return Result::Invalid;
+    auto &pool=*context->awdlPeers;
+    Rtw89AwdlPeerPool::Entry *found=nullptr,*empty=nullptr;
+    unsigned occupied=0;
+    for (auto &entry:pool.entries) {
+        if (entry.station) ++occupied;
+        if (entry.station && !memcmp(entry.address,address,6)) found=&entry;
+        if (!entry.station && !empty) empty=&entry;
+    }
+    if (!add) {
+        if (!found) return Result::Success;
+        if (releaseAwdlPeer(context,*found)) return Result::Success;
+        context->awdlRecovery=true;return Result::RecoveryRequired;
+    }
+    if (context->awdlRecovery) return Result::RecoveryRequired;
+    if (found) return !found->retiring && found->registered && found->state==IEEE80211_STA_AUTHORIZED ?
+        Result::Success : Result::RecoveryRequired;
+    if (context->scanning) return Result::NotReady;
+    if (!empty || occupied>=rtw89_macos_awdl_peer_capacity(hw)) return Result::NoResources;
+    if (hw->sta_data_size>SIZE_MAX-sizeof(ieee80211_sta)) return Result::NoMemory;
+    const size_t bytes=sizeof(ieee80211_sta)+hw->sta_data_size;
+    auto *sta=static_cast<ieee80211_sta *>(IOMallocZero(bytes));
+    if (!sta) return Result::NoMemory;
+    auto &entry=*empty;entry.station=sta;entry.allocationSize=bytes;
+    memcpy(entry.address,address,6);memcpy(sta->addr,address,6);
+    sta->link[0]=&sta->deflink;sta->deflink.sta=sta;memcpy(sta->deflink.addr,address,6);
+    // Baseline interoperable AWDL peer: OFDM only, 20 MHz, no fabricated HT/HE
+    // capabilities or aggregation agreement. Rate enhancement is separate.
+    sta->deflink.supp_rates[NL80211_BAND_2GHZ]=0xff0;
+    sta->deflink.supp_rates[NL80211_BAND_5GHZ]=0xff;
+    sta->deflink.rx_nss=1;sta->deflink.bandwidth=IEEE80211_STA_RX_BW_20;sta->wme=true;
+    int result=hw->ops->sta_state(hw,vif,sta,IEEE80211_STA_NOTEXIST,IEEE80211_STA_NONE);
+    if (!result || rtw89_macos_awdl_peer_retained(vif,sta)) entry.state=IEEE80211_STA_NONE;
+    if (!result) {
+        entry.registered=rtw88_add_sta(vif,sta);
+        if (!entry.registered) result=-ENOSPC;
+    }
+    while (!result && entry.state<IEEE80211_STA_AUTHORIZED) {
+        const auto old=static_cast<ieee80211_sta_state>(entry.state);
+        const auto next=static_cast<ieee80211_sta_state>(entry.state+1);
+        result=hw->ops->sta_state(hw,vif,sta,old,next);
+        if (!result) entry.state=next;
+    }
+    if (!result) return Result::Success;
+    if (!releaseAwdlPeer(context,entry)) {
+        context->awdlRecovery=true;return Result::RecoveryRequired;
+    }
+    return result==-ENOSPC ? Result::NoResources :
+        (result==-ENOMEM ? Result::NoMemory : Result::HardwareError);
+}
+
+bool rtw89LinuxAwdlQuiesce(Rtw89LinuxContext *context)
+{
+    if (!context) return false;
+    if (context->awdlReceive) RTWAwdl::closeReceiver(*context->awdlReceive);
+    if (!context->awdlInterface.vif) {
+        if (context->awdlPeers) for (const auto &entry:context->awdlPeers->entries)
+            if (entry.station) {context->awdlRecovery=true;return false;}
+        context->awdlRecovery=false;return true;
+    }
+    auto *hw=static_cast<ieee80211_hw *>(context->hardware);
+    if (!context->started || !hw || !hw->ops || !hw->ops->sta_state ||
+        (context->awdlTxGate.isPaused() && rtw89LinuxAwdlRestore(context))) {
+        context->awdlRecovery=true;return false;
+    }
+    WiphyGuard guard(hw);
+    bool okay=true;
+    if (context->awdlPeers) for (auto &entry:context->awdlPeers->entries)
+        okay=releaseAwdlPeer(context,entry) && okay;
+    if (!okay) {context->awdlRecovery=true;return false;}
+    RTWAwdl::removeLinuxInterface(hw,context->awdlInterface);
+    context->awdlRecovery=false;return true;
 }
 
 bool rtw89LinuxAwdlAddInterface(Rtw89LinuxContext *context,
@@ -616,8 +774,13 @@ bool rtw89LinuxAwdlAddInterface(Rtw89LinuxContext *context,
     if (!context) return false;
     auto *hw = static_cast<ieee80211_hw *>(context->hardware);
     WiphyGuard guard(hw);
-    if (!context->started || !context->interfaceAdded || context->scanning)
+    if (!context->started || !context->interfaceAdded || context->scanning || context->awdlRecovery)
         return false;
+    if (!context->awdlPeers) {
+        context->awdlPeers=static_cast<Rtw89AwdlPeerPool *>(IOMallocZero(sizeof(Rtw89AwdlPeerPool)));
+        if (!context->awdlPeers) return false;
+        context->awdlPeers->deferred.release=releaseAwdlPeerPool;
+    }
     auto *primary = static_cast<ieee80211_vif *>(context->vif);
     bool added = primary && context->awdlReceive &&
         RTWAwdl::addLinuxInterface(hw, context->awdlInterface,
@@ -636,7 +799,7 @@ bool rtw89LinuxAwdlTransmitAction(Rtw89LinuxContext *context,
     if (!context) return false;
     auto *hw = static_cast<ieee80211_hw *>(context->hardware);
     WiphyGuard guard(hw);
-    if (!context->started || context->scanning ||
+    if (!context->started || context->scanning || context->awdlRecovery ||
         !context->awdlInterface.hardwareAdded || !context->awdlInterface.registered)
         return false;
     auto *vif=static_cast<ieee80211_vif *>(context->awdlInterface.vif);
@@ -657,12 +820,7 @@ bool rtw89LinuxAwdlSetReceiver(Rtw89LinuxContext *context,
 
 void rtw89LinuxAwdlRemoveInterface(Rtw89LinuxContext *context)
 {
-    if (!context) return;
-    if (context->awdlReceive) RTWAwdl::closeReceiver(*context->awdlReceive);
-    if (!context->awdlInterface.vif) return;
-    auto *hw = static_cast<ieee80211_hw *>(context->hardware);
-    WiphyGuard guard(hw);
-    RTWAwdl::removeLinuxInterface(hw, context->awdlInterface);
+    (void)rtw89LinuxAwdlQuiesce(context);
 }
 
 void rtw89LinuxPowerDown(Rtw89LinuxContext *context)
@@ -671,7 +829,18 @@ void rtw89LinuxPowerDown(Rtw89LinuxContext *context)
         return;
     auto *hw = static_cast<struct ieee80211_hw *>(context->hardware);
     auto *vif = static_cast<struct ieee80211_vif *>(context->vif);
-    rtw89LinuxAwdlRemoveInterface(context);
+    if (!rtw89LinuxAwdlQuiesce(context)) {
+        // Firmware cleanup is not confirmed. Keep every peer/VIF allocation
+        // alive until PCI removal and transport worker shutdown; require a full
+        // detach before enabling this device again.
+        if (context->started && hw && hw->ops && hw->ops->stop) {
+            WiphyGuard guard(hw);
+            hw->ops->stop(hw,false);
+            context->started=false;
+        }
+        context->awdlRecovery=true;context->awdlDiscoveryApplied=false;
+        return;
+    }
     if (context->scanning)
         rtw89LinuxScanEnd(context);
     rtw89LinuxDisassociate(context);

@@ -774,6 +774,30 @@ void rtw89_macos_get_tx_rate(struct ieee80211_hw *hw, struct RTWTxRate *out)
     if (hw) ieee80211_iterate_stations_atomic(hw, rtw89_copy_tx_rate, out);
 }
 
+/* Bound the software pool by the chip's MAC-ID namespace, including the
+ * same MLO partition used by rtw89_acquire_mac_id(). Reserve the primary and
+ * secondary VIF IDs; allocation can still fail if other users consume IDs. */
+unsigned int rtw89_macos_awdl_peer_capacity(struct ieee80211_hw *hw)
+{
+    struct rtw89_dev *rtwdev;
+    unsigned int ids;
+
+    if (!hw || !hw->priv)
+        return 0;
+    rtwdev = to_rtw89(hw->priv);
+    if (!rtwdev->chip)
+        return 0;
+    ids = rtwdev->chip->support_macid_num;
+    if (rtwdev->support_mlo) {
+        if (!rtwdev->chip->support_link_num)
+            return 0;
+        ids /= rtwdev->chip->support_link_num;
+    }
+    if (ids <= 2)
+        return 0;
+    return ids - 2 > 16 ? 16 : ids - 2;
+}
+
 /* Called under WiphyGuard after a quiet-ADHOC sta_state add failure.
  * true requires the native allocator to retain sta and its VIF, and retry
  * NONE -> NOTEXIST cleanup (or fence/reset the device) before freeing either.

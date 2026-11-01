@@ -368,6 +368,21 @@ bool RTWCore89::restoreAwdlRadio()
     return rtw89LinuxAwdlRestore(&linuxContext) == 0;
 }
 
+uint32_t RTWCore89::awdlPeerCapacity() const
+{
+    return rtw89LinuxAwdlPeerCapacity(&linuxContext);
+}
+
+RTWAwdl::PeerResult RTWCore89::setAwdlPeer(const uint8_t address[6], bool add)
+{
+    return rtw89LinuxAwdlSetPeer(&linuxContext, address, add);
+}
+
+bool RTWCore89::quiesceAwdlInterface()
+{
+    return rtw89LinuxAwdlQuiesce(&linuxContext);
+}
+
 bool RTWCore89::addAwdlInterface(const uint8_t mac[6])
 {
     return rtw89LinuxAwdlAddInterface(&linuxContext, mac);

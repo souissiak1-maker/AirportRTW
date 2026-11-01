@@ -5,6 +5,7 @@
 #include <HAL/ItlHalService.hpp>
 #include <HAL/RTWAwdlReceive.hpp>
 #include <HAL/RTWAwdlRadio.hpp>
+#include <HAL/RTWAwdlPeer.hpp>
 #include <HAL/ItlDriverInfo.hpp>
 #include <HAL/ItlDriverController.hpp>
 
@@ -29,6 +30,13 @@ public:
     // operations run on the controller workloop; RX callbacks only copy/enqueue.
     virtual bool addAwdlInterface(const uint8_t mac[6]) = 0;
     virtual void removeAwdlInterface() = 0;
+    // Peer operations run on the owner workloop after stopping peer TX. A
+    // recovery error retains hardware allocations until cleanup/device teardown.
+    virtual uint32_t awdlPeerCapacity() const { return 0; }
+    virtual RTWAwdl::PeerResult setAwdlPeer(const uint8_t[6], bool) {
+        return RTWAwdl::PeerResult::Unsupported;
+    }
+    virtual bool quiesceAwdlInterface() { return false; }
     virtual bool setAwdlReceiver(OSObject *, RTWAwdl::ReceiveHandler) = 0;
     virtual bool transmitAwdlAction(const uint8_t *, size_t, uint16_t) = 0;
 };

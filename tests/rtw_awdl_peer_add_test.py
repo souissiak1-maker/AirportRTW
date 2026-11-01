@@ -11,6 +11,7 @@ def extract(s,start):
     return s[a:end]+'\n'
 source=extract((ROOT/'rtw/hal_rtw89/driver/mac80211.c').read_text(),'static int __rtw89_ops_sta_add(')
 query=extract((ROOT/'rtw/hal_rtw89/driver/Senmiko.c').read_text(),'bool rtw89_macos_awdl_peer_retained(')
+query+=extract((ROOT/'rtw/hal_rtw89/driver/Senmiko.c').read_text(),'unsigned int rtw89_macos_awdl_peer_capacity(')
 shim=r'''
 #include <cassert>
 #include <cerrno>
@@ -23,7 +24,10 @@ using u8=uint8_t;
 constexpr unsigned IEEE80211_MLD_MAX_NUM_LINKS=16,RTW89_MAX_MAC_ID_NUM=128,
  RTW89_MAX_SEC_CAM_NUM=128,RTW89_MLO_MODE_MLSR=1,RTW89_CHANCTX_REMOTE_STA_CHANGE=1;
 enum{NL80211_IFTYPE_STATION,NL80211_IFTYPE_AP,NL80211_IFTYPE_ADHOC};
-struct rtw89_dev{};
+struct Chip{unsigned support_macid_num,support_link_num;};
+struct rtw89_dev{const Chip*chip=nullptr;bool support_mlo=false;};
+struct ieee80211_hw{void*priv;};
+static rtw89_dev*to_rtw89(void*p){return static_cast<rtw89_dev*>(p);}
 struct rtw89_vif{unsigned mlo_mode;};
 struct ieee80211_vif{int type;bool no_beacon;rtw89_vif priv;};
 struct rtw89_vif_link{};
@@ -85,6 +89,18 @@ int main(){
   failLink=true;assert(__rtw89_ops_sta_add(&dev,&vif,&sta)==-EINVAL);
   assert(!rtw89_macos_awdl_peer_retained(&vif,&sta)&&released==1&&!unsets);}
  assert(!rtw89_macos_awdl_peer_retained(nullptr,nullptr));
+ assert(!rtw89_macos_awdl_peer_capacity(nullptr));ieee80211_hw hw{nullptr};
+ assert(!rtw89_macos_awdl_peer_capacity(&hw));hw.priv=&dev;
+ assert(!rtw89_macos_awdl_peer_capacity(&hw));
+ struct CapacityCase{unsigned ids,links;bool mlo;unsigned expected;};
+ for(auto row:{CapacityCase{32,2,true,14},CapacityCase{128,2,true,16},
+              CapacityCase{16,2,true,6},CapacityCase{3,1,false,1},
+              CapacityCase{2,1,false,0},CapacityCase{16,0,true,0},
+              CapacityCase{0,2,true,0},CapacityCase{32,0,false,16}}){
+  Chip chip{row.ids,row.links};dev.chip=&chip;dev.support_mlo=row.mlo;
+  assert(rtw89_macos_awdl_peer_capacity(&hw)==row.expected);
+ }
+
  puts("PASS: failed quiet-ADHOC peer add retains link/MAC-ID only when firmware cleanup is owed");
 }
 '''

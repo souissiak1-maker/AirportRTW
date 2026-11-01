@@ -56,6 +56,8 @@ jobs:
           python3 tests/rtw_awdl_peer_context_test.py
           python3 tests/rtw_awdl_peer_role_test.py
           python3 tests/rtw_awdl_peer_add_test.py
+          python3 tests/rtw_awdl_peer_pool_test.py
+          python3 tests/rtw_awdl_peer_shutdown_test.py
           python3 tests/rtw_awdl_cam_cleanup_test.py
           python3 tests/rtw_awdl_hal_isolation_test.py
           xcrun clang++ -std=c++14 -Wall -Wextra -Werror -fsanitize=address,undefined -Iinclude tests/rtw_awdl_receive_registration_test.cpp -o /tmp/rtw_awdl_receive_registration_test
