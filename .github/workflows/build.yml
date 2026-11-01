@@ -42,6 +42,67 @@ jobs:
           python3 tests/rtw_country_notification_test.py
           python3 tests/rtw88_country_test.py
           python3 tests/rtw88_interrupt_selection_test.py
+          xcrun clang++ -std=c++14 -Wall -Wextra -Werror -fsanitize=address,undefined -Iinclude tests/rtw_awdl_frame_test.cpp -o /tmp/rtw_awdl_frame_test
+          /tmp/rtw_awdl_frame_test
+          xcrun clang++ -std=c++14 -Wall -Wextra -Werror -fsanitize=address,undefined -Iinclude tests/rtw_awdl_sync_test.cpp -o /tmp/rtw_awdl_sync_test
+          /tmp/rtw_awdl_sync_test
+          python3 tests/rtw_awdl_filter_test.py
+          python3 tests/rtw_workqueue_test.py
+          xcrun clang++ -std=c++14 -Wall -Wextra -Werror -fsanitize=address,undefined -Iinclude tests/rtw_mac80211_registry_test.cpp -o /tmp/rtw_mac80211_registry_test
+          /tmp/rtw_mac80211_registry_test
+          xcrun clang++ -std=c++14 -Wall -Wextra -Werror -fsanitize=address,undefined -Iinclude tests/rtw_awdl_linux_interface_test.cpp -o /tmp/rtw_awdl_linux_interface_test
+          /tmp/rtw_awdl_linux_interface_test
+          python3 tests/rtw_awdl_radio_policy_test.py
+          python3 tests/rtw_awdl_peer_context_test.py
+          python3 tests/rtw_awdl_peer_role_test.py
+          python3 tests/rtw_awdl_peer_add_test.py
+          python3 tests/rtw_awdl_peer_pool_test.py
+          python3 tests/rtw_awdl_peer_shutdown_test.py
+          python3 tests/rtw_awdl_cam_cleanup_test.py
+          python3 tests/rtw_awdl_hal_isolation_test.py
+          xcrun clang++ -std=c++14 -Wall -Wextra -Werror -fsanitize=address,undefined -Iinclude tests/rtw_awdl_receive_registration_test.cpp -o /tmp/rtw_awdl_receive_registration_test
+          /tmp/rtw_awdl_receive_registration_test
+          xcrun clang++ -std=c++14 -Wall -Wextra -Werror -fsanitize=address,undefined -Iinclude tests/rtw_awdl_linux_action_tx_test.cpp -o /tmp/rtw_awdl_linux_action_tx_test
+          /tmp/rtw_awdl_linux_action_tx_test
+          python3 tests/rtw_awdl_datapath_test.py
+          python3 tests/rtw_awdl_action_input_test.py
+          xcrun clang++ -std=c++14 -Wall -Wextra -Werror -fsanitize=address,undefined -Iinclude tests/rtw_awdl_native_rx_metadata_test.cpp -o /tmp/rtw_awdl_native_rx_metadata_test
+          /tmp/rtw_awdl_native_rx_metadata_test
+          xcrun clang++ -std=c++14 -Wall -Wextra -Werror -fsanitize=address,undefined -Iinclude tests/rtw_awdl_native_events_test.cpp -o /tmp/rtw_awdl_native_events_test
+          /tmp/rtw_awdl_native_events_test
+          xcrun clang++ -std=c++14 -Wall -Wextra -Werror -fsanitize=address,undefined -Iinclude tests/rtw_awdl_window_scheduler_test.cpp -o /tmp/rtw_awdl_window_scheduler_test
+          /tmp/rtw_awdl_window_scheduler_test
+          python3 tests/rtw_awdl_interface_test.py
+          python3 tests/rtw_awdl_runtime_test.py
+          python3 tests/rtw_awdl_native_peers_test.py
+          python3 tests/rtw_awdl_roc_ps_test.py
+          python3 tests/rtw_awdl_tx_drain_test.py
+          python3 tests/rtw_awdl_startup_probe_integration_test.py
+          python3 tests/rtw_awdl_primary_authorization_test.py
+          python3 tests/rtw_awdl_data_bridge_test.py
+          xcrun clang++ -std=c++14 -Wall -Wextra -Werror -fsanitize=address,undefined -Iinclude tests/rtw_awdl_linux_data_tx_test.cpp -o /tmp/rtw_awdl_linux_data_tx_test
+          /tmp/rtw_awdl_linux_data_tx_test
+          python3 tests/rtw_awdl_probe_build_test.py
+          xcrun clang++ -std=c++14 -Wall -Wextra -Werror -fsanitize=address,undefined -Iinclude tests/rtw_awdl_startup_probe_test.cpp -o /tmp/rtw_awdl_startup_probe_test
+          /tmp/rtw_awdl_startup_probe_test
+          python3 tests/rtw_awdl_bridge_radio_test.py
+          python3 tests/rtw_awdl_window_driver_test.py
+          python3 tests/rtw_backend_build_failure_test.py
+          xcrun clang++ -std=c++14 -Wall -Wextra -Werror -fsanitize=address,undefined -Iinclude tests/rtw_awdl_tx_gate_test.cpp -o /tmp/rtw_awdl_tx_gate_test
+          /tmp/rtw_awdl_tx_gate_test
+          xcrun clang++ -std=c++14 -Wall -Wextra -Werror -fsanitize=address,undefined -Iinclude tests/rtw_awdl_election_test.cpp -o /tmp/rtw_awdl_election_test
+          /tmp/rtw_awdl_election_test
+          xcrun clang++ -std=c++14 -Wall -Wextra -Werror -fsanitize=address,undefined -Iinclude tests/rtw_awdl_packet_flow_test.cpp -o /tmp/rtw_awdl_packet_flow_test
+          /tmp/rtw_awdl_packet_flow_test
+          xcrun clang++ -std=c++14 -Wall -Wextra -Werror -fsanitize=address,undefined -Iinclude tests/rtw_awdl_runtime_test.cpp -o /tmp/rtw_awdl_runtime_test
+          /tmp/rtw_awdl_runtime_test
+          xcrun clang++ -std=c++14 -Wall -Wextra -Werror -fsanitize=address,undefined -Iinclude tests/rtw_awdl_clock_test.cpp -o /tmp/rtw_awdl_clock_test
+          /tmp/rtw_awdl_clock_test
+          xcrun clang++ -std=c++14 -Wall -Wextra -Werror -fsanitize=address,undefined -Iinclude tests/rtw_awdl_data_test.cpp -o /tmp/rtw_awdl_data_test
+          /tmp/rtw_awdl_data_test
+          xcrun clang++ -std=c++14 -Wall -Wextra -Werror -fsanitize=address,undefined -Iinclude tests/rtw_awdl_data_receive_test.cpp -o /tmp/rtw_awdl_data_receive_test
+          /tmp/rtw_awdl_data_receive_test
+          python3 tests/rtw_awdl_discovery_guard_test.py
           python3 tests/rtw_locale_test.py
           python3 tests/rtw_locale_cache_test.py
           python3 tests/rtw_rate_frontend_test.py
@@ -94,6 +155,9 @@ jobs:
             tail -100 logs/build.log
             exit 1
           }
+      - name: Check native AWDL ABI declarations
+        if: matrix.platform == 'Tahoe'
+        run: python3 tests/rtw_awdl_native_abi_test.py
       - name: Check bundle
         env:
           PLATFORM: ${{ matrix.platform }}

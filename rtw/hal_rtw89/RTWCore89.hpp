@@ -3,6 +3,7 @@
 #define RTWCore89_hpp
 
 #include <compat.h>
+#include <AWDL/RTWAwdlObserver.hpp>
 #include <IOKit/network/IOEthernetInterface.h>
 #include <IOKit/pci/IOPCIDevice.h>
 #include <IOKit/IOTimerEventSource.h>
@@ -43,6 +44,25 @@ public:
     bool setCountryCode(const char cc[2]) override;
     uint32_t getTxQueueSize() override;
 
+    uint32_t awdlHardwareSupport() const override {
+        // Serialized wiphy dispatch, tracked timer/IRQ/NAPI callbacks and
+        // reader grace periods protect native secondary-role reclamation.
+        return RTWAwdl::FrameTransport|RTWAwdl::ManualVisits|RTWAwdl::PeerStations|RTWAwdl::QuiescentRemoval;
+    }
+    RTWAwdl::RadioState awdlRadioState() const override;
+    bool prepareAwdlRadio() override;
+    bool awdlChannelAllowed(uint16_t) const override;
+    RTWAwdl::RadioReservation reserveAwdlRadio(uint16_t, uint32_t) override;
+    bool restoreAwdlRadio() override;
+    uint32_t awdlPeerCapacity() const override;
+    RTWAwdl::PeerResult setAwdlPeer(const uint8_t[6], bool) override;
+    bool quiesceAwdlInterface() override;
+    bool addAwdlInterface(const uint8_t mac[6]) override;
+    void removeAwdlInterface() override;
+    bool setAwdlReceiver(OSObject *, RTWAwdl::ReceiveHandler) override;
+    bool transmitAwdlAction(const uint8_t *, size_t, uint16_t) override;
+    bool transmitAwdlData(const uint8_t *, size_t, uint16_t, uint64_t) override;
+
     void clearScanningFlags() override;
     IOReturn setMulticastList(IOEthernetAddress *addresses, int count) override;
 
@@ -55,7 +75,7 @@ private:
     static void associationRecoveryExpired(OSObject *, IOTimerEventSource *);
     static void traceReceive(void *, unsigned, const uint8_t *, size_t, unsigned);
     static void receive(void *, const uint8_t *, size_t, int32_t, uint16_t,
-                        bool, bool);
+                        bool, bool, uint32_t, bool);
     static void resumeTransmit(void *);
     static int setKey(struct ieee80211com *, struct ieee80211_node *,
                       struct ieee80211_key *);
@@ -84,6 +104,7 @@ private:
     IOTimerEventSource *associationRecoveryTimer {nullptr};
     Rtw89LinuxContext linuxContext {};
     volatile UInt64 scanChannelCount {0};
+    RTWAwdl::Observer awdlObserver;
     volatile UInt64 rawReceiveCount {0};
     volatile UInt64 acceptedReceiveCount {0};
     volatile UInt64 beaconProbeCount {0};

@@ -508,6 +508,14 @@ static int __rtw89_ops_sta_add(struct rtw89_dev *rtwdev,
 	int ret;
 	int i;
 
+	/* A repeated native add must not reinitialize a live/recovery link or
+	 * acquire a second MAC-ID. Quiet-ADHOC private storage starts zeroed. */
+	if (vif->type == NL80211_IFTYPE_ADHOC && vif->no_beacon && !sta->tdls) {
+		for (i = 0; i < ARRAY_SIZE(rtwsta->links); i++)
+			if (rtwsta->links[i])
+				return -EBUSY;
+	}
+
 	if (vif->type == NL80211_IFTYPE_STATION && !sta->tdls) {
 		rtwvif->mlo_mode = RTW89_MLO_MODE_MLSR;
 
@@ -540,10 +548,17 @@ static int __rtw89_ops_sta_add(struct rtw89_dev *rtwdev,
 	rtwvif_link = rtwsta_link->rtwvif_link;
 
 	ret = rtw89_core_sta_link_add(rtwdev, rtwvif_link, rtwsta_link);
-	if (ret)
+	if (ret) {
+		/* The native quiet-ADHOC allocator must query retained state after
+		 * failed add and retry NONE -> NOTEXIST before freeing this station.
+		 * Do not recycle a link/MAC-ID while firmware may still own its role. */
+		if (vif->type == NL80211_IFTYPE_ADHOC && vif->no_beacon && !sta->tdls &&
+			rtwsta_link->awdl_role_pending)
+			return ret;
 		goto unset_link;
+	}
 
-	if (vif->type == NL80211_IFTYPE_AP || sta->tdls)
+	if (rtw89_vif_has_peer_context(vif) || sta->tdls)
 		rtw89_queue_chanctx_change(rtwdev, RTW89_CHANCTX_REMOTE_STA_CHANGE);
 
 	return 0;
@@ -658,7 +673,7 @@ static int __rtw89_ops_sta_remove(struct rtw89_dev *rtwdev,
 		rtw89_sta_unset_link(rtwsta, link_id);
 	}
 
-	if (vif->type == NL80211_IFTYPE_AP || sta->tdls) {
+	if (rtw89_vif_has_peer_context(vif) || sta->tdls) {
 		rtw89_release_mac_id(rtwdev, macid);
 		rtw89_queue_chanctx_change(rtwdev, RTW89_CHANCTX_REMOTE_STA_CHANGE);
 	}
@@ -1473,12 +1488,14 @@ static int rtw89_ops_remain_on_channel(struct ieee80211_hw *hw,
 {
 	struct rtw89_dev *rtwdev = hw->priv;
 	struct rtw89_vif *rtwvif = vif_to_rtwvif_safe(vif);
-	struct rtw89_roc *roc = &rtwvif->roc;
+	struct rtw89_roc *roc;
 
 	lockdep_assert_wiphy(hw->wiphy);
 
 	if (!rtwvif)
 		return -EINVAL;
+
+	roc = &rtwvif->roc;
 
 	if (roc->state != RTW89_ROC_IDLE) {
 		return -EBUSY;
@@ -1496,9 +1513,7 @@ static int rtw89_ops_remain_on_channel(struct ieee80211_hw *hw,
 	roc->chan = *chan;
 	roc->type = type;
 
-	rtw89_roc_start(rtwdev, rtwvif);
-
-	return 0;
+	return rtw89_roc_start(rtwdev, rtwvif);
 }
 
 static int rtw89_ops_cancel_remain_on_channel(struct ieee80211_hw *hw,
@@ -1514,9 +1529,7 @@ static int rtw89_ops_cancel_remain_on_channel(struct ieee80211_hw *hw,
 
 	wiphy_delayed_work_cancel(hw->wiphy, &rtwvif->roc.roc_work);
 
-	rtw89_roc_end(rtwdev, rtwvif);
-
-	return 0;
+	return rtw89_roc_end(rtwdev, rtwvif);
 }
 
 static void rtw89_set_tid_config_iter(void *data, struct ieee80211_sta *sta)

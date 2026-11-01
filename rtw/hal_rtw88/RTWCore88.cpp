@@ -212,6 +212,11 @@ IOReturn RTWCore88::enable(IONetworkInterface *interface)
         RTW_LOG("AirportRTW: Wi-Fi enable failed during power-up\n");
         return kIOReturnIOError;
     }
+#if RTW_DIAGNOSTICS
+    const auto *discovery = OSDynamicCast(OSBoolean,
+        getController()->getProperty("RTWAwdlDiscovery"));
+    rtw88LinuxSetAwdlDiscovery(&linuxContext, discovery && discovery->isTrue());
+#endif
     sc.sc_flags |= RTW88_FLAG_ENABLED | RTW88_FLAG_FW_RUNNING |
                    RTW88_FLAG_INTERFACE;
     sc.sc_ic.ic_if.if_flags |= IFF_UP | IFF_RUNNING;
@@ -319,6 +324,27 @@ uint32_t RTWCore88::getTxQueueSize()
     return kRtw88TxQueueSize;
 }
 
+bool RTWCore88::addAwdlInterface(const uint8_t mac[6])
+{
+    return rtw88LinuxAwdlAddInterface(&linuxContext, mac);
+}
+
+void RTWCore88::removeAwdlInterface()
+{
+    rtw88LinuxAwdlRemoveInterface(&linuxContext);
+}
+
+bool RTWCore88::setAwdlReceiver(OSObject *owner, RTWAwdl::ReceiveHandler handler)
+{
+    return rtw88LinuxAwdlSetReceiver(&linuxContext, owner, handler);
+}
+
+bool RTWCore88::transmitAwdlAction(const uint8_t *frame, size_t length,
+                                      uint16_t frequency)
+{
+    return rtw88LinuxAwdlTransmitAction(&linuxContext, frame, length, frequency);
+}
+
 void RTWCore88::clearScanningFlags()
 {
     sc.sc_flags &= ~RTW88_FLAG_SCANNING;
@@ -347,7 +373,7 @@ bool RTWCore88::attachNet80211()
     ic->ic_caps = IEEE80211_C_WEP | IEEE80211_C_RSN |
                   IEEE80211_C_SCANALL | IEEE80211_C_SCANALLBAND |
                   IEEE80211_C_SHSLOT | IEEE80211_C_SHPREAMBLE |
-                  IEEE80211_C_QOS | IEEE80211_C_TX_AMPDU | IEEE80211_C_MFP;
+                  IEEE80211_C_QOS | IEEE80211_C_TX_AMPDU;
     ic->ic_htcaps = IEEE80211_HTCAP_SGI20 |
                     IEEE80211_HTCAP_CBW20_40 | IEEE80211_HTCAP_SGI40 |
                     IEEE80211_HTCAP_LDPC |
@@ -468,6 +494,22 @@ void RTWCore88::watchdog(struct _ifnet *ifp)
     RTW_DIAGNOSTIC(controller->setProperty("RTW88InterruptCount",
                             owner->transport ? owner->transport->getInterruptCount() : 0, 64));
     RTW_DIAGNOSTIC(controller->setProperty("RTW88ScanChannelCount", owner->scanChannelCount, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTWAwdlFilterRequested", owner->linuxContext.awdlDiscovery));
+    RTW_DIAGNOSTIC(controller->setProperty("RTWAwdlFilterAccepted", owner->linuxContext.awdlDiscoveryApplied));
+    RTW_DIAGNOSTIC(controller->setProperty("RTWAwdlActionFrames", owner->awdlObserver.actionFrames, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTWAwdlVendorActions", owner->awdlObserver.vendorActions, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTWAwdlAppleVendorActions", owner->awdlObserver.appleVendorActions, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTWAwdlValidActions", owner->awdlObserver.valid, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTWAwdlMalformedActions", owner->awdlObserver.malformed, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTWAwdlSyncEnvelopes", owner->awdlObserver.syncEnvelopes, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTWAwdlChannelEnvelopes", owner->awdlObserver.channelEnvelopes, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTWAwdlLastFrequency", owner->awdlObserver.lastFrequency, 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTWAwdlTimedActions", owner->awdlObserver.timedActions, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTWAwdlSyncDecoded", owner->awdlObserver.syncDecoded, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTWAwdlSyncDecodeFailures", owner->awdlObserver.syncDecodeFailures, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTWAwdlLastRadioTimestamp", owner->awdlObserver.lastRadioTimestamp, 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTWAwdlLastVersion", owner->awdlObserver.lastVersion, 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTWAwdlLastSubtype", owner->awdlObserver.lastSubtype, 32));
     RTW_DIAGNOSTIC(controller->setProperty("RTW88RawReceiveCount", owner->rawReceiveCount, 64));
     RTW_DIAGNOSTIC(controller->setProperty("RTW88AcceptedReceiveCount", owner->acceptedReceiveCount, 64));
     RTW_DIAGNOSTIC(controller->setProperty("RTW88BeaconProbeCount", owner->beaconProbeCount, 64));
@@ -808,7 +850,8 @@ void RTWCore88::resumeTransmit(void *opaque)
 
 void RTWCore88::receive(void *opaque, const uint8_t *frame, size_t length,
                        int32_t rssi, uint16_t frequency, bool decrypted,
-                       bool ivStripped)
+                       bool ivStripped, uint32_t radioTimestamp,
+                       bool radioTimestampValid)
 {
     auto *owner = static_cast<RTWCore88 *>(opaque);
     if (!owner || !frame || length < 2)
@@ -817,6 +860,8 @@ void RTWCore88::receive(void *opaque, const uint8_t *frame, size_t length,
     if (length < (controlFrame ? 16 : sizeof(struct ieee80211_frame)))
         return;
     __sync_fetch_and_add(&owner->rawReceiveCount, 1);
+    RTW_DIAGNOSTIC(owner->awdlObserver.observe(frame, length, frequency,
+                                                  radioTimestamp, radioTimestampValid));
     struct ieee80211com *ic = &owner->sc.sc_ic;
     auto *wh = reinterpret_cast<const struct ieee80211_frame *>(frame);
     const uint8_t frameType = wh->i_fc[0] & IEEE80211_FC0_TYPE_MASK;

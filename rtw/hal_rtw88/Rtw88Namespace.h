@@ -200,6 +200,10 @@
 #define rtw88_read_log airportrtw88_rtw88_read_log
 #define rtw88_reenable_interrupt airportrtw88_rtw88_reenable_interrupt
 #define rtw88_register_hw airportrtw88_rtw88_register_hw
+#define rtw88_add_vif airportrtw88_rtw88_add_vif
+#define rtw88_remove_vif airportrtw88_rtw88_remove_vif
+#define rtw88_add_sta airportrtw88_rtw88_add_sta
+#define rtw88_remove_sta airportrtw88_rtw88_remove_sta
 #define rtw88_register_sta airportrtw88_rtw88_register_sta
 #define rtw88_register_vif airportrtw88_rtw88_register_vif
 #define rtw88_restore_connected_hw airportrtw88_rtw88_restore_connected_hw

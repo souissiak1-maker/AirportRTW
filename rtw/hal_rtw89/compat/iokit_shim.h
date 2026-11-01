@@ -23,14 +23,25 @@ extern void     IOSleep(unsigned milliseconds);
 
 /* ---- IOSimpleLock (interrupt-safe spinlock) ---- */
 typedef struct IOSimpleLock IOSimpleLock;
-typedef unsigned long IOInterruptState;
+typedef int IOInterruptState; /* LP64 IOKit uses boolean_t */
 extern IOSimpleLock    *IOSimpleLockAlloc(void);
 extern void             IOSimpleLockFree(IOSimpleLock *lock);
 extern void             IOSimpleLockLock(IOSimpleLock *lock);
 extern void             IOSimpleLockUnlock(IOSimpleLock *lock);
-extern IOInterruptState IOSimpleLockLockDisableInterrupt(IOSimpleLock *lock);
-extern void             IOSimpleLockUnlockEnableInterrupt(IOSimpleLock *lock,
-                                                          IOInterruptState state);
+/* These two IOKit helpers are inline APIs, not exported KPI symbols.
+ * Mirror the SDK operations using the exported interrupt and spin-lock calls. */
+extern int ml_set_interrupts_enabled(int enabled);
+static inline IOInterruptState IOSimpleLockLockDisableInterrupt(IOSimpleLock *lock)
+{
+    IOInterruptState previous=ml_set_interrupts_enabled(0);
+    IOSimpleLockLock(lock);
+    return previous;
+}
+static inline void IOSimpleLockUnlockEnableInterrupt(IOSimpleLock *lock,IOInterruptState previous)
+{
+    IOSimpleLockUnlock(lock);
+    ml_set_interrupts_enabled(previous);
+}
 
 /* ---- IOLock (sleepable mutex) ---- */
 typedef struct IOLock IOLock;

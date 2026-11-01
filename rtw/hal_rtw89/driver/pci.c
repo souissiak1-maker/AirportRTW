@@ -1528,6 +1528,42 @@ static void __pci_flush_txch(struct rtw89_dev *rtwdev, u8 txch, bool drop)
 		rtw89_info(rtwdev, "timed out to flush pci txch: %d\n", txch);
 }
 
+/* Checked data/management DMA drain for the native manual-ROC owner.
+ * Producers must be stopped by the caller. Firmware commands are independent
+ * of the data channel and must remain available for restore/role cleanup.
+ * Like the normal flush this bounds polling attempts, not MMIO wall time.
+ */
+int rtw89_pci_awdl_tx_drain(struct rtw89_dev *rtwdev)
+{
+	struct rtw89_pci *rtwpci = (struct rtw89_pci *)rtwdev->priv;
+	const struct rtw89_pci_info *info = rtwdev->pci_info;
+	u8 ch, poll;
+
+	if (!test_bit(RTW89_FLAG_POWERON, rtwdev->flags) ||
+	    !test_bit(RTW89_FLAG_RUNNING, rtwdev->flags))
+		return -ENODEV;
+	for (ch = 0; ch < RTW89_TXCH_NUM; ++ch) {
+		struct rtw89_pci_dma_ring *ring;
+		u32 value;
+
+		if (ch == RTW89_TXCH_CH12 || (info->tx_dma_ch_mask & BIT(ch)))
+			continue;
+		ring = &rtwpci->tx.rings[ch].bd_ring;
+		for (poll = 0; poll < 60; ++poll) {
+			value = rtw89_read32(rtwdev, ring->addr.idx);
+			if (value == ~0U)
+				return -ENODEV;
+			if (FIELD_GET(TXBD_HW_IDX_MASK, value) == ring->wp)
+				break;
+			udelay(1);
+		}
+		if (poll == 60)
+			return -ETIMEDOUT;
+	}
+	return test_bit(RTW89_FLAG_POWERON, rtwdev->flags) &&
+	       test_bit(RTW89_FLAG_RUNNING, rtwdev->flags) ? 0 : -ENODEV;
+}
+
 static void __rtw89_pci_ops_flush_txchs(struct rtw89_dev *rtwdev, u32 txchs,
 					bool drop)
 {

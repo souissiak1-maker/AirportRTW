@@ -28,6 +28,26 @@ def filter_registry(tree):
                                     ('password', 'pmk', 'ptk', 'gtk', 'kck', 'kek',
                                      'nonce', 'bssid', 'ssid', 'macaddress', 'header', 'payload'))):
                     fields[key] = item
+                elif key in {'RTWIdentityNameCalls', 'RTWIdentityPeerCalls',
+                             'RTWIdentityNameResult', 'RTWIdentityPeerResult',
+                             'RTWIdentityNameLength'} and isinstance(item, (int, bool)):
+                    fields[key] = item
+                elif key in {'RTWAwdlActionFrames', 'RTWAwdlVendorActions', 'RTWAwdlAppleVendorActions', 'RTWAwdlFilterRequested', 'RTWAwdlFilterAccepted', 'RTWAwdlValidActions', 'RTWAwdlMalformedActions',
+                             'RTWAwdlSyncEnvelopes', 'RTWAwdlChannelEnvelopes',
+                             'RTWAwdlLastFrequency', 'RTWAwdlLastVersion',
+                             'RTWAwdlLastSubtype', 'RTWAwdlTimedActions',
+                             'RTWAwdlSyncDecoded', 'RTWAwdlSyncDecodeFailures',
+                             'RTWAwdlLastRadioTimestamp', 'RTWAwdlProbeEnabled',
+                             'RTWAwdlProbeSetupFailed', 'RTWAwdlProbeRevision',
+                             'RTWAwdlProbeStage', 'RTWAwdlProbeResult',
+                             'RTWAwdlProbePrimaryState', 'RTWAwdlProbePrimaryReady',
+                             'RTWAwdlProbeRadioSampled', 'RTWAwdlProbeRadioReady',
+                             'RTWAwdlProbeRadioRecoveryRequired', 'RTWAwdlProbeRadioFrequency',
+                             'RTWAwdlProbeRadioBlockers', 'RTWAwdlProbeRadioChecks',
+                             'RTWAwdlProbeWaits', 'RTWAwdlProbeListens',
+                             'RTWAwdlProbePeerCapacity', 'RTWAwdlProbeCleanupSucceeded',
+                             'RTWAwdlProbeActionRx', 'RTWAwdlProbeDataRx'} and isinstance(item, (int, bool)):
+                    fields[key] = item
                 elif key in COUNTRY_KEYS and isinstance(item, str):
                     fields[key] = item
                 elif key in IDENTITY_KEYS and isinstance(item, (str, bytes)):

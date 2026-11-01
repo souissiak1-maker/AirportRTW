@@ -85,14 +85,24 @@ void rtw88_dev_printk(int level, struct device *dev, const char *fmt, ...)
 /* devcoredump used in main.c */
 #define dev_coredump(dev, data, datalen, gfp) dev_coredumpv(dev, data, datalen, gfp)
 
-/* rculist stubs — used in some rtw88 files */
-#define rcu_read_lock()   do {} while (0)
-#define rcu_read_unlock() do {} while (0)
-#define rcu_dereference(p) (p)
-#define rcu_dereference_protected(p, c) (p)
-#define RCU_INIT_POINTER(p, v) ((p) = (v))
-#define rcu_assign_pointer(p, v) ((p) = (v))
-#define synchronize_rcu() do {} while (0)
+/* Count real readers, including NAPI, before reclaiming unlinked objects. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+void rtw89_compat_read_lock(void);
+void rtw89_compat_read_unlock(void);
+void rtw89_compat_synchronize_rcu(void);
+void rtw89_compat_defer_free(void *);
+#ifdef __cplusplus
+}
+#endif
+#define rcu_read_lock() rtw89_compat_read_lock()
+#define rcu_read_unlock() rtw89_compat_read_unlock()
+#define rcu_dereference(p) __atomic_load_n(&(p),__ATOMIC_SEQ_CST)
+#define rcu_dereference_protected(p,c) __atomic_load_n(&(p),__ATOMIC_SEQ_CST)
+#define RCU_INIT_POINTER(p,v) __atomic_store_n(&(p),(v),__ATOMIC_SEQ_CST)
+#define rcu_assign_pointer(p,v) __atomic_store_n(&(p),(v),__ATOMIC_SEQ_CST)
+#define synchronize_rcu() rtw89_compat_synchronize_rcu()
 
 /* srcu stubs */
 struct srcu_struct { int dummy; };
@@ -329,6 +339,12 @@ void rtw88_restore_connected_hw(struct ieee80211_hw *hw,
  * the firmware reserved-page download after association). */
 void rtw88_register_vif(struct ieee80211_vif *vif);
 void rtw88_unregister_vif(void);
+/* Additional interfaces/peers are bounded and explicitly owned by the caller.
+ * Remove peers before freeing them; borrowed lookups require teardown exclusion. */
+bool rtw88_add_vif(struct ieee80211_vif *vif);
+void rtw88_remove_vif(struct ieee80211_vif *vif);
+bool rtw88_add_sta(struct ieee80211_vif *vif, struct ieee80211_sta *sta);
+void rtw88_remove_sta(struct ieee80211_sta *sta);
 void rtw88_register_sta(struct ieee80211_sta *sta);
 void rtw88_unregister_sta(void);
 

@@ -3,6 +3,10 @@
 #define AIRPORTRTW_SHARED_RTWCORE_HPP
 
 #include <HAL/ItlHalService.hpp>
+#include <HAL/RTWAwdlReceive.hpp>
+#include <HAL/RTWAwdlRadio.hpp>
+#include <HAL/RTWAwdlPeer.hpp>
+#include <HAL/RTWAwdlHardwareSupport.hpp>
 #include <HAL/ItlDriverInfo.hpp>
 #include <HAL/ItlDriverController.hpp>
 
@@ -13,7 +17,9 @@ constexpr int RTW_MIN_DBM = -100;
  * RTWCore88 or RTWCore89. net80211 remains the shared owner of MLME state. */
 class RTWCore : public ItlHalService,
                 public ItlDriverInfo,
-                public ItlDriverController {
+                public ItlDriverController,
+                public RTWAwdl::Radio,
+                public RTWAwdl::PeerHardware {
     OSDeclareAbstractStructors(RTWCore)
 public:
     ItlDriverInfo *getDriverInfo() override { return this; }
@@ -22,5 +28,18 @@ public:
     int16_t getBSSNoise() override;
     bool is5GBandSupport() override { return true; }
     UInt32 supportedFeatures() override;
+    // Native protocol code uses this hardware-independent contract. Control
+    // operations run on the controller workloop; RX callbacks only copy/enqueue.
+    virtual uint32_t awdlHardwareSupport() const {return 0;}
+    virtual bool addAwdlInterface(const uint8_t mac[6]) = 0;
+    virtual void removeAwdlInterface() = 0;
+    // Peer operations run on the owner workloop after stopping peer TX. A
+    // recovery error retains hardware allocations until cleanup/device teardown.
+    virtual bool quiesceAwdlInterface() { return false; }
+    virtual bool setAwdlReceiver(OSObject *, RTWAwdl::ReceiveHandler) = 0;
+    virtual bool transmitAwdlAction(const uint8_t *, size_t, uint16_t) = 0;
+    // Copied raw IPv6 AWDL MPDU, valid only inside an owned manual visit.
+    // deadlineUs is software monotonic microseconds; true is not an RF ACK.
+    virtual bool transmitAwdlData(const uint8_t *, size_t, uint16_t, uint64_t) { return false; }
 };
 #endif

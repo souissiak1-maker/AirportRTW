@@ -3,6 +3,7 @@
 #define RTWCore88_hpp
 
 #include <compat.h>
+#include <AWDL/RTWAwdlObserver.hpp>
 #include <IOKit/network/IOEthernetInterface.h>
 #include <IOKit/pci/IOPCIDevice.h>
 #include <IOKit/IOTimerEventSource.h>
@@ -44,6 +45,11 @@ public:
     bool setCountryCode(const char cc[2]) override;
     uint32_t getTxQueueSize() override;
 
+    bool addAwdlInterface(const uint8_t mac[6]) override;
+    void removeAwdlInterface() override;
+    bool setAwdlReceiver(OSObject *, RTWAwdl::ReceiveHandler) override;
+    bool transmitAwdlAction(const uint8_t *, size_t, uint16_t) override;
+
     void clearScanningFlags() override;
     IOReturn setMulticastList(IOEthernetAddress *addresses, int count) override;
 
@@ -55,7 +61,7 @@ private:
     static void scanDwellExpired(OSObject *, IOTimerEventSource *);
     static void associationRecoveryExpired(OSObject *, IOTimerEventSource *);
     static void receive(void *, const uint8_t *, size_t, int32_t, uint16_t,
-                        bool, bool);
+                        bool, bool, uint32_t, bool);
     static void resumeTransmit(void *);
     static int setKey(struct ieee80211com *, struct ieee80211_node *,
                       struct ieee80211_key *);
@@ -82,6 +88,7 @@ private:
     IOTimerEventSource *associationRecoveryTimer {nullptr};
     Rtw88LinuxContext linuxContext {};
     volatile UInt64 scanChannelCount {0};
+    RTWAwdl::Observer awdlObserver;
     volatile UInt64 rawReceiveCount {0};
     volatile UInt64 acceptedReceiveCount {0};
     volatile UInt64 beaconProbeCount {0};

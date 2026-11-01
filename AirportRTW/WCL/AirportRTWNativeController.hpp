@@ -10,6 +10,9 @@
 #define AirportRTWV2_hpp
 
 #include "Apple80211.h"
+#if defined(AIRPORT_WCL) && __IO80211_TARGET == __MAC_26_0
+#include <Airport/macOS26/IO80211AWDLProtocol.h>
+#endif
 #ifdef AIRPORT_WCL
 #if __IO80211_TARGET == __MAC_15_2
 #include <Airport/macOS15/FaultReporter.h>
@@ -28,6 +31,16 @@
 #include <IOKit/IOFilterInterruptEventSource.h>
 
 #include "../../rtw/RTWCore.hpp"
+#include <AirportRTWDiagnostics.h>
+#if defined(AIRPORT_WCL) && __IO80211_TARGET == __MAC_26_0 && (RTW_DIAGNOSTICS || RTW_AWDL_STARTUP_PROBE)
+class AirportRTWAwdlProbe;
+#endif
+
+#if defined(AIRPORT_WCL) && __IO80211_TARGET == __MAC_26_0
+class AirportRTWAwdlInterface;
+namespace AirportRTWAwdl {class Runtime;}
+#endif
+
 
 #include "AirportRTWEthernetInterface.hpp"
 
@@ -75,6 +88,19 @@ IOReturn get##REQ(OSObject *object, struct DATA_TYPE *data);
 IOReturn set##REQ(OSObject *object, struct DATA_TYPE *data);
 
 public:
+#if defined(AIRPORT_WCL) && __IO80211_TARGET == __MAC_26_0
+    bool nativeAwdlAvailable() const;
+    IOReturn createNativeAwdl(apple80211_virt_if_create_data *);
+    void stopNativeAwdl();
+    IO80211VirtualInterface *createVirtualInterface(ether_addr *,unsigned int) override;
+    SInt32 enableVirtualInterface(IO80211VirtualInterface *) override;
+    SInt32 disableVirtualInterface(IO80211VirtualInterface *) override;
+    IOLock *nativeAwdlLock_{nullptr};
+    AirportRTWAwdlInterface *nativeAwdlInterface_{nullptr};
+    AirportRTWAwdl::Runtime *nativeAwdlRuntime_{nullptr};
+    thread_t nativeAwdlStopThread_{nullptr};
+    bool nativeAwdlEnabled_{false},nativeAwdlShutdown_{false},nativeAwdlStopping_{false};
+#endif
     virtual bool init(OSDictionary *properties) override;
     virtual void free() override;
     virtual IOService* probe(IOService* provider, SInt32* score) override;
@@ -252,6 +278,16 @@ public:
     UInt8 pmPCICapPtr;
     bool magicPacketEnabled;
     bool magicPacketSupported;
+
+#if defined(AIRPORT_WCL) && __IO80211_TARGET == __MAC_26_0 && (RTW_DIAGNOSTICS || RTW_AWDL_STARTUP_PROBE)
+    AirportRTWAwdlProbe *awdlProbe_ = nullptr;
+    IOTimerEventSource *awdlProbeTimer_ = nullptr;
+    void startAwdlProbe();
+    void stopAwdlProbe(bool dispose = false);
+    static void awdlProbeTimer(OSObject *, IOTimerEventSource *);
+    static IOReturn awdlProbeAction(OSObject *, void *, void *, void *, void *);
+    static void awdlProbeReceive(OSObject *, const uint8_t *, size_t, const RTWAwdl::ReceiveMetadata &);
+#endif
 
     //AWDL
     uint8_t *syncFrameTemplate;

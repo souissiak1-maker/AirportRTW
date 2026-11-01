@@ -25,6 +25,18 @@ if (( $# )); then
   TARGETS=("$@")
 fi
 
+EXTRA_BUILD_SETTINGS=()
+if [[ "${AWDL_STARTUP_PROBE:-0}" == "1" ]]; then
+  if [[ "${#TARGETS[@]}" != "1" || "${TARGETS[0]}" != "AirportRTW-Tahoe" ]]; then
+    echo "AWDL startup probe builds require the single AirportRTW-Tahoe target" >&2
+    exit 2
+  fi
+  # Keep opt-in diagnostics separate from normal release artifacts and caches.
+  OUTPUT="$ROOT/build/awdl-startup-probe"
+  OBJECTS="$ROOT/build/awdl-startup-probe-obj"
+  EXTRA_BUILD_SETTINGS+=( 'OTHER_CPLUSPLUSFLAGS=$(inherited) -DRTW_AWDL_STARTUP_PROBE=1' )
+fi
+
 for target in "${TARGETS[@]}"; do
   xcodebuild -quiet \
     -project "$ROOT/AirportRTW.xcodeproj" \
@@ -35,7 +47,8 @@ for target in "${TARGETS[@]}"; do
     EXCLUDED_SOURCE_FILE_NAMES="$BACKEND_C_SOURCES" \
     'OTHER_LDFLAGS=$(inherited) $(DERIVED_FILE_DIR)/librtw89_c.a $(DERIVED_FILE_DIR)/librtw88_c.a $(DERIVED_FILE_DIR)/librtw_sae.a' \
     SYMROOT="$OUTPUT" \
-    OBJROOT="$OBJECTS"
+    OBJROOT="$OBJECTS" \
+    ${EXTRA_BUILD_SETTINGS[@]+"${EXTRA_BUILD_SETTINGS[@]}"}
 done
 
 if [[ "$CONFIGURATION" == "Release" ]]; then

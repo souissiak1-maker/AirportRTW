@@ -1211,6 +1211,9 @@
 		83A2AC34A4C79456EF00A9C8 = {isa = PBXBuildFile; fileRef = 4EC218A429C0D44F88933AAA; };
 		55CE93417624514489E53E5C = {isa = PBXBuildFile; fileRef = 4EC218A429C0D44F88933AAA; };
 		71364CC896DF7F6554F1C119 = {isa = PBXBuildFile; fileRef = 4EC218A429C0D44F88933AAA; };
+		FF4DD01C60B0B5021D351646 /* AirportRTWAwdlDatapath.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 1B3318FB182330B71FDE681F; };
+		C099FADF2F390AD3758AA39E /* AirportRTWAwdlActionInput.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A8C8175392980D8E90CA5604; };
+		8B6D7AD132E15CD0FD31BA5D /* AirportRTWAwdlInterface.cpp in Sources */ = {isa = PBXBuildFile; fileRef = C133DA685EE7E488E62A607D; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -1548,6 +1551,9 @@
 		F4EECB33D3633F2837E58459 = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = "rtw/RTWCore.cpp"; sourceTree = SOURCE_ROOT; };
 		4EC218A429C0D44F88933AAA = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = "rtw80211/openbsd/net80211/ieee80211_sae.c"; sourceTree = SOURCE_ROOT; };
 		B62DC19B24447AD44E3C60BF = {isa = PBXFileReference; lastKnownFileType = text; path = "rtw80211/sae/NOTICE.txt"; sourceTree = SOURCE_ROOT; };
+		1B3318FB182330B71FDE681F /* AirportRTWAwdlDatapath.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = AirportRTW/WCL/AirportRTWAwdlDatapath.cpp; sourceTree = SOURCE_ROOT; };
+		A8C8175392980D8E90CA5604 /* AirportRTWAwdlActionInput.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = AirportRTW/WCL/AirportRTWAwdlActionInput.cpp; sourceTree = SOURCE_ROOT; };
+		C133DA685EE7E488E62A607D /* AirportRTWAwdlInterface.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = AirportRTW/WCL/AirportRTWAwdlInterface.cpp; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -1629,6 +1635,9 @@
 		024A07A223FCBC3C009FBA6C = {
 			isa = PBXGroup;
 			children = (
+				C133DA685EE7E488E62A607D /* AirportRTWAwdlInterface.cpp */,
+				A8C8175392980D8E90CA5604 /* AirportRTWAwdlActionInput.cpp */,
+				1B3318FB182330B71FDE681F /* AirportRTWAwdlDatapath.cpp */,
 				4EC218A429C0D44F88933AAA,
 				B62DC19B24447AD44E3C60BF,
 				F4EECB33D3633F2837E58459,
@@ -2746,7 +2755,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/bash;
-			shellScript = "scripts/build_rtw89_c_archive.sh\nscripts/build_rtw88_c_archive.sh\nscripts/build_sae_archive.sh\n";
+			shellScript = "set -euo pipefail\nscripts/build_rtw89_c_archive.sh\nscripts/build_rtw88_c_archive.sh\nscripts/build_sae_archive.sh\n";
 		};
 		A89C00012F00000000000002 /* Build RTW89 C Archive */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -2762,7 +2771,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/bash;
-			shellScript = "scripts/build_rtw89_c_archive.sh\nscripts/build_rtw88_c_archive.sh\nscripts/build_sae_archive.sh\n";
+			shellScript = "set -euo pipefail\nscripts/build_rtw89_c_archive.sh\nscripts/build_rtw88_c_archive.sh\nscripts/build_sae_archive.sh\n";
 		};
 		A89C00012F00000000000003 /* Build RTW89 C Archive */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -2778,7 +2787,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/bash;
-			shellScript = "scripts/build_rtw89_c_archive.sh\nscripts/build_rtw88_c_archive.sh\nscripts/build_sae_archive.sh\n";
+			shellScript = "set -euo pipefail\nscripts/build_rtw89_c_archive.sh\nscripts/build_rtw88_c_archive.sh\nscripts/build_sae_archive.sh\n";
 		};
 		5066D63C25287F8E00EE6F38 /* Generate Firmware */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -3698,6 +3707,9 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				8B6D7AD132E15CD0FD31BA5D /* AirportRTWAwdlInterface.cpp in Sources */,
+				C099FADF2F390AD3758AA39E /* AirportRTWAwdlActionInput.cpp in Sources */,
+				FF4DD01C60B0B5021D351646 /* AirportRTWAwdlDatapath.cpp in Sources */,
 				71364CC896DF7F6554F1C119,
 				31CCB9C53494AF82C3A99AA0,
 				68A78AA0A52D7B7856066ABC,
@@ -3875,7 +3887,7 @@
 				KERNEL_EXTENSION_HEADER_SEARCH_PATHS = "$(PROJECT_DIR)/MacKernelSDK/Headers";
 				KERNEL_FRAMEWORK_HEADERS = "$(PROJECT_DIR)/MacKernelSDK/Headers";
 				MACOSX_DEPLOYMENT_TARGET = 10.12;
-				MODULE_VERSION = 2.2.1;
+				MODULE_VERSION = 2.3.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				OTHER_CPLUSPLUSFLAGS = (
@@ -3943,7 +3955,7 @@
 				KERNEL_EXTENSION_HEADER_SEARCH_PATHS = "$(PROJECT_DIR)/MacKernelSDK/Headers";
 				KERNEL_FRAMEWORK_HEADERS = "$(PROJECT_DIR)/MacKernelSDK/Headers";
 				MACOSX_DEPLOYMENT_TARGET = 10.12;
-				MODULE_VERSION = 2.2.1;
+				MODULE_VERSION = 2.3.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				OTHER_CPLUSPLUSFLAGS = (

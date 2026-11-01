@@ -6,6 +6,7 @@
 #include "Rtw88LinkPolicy.hpp"
 
 #include <IOKit/IOLib.h>
+#include <AWDL/RTWAwdlRxPolicy.hpp>
 
 extern "C" {
 unsigned int airportrtw88_get_locale(struct ieee80211_hw *);
@@ -23,6 +24,10 @@ void rtw88_hw_get_tx_rate(struct ieee80211_hw *, struct RTWTxRate *);
 void rtw88_register_vif(struct ieee80211_vif *);
 void rtw88_unregister_vif(void);
 }
+
+#include <AWDL/RTWAwdlLinuxInterface.hpp>
+#include <AWDL/RTWAwdlLinuxActionTx.hpp>
+#include <AWDL/RTWAwdlReceiveRegistration.hpp>
 
 namespace {
 static Rtw88LinuxContext *activeContext;
@@ -166,12 +171,24 @@ static void receiveFrame(void *opaque, struct sk_buff *skb)
             }
         }
     }
+    // Only CRC-validated AWDL frames enter the separate receiver. The callback
+    // borrows this skb synchronously and must copy before returning.
+    if (context && context->awdlReceive && skb->data &&
+        !(status->flag & (RX_FLAG_FAILED_FCS_CRC | RX_FLAG_FAILED_PLCP_CRC)) &&
+        RTWAwdl::dispatchReceiver(*context->awdlReceive, skb->data, skb->len,
+            status->signal, status->freq, static_cast<uint32_t>(status->mactime),
+            (status->flag & RX_FLAG_MACTIME_START) != 0)) {
+        kfree_skb(skb);
+        return;
+    }
     if (context && context->receive && skb->data && skb->len >= 10 &&
         !(status->flag & (RX_FLAG_FAILED_FCS_CRC | RX_FLAG_FAILED_PLCP_CRC))) {
         context->receive(context->nativeOwner, skb->data, skb->len,
                          status->signal, status->freq,
                          (status->flag & RX_FLAG_DECRYPTED) != 0,
-                         (status->flag & RX_FLAG_IV_STRIPPED) != 0);
+                         (status->flag & RX_FLAG_IV_STRIPPED) != 0,
+                         static_cast<uint32_t>(status->mactime),
+                         (status->flag & RX_FLAG_MACTIME_START) != 0);
     }
     kfree_skb(skb);
 }
@@ -333,6 +350,10 @@ bool rtw88LinuxAttach(Rtw88PciTransport *transport,
         goto fail;
     context->hardware = hw;
     context->device = hw->priv;
+    context->awdlReceive = static_cast<RTWAwdl::ReceiveRegistration *>(
+        IOMallocZero(sizeof(RTWAwdl::ReceiveRegistration)));
+    if (!context->awdlReceive || !RTWAwdl::initializeReceiver(*context->awdlReceive))
+        goto fail;
     rtw88_set_hw_callbacks(&hardwareCallbacks, context);
     activeContext = context;
     rtw88_set_tx_resume_cb(resumeTransmit);
@@ -390,6 +411,11 @@ void rtw88LinuxDetach(Rtw88PciTransport *transport,
     }
     if (context->probed && transport)
         rtw_pci_remove(transport->linuxDevice());
+    if (context->awdlReceive) {
+        RTWAwdl::destroyReceiver(*context->awdlReceive);
+        IOFree(context->awdlReceive, sizeof(RTWAwdl::ReceiveRegistration));
+        context->awdlReceive = nullptr;
+    }
     context->probed = false;
     context->hardware = nullptr;
     context->device = nullptr;
@@ -462,12 +488,64 @@ bool rtw88LinuxPowerUp(Rtw88LinuxContext *context)
     return true;
 }
 
+bool rtw88LinuxAwdlAddInterface(Rtw88LinuxContext *context,
+                                      const uint8_t mac[6])
+{
+    if (!context) return false;
+    auto *hw = static_cast<ieee80211_hw *>(context->hardware);
+    WiphyGuard guard(hw);
+    if (!context->started || !context->interfaceAdded || context->scanning)
+        return false;
+    auto *primary = static_cast<ieee80211_vif *>(context->vif);
+    bool added = primary && context->awdlReceive &&
+        RTWAwdl::addLinuxInterface(hw, context->awdlInterface,
+                                  mac, primary->addr, true);
+    if (added && !RTWAwdl::openReceiver(*context->awdlReceive, mac)) {
+        RTWAwdl::removeLinuxInterface(hw, context->awdlInterface);
+        return false;
+    }
+    return added;
+}
+
+bool rtw88LinuxAwdlTransmitAction(Rtw88LinuxContext *context,
+                                       const uint8_t *frame, size_t length,
+                                       uint16_t expectedFrequency)
+{
+    if (!context) return false;
+    auto *hw = static_cast<ieee80211_hw *>(context->hardware);
+    WiphyGuard guard(hw);
+    if (!context->started || context->scanning ||
+        !context->awdlInterface.hardwareAdded || !context->awdlInterface.registered)
+        return false;
+    return RTWAwdl::submitLinuxAction(hw,
+        static_cast<ieee80211_vif *>(context->awdlInterface.vif),
+        frame, length, expectedFrequency) == RTWAwdl::ActionSubmission::Submitted;
+}
+
+bool rtw88LinuxAwdlSetReceiver(Rtw88LinuxContext *context,
+                                    OSObject *owner, RTWAwdl::ReceiveHandler handler)
+{
+    return context && context->awdlReceive &&
+        RTWAwdl::bindReceiver(*context->awdlReceive, owner, handler);
+}
+
+void rtw88LinuxAwdlRemoveInterface(Rtw88LinuxContext *context)
+{
+    if (!context) return;
+    if (context->awdlReceive) RTWAwdl::closeReceiver(*context->awdlReceive);
+    if (!context->awdlInterface.vif) return;
+    auto *hw = static_cast<ieee80211_hw *>(context->hardware);
+    WiphyGuard guard(hw);
+    RTWAwdl::removeLinuxInterface(hw, context->awdlInterface);
+}
+
 void rtw88LinuxPowerDown(Rtw88LinuxContext *context)
 {
     if (!context)
         return;
     auto *hw = static_cast<struct ieee80211_hw *>(context->hardware);
     auto *vif = static_cast<struct ieee80211_vif *>(context->vif);
+    rtw88LinuxAwdlRemoveInterface(context);
     if (context->scanning)
         rtw88LinuxScanEnd(context);
     rtw88LinuxDisassociate(context);
@@ -484,6 +562,7 @@ void rtw88LinuxPowerDown(Rtw88LinuxContext *context)
         hw->ops->stop(hw, false);
         context->started = false;
     }
+    context->awdlDiscoveryApplied = false;
 }
 
 bool rtw88LinuxTransmit(Rtw88LinuxContext *context, const uint8_t *frame,
@@ -736,17 +815,35 @@ void rtw88LinuxUpdateSlot(Rtw88LinuxContext *context, bool shortSlot)
                                   BSS_CHANGED_ERP_SLOT);
 }
 
+static void applyReceiveFilter(Rtw88LinuxContext *context, bool scanning)
+{
+    auto *hw = static_cast<struct ieee80211_hw *>(context->hardware);
+    context->awdlDiscoveryApplied = false;
+    if (!context->started || !context->interfaceAdded || !hw ||
+        !hw->ops || !hw->ops->configure_filter)
+        return;
+    const unsigned mask = FIF_ALLMULTI | FIF_OTHER_BSS | FIF_BCN_PRBRESP_PROMISC;
+    unsigned flags = RTWAwdl::receiveFlags(scanning, context->awdlDiscovery,
+        context->allMulticast, FIF_OTHER_BSS, FIF_BCN_PRBRESP_PROMISC, FIF_ALLMULTI);
+    WiphyGuard guard(hw);
+    hw->ops->configure_filter(hw, mask, &flags, 0);
+    const unsigned discoveryMask = FIF_ALLMULTI | FIF_OTHER_BSS | FIF_BCN_PRBRESP_PROMISC;
+    context->awdlDiscoveryApplied = context->awdlDiscovery &&
+        (flags & discoveryMask) == discoveryMask;
+}
+
+void rtw88LinuxSetAwdlDiscovery(Rtw88LinuxContext *context, bool enabled)
+{
+    if (!context) return;
+    context->awdlDiscovery = enabled;
+    applyReceiveFilter(context, context->scanning);
+}
+
 void rtw88LinuxSetAllMulticast(Rtw88LinuxContext *context, bool enabled)
 {
-    if (!context)
-        return;
+    if (!context) return;
     context->allMulticast = enabled;
-    auto *hw = static_cast<struct ieee80211_hw *>(context->hardware);
-    if (!hw || !hw->ops || !hw->ops->configure_filter)
-        return;
-    unsigned int flags = enabled ? FIF_ALLMULTI : 0;
-    WiphyGuard guard(hw);
-    hw->ops->configure_filter(hw, FIF_ALLMULTI, &flags, 0);
+    applyReceiveFilter(context, context->scanning);
 }
 
 bool rtw88LinuxSetChannel(Rtw88LinuxContext *context, uint16_t channel)
@@ -797,16 +894,13 @@ void rtw88LinuxScanBegin(Rtw88LinuxContext *context)
     auto *vif = static_cast<struct ieee80211_vif *>(context->vif);
     if (!hw || !vif)
         return;
-    WiphyGuard guard(hw);
-    if (hw->ops && hw->ops->configure_filter) {
-        unsigned int flags = FIF_OTHER_BSS | FIF_BCN_PRBRESP_PROMISC |
-                             (context->allMulticast ? FIF_ALLMULTI : 0);
-        hw->ops->configure_filter(hw,
-                                  FIF_OTHER_BSS | FIF_BCN_PRBRESP_PROMISC,
-                                  &flags, 0);
+    applyReceiveFilter(context, true);
+    {
+        WiphyGuard guard(hw);
+
+        rtw88_sw_scan_start(hw, vif);
+        context->scanning = true;
     }
-    rtw88_sw_scan_start(hw, vif);
-    context->scanning = true;
 }
 
 void rtw88LinuxScanEnd(Rtw88LinuxContext *context)
@@ -817,15 +911,13 @@ void rtw88LinuxScanEnd(Rtw88LinuxContext *context)
     auto *vif = static_cast<struct ieee80211_vif *>(context->vif);
     if (!hw || !vif || !context->scanning)
         return;
-    WiphyGuard guard(hw);
-    rtw88_sw_scan_complete(hw, vif);
-    if (hw->ops && hw->ops->configure_filter) {
-        unsigned int flags = context->allMulticast ? FIF_ALLMULTI : 0;
-        hw->ops->configure_filter(hw,
-                                  FIF_OTHER_BSS | FIF_BCN_PRBRESP_PROMISC,
-                                  &flags, 0);
+    {
+        WiphyGuard guard(hw);
+        rtw88_sw_scan_complete(hw, vif);
+
+        context->scanning = false;
     }
-    context->scanning = false;
+    applyReceiveFilter(context, false);
 }
 
 bool rtw88LinuxIsScanning(Rtw88LinuxContext *context)

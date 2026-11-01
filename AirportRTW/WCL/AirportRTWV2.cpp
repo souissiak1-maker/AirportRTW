@@ -13,6 +13,7 @@
 #include <net80211/ieee80211_var.h>
 
 #include "AirportRTWNativeInterface.hpp"
+#include "AirportRTWAwdlProbe.hpp"
 #include "IOPCIEDeviceWrapper.hpp"
 
 #define super IO80211Controller
@@ -24,6 +25,12 @@ IOCommandGate *_fCommandGate;
 
 void AirportRTW::releaseAll()
 {
+#if defined(AIRPORT_WCL) && __IO80211_TARGET == __MAC_26_0
+    __atomic_store_n(&nativeAwdlShutdown_,true,__ATOMIC_RELEASE);stopNativeAwdl();
+#endif
+#if defined(AIRPORT_WCL) && __IO80211_TARGET == __MAC_26_0 && (RTW_DIAGNOSTICS || RTW_AWDL_STARTUP_PROBE)
+    stopAwdlProbe(true);
+#endif
 #ifdef AIRPORT_WCL
     if (fNetIf)
         static_cast<AirportRTWSkywalkInterface *>(fNetIf)->stopWCL();
@@ -139,6 +146,13 @@ bool AirportRTW::init(OSDictionary *properties)
 {
     XYLog("%s\n", __PRETTY_FUNCTION__);
     bool ret = super::init(properties);
+#if defined(AIRPORT_WCL) && __IO80211_TARGET == __MAC_26_0
+    if(!ret)return false;
+    nativeAwdlLock_=IOLockAlloc();if(!nativeAwdlLock_)return false;
+    auto *option=OSDynamicCast(OSBoolean,getProperty("RTWAwdlEnabled"));
+    nativeAwdlEnabled_=option && option->isTrue();
+    setProperty("RTWAwdlEnabled",nativeAwdlEnabled_);
+#endif
     awdlSyncEnable = true;
     power_state = 0;
     memset(geo_location_cc, 0, sizeof(geo_location_cc));
@@ -546,11 +560,20 @@ bool AirportRTW::start(IOService *provider)
     stage("controller publication");
     registerService();
     stage("controller startup complete");
+#if defined(AIRPORT_WCL) && __IO80211_TARGET == __MAC_26_0 && (RTW_DIAGNOSTICS || RTW_AWDL_STARTUP_PROBE)
+    startAwdlProbe();
+#endif
     return true;
 }
 
 void AirportRTW::stop(IOService *provider)
 {
+#if defined(AIRPORT_WCL) && __IO80211_TARGET == __MAC_26_0
+    __atomic_store_n(&nativeAwdlShutdown_,true,__ATOMIC_RELEASE);stopNativeAwdl();
+#endif
+#if defined(AIRPORT_WCL) && __IO80211_TARGET == __MAC_26_0 && (RTW_DIAGNOSTICS || RTW_AWDL_STARTUP_PROBE)
+    stopAwdlProbe();
+#endif
     XYLog("%s\n", __PRETTY_FUNCTION__);XYLog("%s\n", __PRETTY_FUNCTION__);
     struct _ifnet *ifp = &fHalService->get80211Controller()->ic_ac.ac_if;
 #ifdef AIRPORT_WCL
@@ -569,6 +592,12 @@ void AirportRTW::stop(IOService *provider)
 
 void AirportRTW::free()
 {
+#if defined(AIRPORT_WCL) && __IO80211_TARGET == __MAC_26_0
+    __atomic_store_n(&nativeAwdlShutdown_,true,__ATOMIC_RELEASE);stopNativeAwdl();
+#endif
+#if defined(AIRPORT_WCL) && __IO80211_TARGET == __MAC_26_0 && (RTW_DIAGNOSTICS || RTW_AWDL_STARTUP_PROBE)
+    stopAwdlProbe(true);
+#endif
     XYLog("%s\n", __PRETTY_FUNCTION__);
     if (fHalService != NULL) {
         fHalService->release();
@@ -587,6 +616,9 @@ void AirportRTW::free()
         IOFree(btcProfile, sizeof(struct apple80211_btc_profiles_data));
         btcProfile = NULL;
     }
+#if defined(AIRPORT_WCL) && __IO80211_TARGET == __MAC_26_0
+    if(nativeAwdlLock_){IOLockFree(nativeAwdlLock_);nativeAwdlLock_=nullptr;}
+#endif
     super::free();
 }
 
@@ -1027,6 +1059,12 @@ getCARD_CAPABILITIES(OSObject *object,
         (1 << APPLE80211_CAP_AES_CCM) | (1 << APPLE80211_CAP_TKIP) : 0;
     cd->capabilities[1] &= ~(1 << (APPLE80211_CAP_WPA1 - 8));
     cd->capabilities[5] = 0x40; // Scan completion events.
+#if __IO80211_TARGET == __MAC_26_0
+    if(nativeAwdlAvailable()) {
+        cd->capabilities[4]|=0x01; // Native proximity interface request (role 6).
+        if(fHalService->getDriverInfo()->is5GBandSupport())cd->capabilities[3]|=0x20;
+    }
+#endif
     if (caps & IEEE80211_C_MFP) {
         cd->capabilities[6] |= 0x01; // PMF
         cd->capabilities[9] |= 0x18; // SAE authentication and key management
@@ -1237,11 +1275,20 @@ IOReturn AirportRTW::enableAdapter(IONetworkInterface *netif)
 #endif
     watchdogTimer->setTimeoutMS(kWatchDogTimerPeriod);
     watchdogTimer->enable();
+#if defined(AIRPORT_WCL) && __IO80211_TARGET == __MAC_26_0 && (RTW_DIAGNOSTICS || RTW_AWDL_STARTUP_PROBE)
+    startAwdlProbe();
+#endif
     return kIOReturnSuccess;
 }
 
 void AirportRTW::disableAdapter(IONetworkInterface *netif)
 {
+#if defined(AIRPORT_WCL) && __IO80211_TARGET == __MAC_26_0
+    stopNativeAwdl();
+#endif
+#if defined(AIRPORT_WCL) && __IO80211_TARGET == __MAC_26_0 && (RTW_DIAGNOSTICS || RTW_AWDL_STARTUP_PROBE)
+    stopAwdlProbe();
+#endif
     watchdogTimer->cancelTimeout();
     watchdogTimer->disable();
     fHalService->disable(netif);
@@ -1417,3 +1464,82 @@ void AirportRTW::setPowerStateOn()
     pmPowerState = kPowerStateOn;
     pmPolicyMaker->acknowledgeSetPowerState();
 }
+
+#if defined(AIRPORT_WCL) && __IO80211_TARGET == __MAC_26_0 && (RTW_DIAGNOSTICS || RTW_AWDL_STARTUP_PROBE)
+void AirportRTW::startAwdlProbe()
+{
+    // Opt-in only in a dedicated diagnostic package. Normal Debug/Release builds
+    // retain their previous hardware behavior and native publication gates.
+    if (getProperty("RTWAwdlProbeEnabled") != kOSBooleanTrue || !_fWorkloop)
+        return;
+    if (awdlProbe_) {
+        _fWorkloop->runAction(awdlProbeAction,this,nullptr,nullptr,nullptr,nullptr);
+        return;
+    }
+    auto *core=OSDynamicCast(RTWCore,fHalService);
+    if (!core) return;
+    awdlProbe_=new AirportRTWAwdlProbe(*core,*this);
+    awdlProbeTimer_=IOTimerEventSource::timerEventSource(this,awdlProbeTimer);
+    if (!awdlProbe_ || !awdlProbeTimer_ ||
+        _fWorkloop->addEventSource(awdlProbeTimer_)!=kIOReturnSuccess) {
+        OSSafeReleaseNULL(awdlProbeTimer_);
+        delete awdlProbe_;awdlProbe_=nullptr;
+        setProperty("RTWAwdlProbeSetupFailed",kOSBooleanTrue);
+        return;
+    }
+    awdlProbe_->setReceiveHandler(awdlProbeReceive);
+    _fWorkloop->runAction(awdlProbeAction,this,nullptr,nullptr,nullptr,nullptr);
+}
+
+void AirportRTW::awdlProbeTimer(OSObject *owner,IOTimerEventSource *)
+{
+    auto *me=static_cast<AirportRTW *>(owner);
+    if (_fWorkloop) _fWorkloop->runAction(awdlProbeAction,me,reinterpret_cast<void *>(1),nullptr,nullptr,nullptr);
+}
+
+IOReturn AirportRTW::awdlProbeAction(OSObject *owner,void *operation,void *,void *,void *)
+{
+    auto *me=static_cast<AirportRTW *>(owner);
+    if (!me->awdlProbe_ || !me->awdlProbeTimer_) return kIOReturnNotReady;
+    bool again=false;
+    switch (reinterpret_cast<uintptr_t>(operation)) {
+    case 0: again=me->awdlProbe_->state.arm();break;
+    case 1: again=me->awdlProbe_->state.tick();break;
+    default:
+        me->awdlProbeTimer_->cancelTimeout();me->awdlProbeTimer_->disable();
+        me->awdlProbe_->state.stop();break;
+    }
+    me->awdlProbe_->publish();
+    if (again) {
+        me->awdlProbeTimer_->enable();
+        // No hardware work or log traffic while waiting for a late connection.
+        me->awdlProbeTimer_->setTimeoutMS(me->awdlProbe_->state.stage()==
+            RTWAwdl::StartupProbe::Stage::Waiting ? 5000 : 1000);
+    }
+    return kIOReturnSuccess;
+}
+
+void AirportRTW::stopAwdlProbe(bool dispose)
+{
+    if (!awdlProbe_) return;
+    if (_fWorkloop) _fWorkloop->runAction(awdlProbeAction,this,reinterpret_cast<void *>(2),nullptr,nullptr,nullptr);
+    else awdlProbe_->state.stop();
+    if (dispose) {
+        if (_fWorkloop && awdlProbeTimer_) _fWorkloop->removeEventSource(awdlProbeTimer_);
+        OSSafeReleaseNULL(awdlProbeTimer_);
+        delete awdlProbe_;awdlProbe_=nullptr;
+    }
+}
+
+void AirportRTW::awdlProbeReceive(OSObject *owner,const uint8_t *,size_t,
+                                 const RTWAwdl::ReceiveMetadata &metadata)
+{
+    auto *me=static_cast<AirportRTW *>(owner);
+    // setAwdlReceiver(nullptr,nullptr) drains this registration before disposal.
+    if (me->awdlProbe_) me->awdlProbe_->receive(metadata);
+}
+#endif
+
+#if defined(AIRPORT_WCL) && __IO80211_TARGET == __MAC_26_0
+#include "AirportRTWAwdlController.cpp.inc"
+#endif

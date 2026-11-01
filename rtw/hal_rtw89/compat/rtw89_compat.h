@@ -26,21 +26,19 @@ struct rcu_head {
     void (*func)(struct rcu_head *head);
 };
 
-/*
- * The port runs the whole driver + MLME on serialized IOKit threads and all
- * rcu_read_lock/unlock shims are no-ops, so there are no concurrent RCU
- * readers to wait for: run callbacks immediately instead of after a grace
- * period.  If the kext ever grows parallel readers this must be revisited.
- */
-static inline void call_rcu(struct rcu_head *head,
-                            void (*func)(struct rcu_head *head))
-{
-    func(head);
+/* Reclamation runs after a genuine reader grace period, never inline. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+void rtw89_compat_call_rcu(struct rcu_head *,void (*)(struct rcu_head *));
+#ifdef __cplusplus
 }
-
-#define rcu_access_pointer(p)  (p)
-#define kfree_rcu(ptr, rhf)    kfree(ptr)
-#define kfree_rcu_mightsleep(ptr) kfree(ptr)
+#endif
+static inline void call_rcu(struct rcu_head *head,void (*func)(struct rcu_head *))
+{rtw89_compat_call_rcu(head,func);}
+#define rcu_access_pointer(p) __atomic_load_n(&(p),__ATOMIC_SEQ_CST)
+#define kfree_rcu(ptr,rhf) rtw89_compat_defer_free(ptr)
+#define kfree_rcu_mightsleep(ptr) rtw89_compat_defer_free(ptr)
 
 /* ------------------------------------------------------------------ */
 /*  ktime                                                               */
@@ -263,88 +261,44 @@ void usb_kill_anchored_urbs(struct usb_anchor *anchor);
 /*  wiphy_work / wiphy_delayed_work                                     */
 /* ------------------------------------------------------------------ */
 
-/*
- * mac80211 runs these on the wiphy workqueue with the wiphy mutex held.
- * This port has no wiphy mutex (the kext MLME serializes everything), so
- * they map onto the compat workqueue.  Both flavors are backed by a
- * delayed_work; immediate queueing is delay=0.
- */
+/* Wiphy work is dispatched by one stable per-wiphy queue. Embedded work
+ * nodes are removed only while the wiphy mutex is held; cancellation never
+ * waits for a dispatcher that is itself waiting for that mutex. */
 struct wiphy;
 struct wiphy_work;
-typedef void (*wiphy_work_func_t)(struct wiphy *wiphy, struct wiphy_work *work);
-
+typedef void (*wiphy_work_func_t)(struct wiphy *,struct wiphy_work *);
 struct wiphy_work {
-    struct delayed_work dwork;
+    struct list_head entry;
     wiphy_work_func_t func;
-    struct wiphy *wiphy;
+    unsigned long deadline;
+    bool queued;
 };
-
-struct wiphy_delayed_work {
-    struct wiphy_work work;
-};
-
-static inline void __rtw89_wiphy_work_tramp(struct work_struct *w)
-{
-    struct delayed_work *dw = container_of(w, struct delayed_work, work);
-    struct wiphy_work *ww = container_of(dw, struct wiphy_work, dwork);
-
-    ww->func(ww->wiphy, ww);
+struct wiphy_delayed_work {struct wiphy_work work;};
+#ifdef __cplusplus
+extern "C" {
+#endif
+void rtw89_wiphy_queue(struct wiphy *,struct wiphy_work *,unsigned long);
+void rtw89_wiphy_cancel(struct wiphy *,struct wiphy_work *);
+void rtw89_wiphy_flush(struct wiphy *,struct wiphy_work *);
+#ifdef __cplusplus
 }
-
-static inline void wiphy_work_init(struct wiphy_work *work,
-                                   wiphy_work_func_t func)
-{
-    INIT_DELAYED_WORK(&work->dwork, __rtw89_wiphy_work_tramp);
-    work->func = func;
-    work->wiphy = NULL;
-}
-
-static inline void wiphy_work_queue(struct wiphy *wiphy,
-                                    struct wiphy_work *work)
-{
-    work->wiphy = wiphy;
-    queue_delayed_work(system_wq, &work->dwork, 0);
-}
-
-static inline void wiphy_work_cancel(struct wiphy *wiphy,
-                                     struct wiphy_work *work)
-{
-    cancel_delayed_work_sync(&work->dwork);
-}
-
-static inline void wiphy_work_flush(struct wiphy *wiphy,
-                                    struct wiphy_work *work)
-{
-    flush_work(&work->dwork.work);
-}
-
-static inline void wiphy_delayed_work_init(struct wiphy_delayed_work *dwork,
-                                           wiphy_work_func_t func)
-{
-    wiphy_work_init(&dwork->work, func);
-}
-
-static inline void wiphy_delayed_work_queue(struct wiphy *wiphy,
-                                            struct wiphy_delayed_work *dwork,
-                                            unsigned long delay)
-{
-    dwork->work.wiphy = wiphy;
-    queue_delayed_work(system_wq, &dwork->work.dwork, delay);
-}
-
-static inline void wiphy_delayed_work_cancel(struct wiphy *wiphy,
-                                             struct wiphy_delayed_work *dwork)
-{
-    cancel_delayed_work_sync(&dwork->work.dwork);
-}
-
-static inline void wiphy_delayed_work_flush(struct wiphy *wiphy,
-                                            struct wiphy_delayed_work *dwork)
-{
-    if (cancel_delayed_work(&dwork->work.dwork))
-        queue_delayed_work(system_wq, &dwork->work.dwork, 0);
-    flush_work(&dwork->work.dwork.work);
-}
+#endif
+static inline void wiphy_work_init(struct wiphy_work *work,wiphy_work_func_t func)
+{INIT_LIST_HEAD(&work->entry);work->func=func;work->deadline=0;work->queued=false;}
+static inline void wiphy_work_queue(struct wiphy *wiphy,struct wiphy_work *work)
+{rtw89_wiphy_queue(wiphy,work,0);}
+static inline void wiphy_work_cancel(struct wiphy *wiphy,struct wiphy_work *work)
+{rtw89_wiphy_cancel(wiphy,work);}
+static inline void wiphy_work_flush(struct wiphy *wiphy,struct wiphy_work *work)
+{rtw89_wiphy_flush(wiphy,work);}
+static inline void wiphy_delayed_work_init(struct wiphy_delayed_work *work,wiphy_work_func_t func)
+{wiphy_work_init(&work->work,func);}
+static inline void wiphy_delayed_work_queue(struct wiphy *wiphy,struct wiphy_delayed_work *work,unsigned long delay)
+{rtw89_wiphy_queue(wiphy,&work->work,delay);}
+static inline void wiphy_delayed_work_cancel(struct wiphy *wiphy,struct wiphy_delayed_work *work)
+{rtw89_wiphy_cancel(wiphy,&work->work);}
+static inline void wiphy_delayed_work_flush(struct wiphy *wiphy,struct wiphy_delayed_work *work)
+{rtw89_wiphy_flush(wiphy,&work->work);}
 
 /* 0.3.4: restore the serialization contract assumed by upstream rtw89.
  * Linux/mac80211 enters driver callbacks with the wiphy mutex held; a number

@@ -13,6 +13,7 @@ fixture=r'''
 #include <cstring>
 #include <cstdint>
 #define AIRPORT_WCL 1
+#define RTW_DIAGNOSTIC(...) do {} while(0)
 #define MIN(a,b) ((a)<(b)?(a):(b))
 #define APPLE80211_VERSION 1
 #define APPLE80211_ADDR_LEN 6
@@ -38,6 +39,7 @@ int main(){
  assert(!getSSID(&ssid)&&ssid.ssid_len==4&&!memcmp(ssid.ssid_bytes,"test",4));
  assert(!getBSSID(&bssid)&&bssid.bssid.octet[0]==2);
  ic.ic_state=0;assert(getSSID(&ssid)!=0&&getBSSID(&bssid)!=0);
+ assert(ssid.ssid_len==0&&bssid.bssid.octet[0]==0);
 }
 '''
 with tempfile.TemporaryDirectory() as tmp:

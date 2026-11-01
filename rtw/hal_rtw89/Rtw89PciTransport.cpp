@@ -160,6 +160,15 @@ void Rtw89PciTransport::teardown()
         active = nullptr;
     }
 
+    // Retained firmware peer/VIF storage outlives IRQ/NAPI removal and the
+    // compatibility worker shutdown above. Never call driver ops from here.
+    while (deferredReleases) {
+        auto *entry = deferredReleases;
+        deferredReleases = entry->next;
+        entry->next = nullptr;
+        entry->release(entry);
+    }
+
     drainPendingFree();
     while (dmaEntries) {
         DMAEntry *entry = dmaEntries;

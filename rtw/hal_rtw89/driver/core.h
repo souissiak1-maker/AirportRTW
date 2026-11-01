@@ -3526,6 +3526,8 @@ struct rtw89_sta_link {
 	u8 mac_id;
 	u8 tx_retry;
 	bool er_cap;
+	/* Quiet ADHOC: firmware role may exist until REMOVE is accepted. */
+	bool awdl_role_pending;
 	struct rtw89_vif_link *rtwvif_link;
 	struct rtw89_ra_info ra;
 	struct rtw89_ra_report ra_report;
@@ -3617,6 +3619,9 @@ struct rtw89_roc {
 	enum rtw89_roc_state state;
 	int duration;
 	unsigned int link_id;
+	bool manual;
+	bool on_channel;
+	bool announced;
 };
 
 #define RTW89_P2P_MAX_NOA_NUM 2
@@ -7053,6 +7058,15 @@ enum nl80211_he_ru_alloc rtw89_he_rua_to_ru_alloc(u16 rua)
 	}
 }
 
+/* Non-beaconing ad-hoc peers own separate firmware MAC IDs and address CAM
+ * entries, like AP peers. They share the VIF's canonical BSSID CAM and are not
+ * TDLS peers; do not borrow the infrastructure station's MAC/CAM context. */
+static inline bool rtw89_vif_has_peer_context(const struct ieee80211_vif *vif)
+{
+	return vif->type == NL80211_IFTYPE_AP ||
+	       (vif->type == NL80211_IFTYPE_ADHOC && vif->no_beacon);
+}
+
 static inline
 struct rtw89_addr_cam_entry *rtw89_get_addr_cam_of(struct rtw89_vif_link *rtwvif_link,
 						   struct rtw89_sta_link *rtwsta_link)
@@ -7060,7 +7074,10 @@ struct rtw89_addr_cam_entry *rtw89_get_addr_cam_of(struct rtw89_vif_link *rtwvif
 	if (rtwsta_link) {
 		struct ieee80211_sta *sta = rtwsta_link_to_sta(rtwsta_link);
 
-		if (rtwvif_link->net_type == RTW89_NET_TYPE_AP_MODE || sta->tdls)
+		const struct ieee80211_vif *vif = rtwvif_link_to_vif(rtwvif_link);
+
+		if (rtwvif_link->net_type == RTW89_NET_TYPE_AP_MODE ||
+		    (vif->type == NL80211_IFTYPE_ADHOC && vif->no_beacon) || sta->tdls)
 			return &rtwsta_link->addr_cam;
 	}
 	return &rtwvif_link->addr_cam;
@@ -7811,8 +7828,10 @@ void rtw89_core_csa_beacon_work(struct wiphy *wiphy, struct wiphy_work *work);
 int rtw89_core_send_nullfunc(struct rtw89_dev *rtwdev, struct rtw89_vif_link *rtwvif_link,
 			     bool qos, bool ps, int timeout);
 void rtw89_roc_work(struct wiphy *wiphy, struct wiphy_work *work);
-void rtw89_roc_start(struct rtw89_dev *rtwdev, struct rtw89_vif *rtwvif);
-void rtw89_roc_end(struct rtw89_dev *rtwdev, struct rtw89_vif *rtwvif);
+int rtw89_roc_start(struct rtw89_dev *rtwdev, struct rtw89_vif *rtwvif);
+int rtw89_roc_end(struct rtw89_dev *rtwdev, struct rtw89_vif *rtwvif);
+int rtw89_awdl_roc_start(struct rtw89_dev *rtwdev, struct rtw89_vif *rtwvif,
+                         const struct ieee80211_channel *channel, unsigned int duration_ms);
 void rtw89_core_scan_start(struct rtw89_dev *rtwdev, struct rtw89_vif_link *rtwvif_link,
 			   const u8 *mac_addr, bool hw_scan);
 void rtw89_core_scan_complete(struct rtw89_dev *rtwdev,

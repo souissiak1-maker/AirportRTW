@@ -9,6 +9,7 @@
 
 struct work_struct;
 struct delayed_work;
+struct workqueue_struct;
 
 typedef void (*work_func_t)(struct work_struct *work);
 
@@ -16,11 +17,15 @@ struct work_struct {
     work_func_t      func;
     struct list_head entry;
     unsigned long    pending;
+    struct workqueue_struct *owner;
+    volatile unsigned int canceling;
 };
 
 struct delayed_work {
     struct work_struct  work;
     struct timer_list   timer;  /* defined in timer.h */
+    struct workqueue_struct *target_queue;
+    bool timer_initialized;
 };
 
 struct workqueue_struct {
@@ -29,16 +34,23 @@ struct workqueue_struct {
     struct list_head queue;
     int              running;
     volatile int     done;
+    struct work_struct *current_work;
     char             name[64];
 };
 
 #define INIT_WORK(_work, _func) \
     do { (_work)->func = (_func); \
          INIT_LIST_HEAD(&(_work)->entry); \
-         (_work)->pending = 0; } while (0)
+         (_work)->pending = 0; \
+         (_work)->owner = NULL; \
+         (_work)->canceling = 0; } while (0)
 
 #define INIT_DELAYED_WORK(_dwork, _func) \
-    INIT_WORK(&(_dwork)->work, _func)
+    do { INIT_WORK(&(_dwork)->work, _func); \
+         (_dwork)->target_queue = NULL; \
+         (_dwork)->timer_initialized = false; \
+         (_dwork)->timer.call = NULL; \
+         (_dwork)->timer.active = 0; } while (0)
 
 extern struct workqueue_struct *system_wq;
 extern struct workqueue_struct *system_long_wq;

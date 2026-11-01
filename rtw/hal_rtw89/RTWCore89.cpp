@@ -246,6 +246,11 @@ IOReturn RTWCore89::enable(IONetworkInterface *interface)
         RTW_LOG("AirportRTW-RTW89: Wi-Fi enable failed during power-up\n");
         return kIOReturnIOError;
     }
+#if RTW_DIAGNOSTICS
+    const auto *discovery = OSDynamicCast(OSBoolean,
+        getController()->getProperty("RTWAwdlDiscovery"));
+    rtw89LinuxSetAwdlDiscovery(&linuxContext, discovery && discovery->isTrue());
+#endif
     sc.sc_flags |= RTW89_FLAG_ENABLED | RTW89_FLAG_FW_RUNNING |
                    RTW89_FLAG_INTERFACE;
     sc.sc_ic.ic_if.if_flags |= IFF_UP | IFF_RUNNING;
@@ -341,6 +346,108 @@ const char *RTWCore89::getFirmwareCountryCode()
 uint32_t RTWCore89::getTxQueueSize()
 {
     return kRtw89TxQueueSize;
+}
+
+RTWAwdl::RadioState RTWCore89::awdlRadioState() const
+{
+    auto state=rtw89LinuxAwdlRadioState(&linuxContext);
+    const auto &ic=sc.sc_ic;
+    if (ic.ic_state==IEEE80211_S_RUN && (ic.ic_flags & IEEE80211_F_RSNON) &&
+        (!ic.ic_bss || !ic.ic_bss->ni_port_valid)) {
+        state.ready=false;state.frequency=0;
+        state.blockers|=RTW_AWDL_RADIO_PRIMARY_NOT_AUTHORIZED;
+    }
+    return state;
+}
+
+bool RTWCore89::prepareAwdlRadio()
+{
+    const auto &ic=sc.sc_ic;
+    if (ic.ic_state==IEEE80211_S_RUN) {
+        const auto *node=ic.ic_bss;
+        if (!node) return false;
+        const bool authorized=!(ic.ic_flags & IEEE80211_F_RSNON) || node->ni_port_valid;
+        if (!rtw89LinuxSetStationAuthorized(&linuxContext,node->ni_bssid,authorized) || !authorized)
+            return false;
+    }
+    const auto state=awdlRadioState();
+    return state.ready && state.frequency && !state.recoveryRequired;
+}
+
+bool RTWCore89::awdlChannelAllowed(uint16_t frequency) const
+{
+    return rtw89LinuxAwdlChannelAllowed(&linuxContext, frequency);
+}
+
+RTWAwdl::RadioReservation RTWCore89::reserveAwdlRadio(uint16_t frequency, uint32_t durationMs)
+{
+    const auto &ic=sc.sc_ic;
+    if (ic.ic_state==IEEE80211_S_RUN) {
+        const auto *node=ic.ic_bss;
+        if (!node) return RTWAwdl::RadioReservation::Rejected;
+        const bool authorized=!(ic.ic_flags & IEEE80211_F_RSNON) || node->ni_port_valid;
+        if (!rtw89LinuxSetStationAuthorized(&linuxContext,node->ni_bssid,authorized) || !authorized)
+            return RTWAwdl::RadioReservation::Rejected;
+    }
+    return rtw89LinuxAwdlReserveRadio(&linuxContext, frequency, durationMs);
+}
+
+bool RTWCore89::restoreAwdlRadio()
+{
+    return rtw89LinuxAwdlRestore(&linuxContext) == 0;
+}
+
+uint32_t RTWCore89::awdlPeerCapacity() const
+{
+    return rtw89LinuxAwdlPeerCapacity(&linuxContext);
+}
+
+RTWAwdl::PeerResult RTWCore89::setAwdlPeer(const uint8_t address[6], bool add)
+{
+    return rtw89LinuxAwdlSetPeer(&linuxContext, address, add);
+}
+
+bool RTWCore89::quiesceAwdlInterface()
+{
+    return rtw89LinuxAwdlQuiesce(&linuxContext);
+}
+
+bool RTWCore89::addAwdlInterface(const uint8_t mac[6])
+{
+    const auto &ic=sc.sc_ic;
+    if (ic.ic_state==IEEE80211_S_RUN &&
+        (!(ic.ic_flags & IEEE80211_F_RSNON) || (ic.ic_bss && ic.ic_bss->ni_port_valid))) {
+        if (!ic.ic_bss || !rtw89LinuxSetStationAuthorized(&linuxContext,ic.ic_bss->ni_bssid,true))
+            return false;
+    }
+    return rtw89LinuxAwdlAddInterface(&linuxContext, mac);
+}
+
+void RTWCore89::removeAwdlInterface()
+{
+    rtw89LinuxAwdlRemoveInterface(&linuxContext);
+}
+
+bool RTWCore89::setAwdlReceiver(OSObject *owner, RTWAwdl::ReceiveHandler handler)
+{
+    return rtw89LinuxAwdlSetReceiver(&linuxContext, owner, handler);
+}
+
+bool RTWCore89::transmitAwdlAction(const uint8_t *frame, size_t length,
+                                      uint16_t frequency)
+{
+    return rtw89LinuxAwdlTransmitAction(&linuxContext, frame, length, frequency);
+}
+
+bool RTWCore89::transmitAwdlData(const uint8_t *frame,size_t length,
+                                uint16_t frequency,uint64_t deadlineUs)
+{
+    // A port revocation after reservation must stop data immediately. Keep
+    // restoration independent so an invalid port cannot strand the radio.
+    const auto &ic=sc.sc_ic;
+    if (ic.ic_state==IEEE80211_S_RUN && (ic.ic_flags & IEEE80211_F_RSNON) &&
+        (!ic.ic_bss || !ic.ic_bss->ni_port_valid)) return false;
+    return rtw89LinuxAwdlTransmitData(&linuxContext,frame,length,frequency,deadlineUs);
 }
 
 void RTWCore89::clearScanningFlags()
@@ -515,6 +622,22 @@ void RTWCore89::watchdog(struct _ifnet *ifp)
                             owner->transport ? owner->transport->getInterruptCount() : 0, 64));
     RTW_DIAGNOSTIC(controller->setProperty("RTW89StationState", owner->linuxContext.stationState, 32));
     RTW_DIAGNOSTIC(controller->setProperty("RTW89ScanChannelCount", owner->scanChannelCount, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTWAwdlFilterRequested", owner->linuxContext.awdlDiscovery));
+    RTW_DIAGNOSTIC(controller->setProperty("RTWAwdlFilterAccepted", owner->linuxContext.awdlDiscoveryApplied));
+    RTW_DIAGNOSTIC(controller->setProperty("RTWAwdlActionFrames", owner->awdlObserver.actionFrames, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTWAwdlVendorActions", owner->awdlObserver.vendorActions, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTWAwdlAppleVendorActions", owner->awdlObserver.appleVendorActions, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTWAwdlValidActions", owner->awdlObserver.valid, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTWAwdlMalformedActions", owner->awdlObserver.malformed, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTWAwdlSyncEnvelopes", owner->awdlObserver.syncEnvelopes, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTWAwdlChannelEnvelopes", owner->awdlObserver.channelEnvelopes, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTWAwdlLastFrequency", owner->awdlObserver.lastFrequency, 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTWAwdlTimedActions", owner->awdlObserver.timedActions, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTWAwdlSyncDecoded", owner->awdlObserver.syncDecoded, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTWAwdlSyncDecodeFailures", owner->awdlObserver.syncDecodeFailures, 64));
+    RTW_DIAGNOSTIC(controller->setProperty("RTWAwdlLastRadioTimestamp", owner->awdlObserver.lastRadioTimestamp, 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTWAwdlLastVersion", owner->awdlObserver.lastVersion, 32));
+    RTW_DIAGNOSTIC(controller->setProperty("RTWAwdlLastSubtype", owner->awdlObserver.lastSubtype, 32));
     RTW_DIAGNOSTIC(controller->setProperty("RTW89RawReceiveCount", owner->rawReceiveCount, 64));
     RTW_DIAGNOSTIC(controller->setProperty("RTW89AcceptedReceiveCount", owner->acceptedReceiveCount, 64));
     RTW_DIAGNOSTIC(controller->setProperty("RTW89BeaconProbeCount", owner->beaconProbeCount, 64));
@@ -781,7 +904,8 @@ void RTWCore89::start(struct _ifnet *ifp)
     struct ieee80211com *ic = &sc->sc_ic;
 
     for (;;) {
-        if (!rtw89LinuxTxAvailable(&owner->linuxContext)) {
+        RTWAwdl::TxGuard submission(owner->linuxContext.awdlTxGate);
+        if (!submission || !rtw89LinuxTxAvailable(&owner->linuxContext)) {
             __sync_fetch_and_add(&owner->txBackpressureCount, 1);
             ifq_set_oactive(&ifp->if_snd);
             break;
@@ -916,12 +1040,15 @@ void RTWCore89::traceReceive(void *opaque, unsigned stage, const uint8_t *frame,
 
 void RTWCore89::receive(void *opaque, const uint8_t *frame, size_t length,
                        int32_t rssi, uint16_t frequency, bool decrypted,
-                       bool ivStripped)
+                       bool ivStripped, uint32_t radioTimestamp,
+                       bool radioTimestampValid)
 {
     auto *owner = static_cast<RTWCore89 *>(opaque);
     if (!owner || !frame || length < sizeof(struct ieee80211_frame))
         return;
     __sync_fetch_and_add(&owner->rawReceiveCount, 1);
+    RTW_DIAGNOSTIC(owner->awdlObserver.observe(frame, length, frequency,
+                                                  radioTimestamp, radioTimestampValid));
     struct ieee80211com *ic = &owner->sc.sc_ic;
     auto *wh = reinterpret_cast<const struct ieee80211_frame *>(frame);
     const uint8_t frameType = wh->i_fc[0] & IEEE80211_FC0_TYPE_MASK;

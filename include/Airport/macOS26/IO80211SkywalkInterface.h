@@ -25,7 +25,8 @@ typedef UInt64 IO80211FlowQueueHash;
 class IO80211Peer;
 class CCPipe;
 class IO80211APIUserClient;
-struct apple80211_wme_ac;
+enum apple80211_wme_ac : unsigned int;
+static_assert(sizeof(apple80211_wme_ac) == 4, "native WME category ABI");
 struct apple80211_interface_availability;
 struct apple80211_cca_report;
 struct apple80211_stat_report;
@@ -151,7 +152,7 @@ private: virtual void _abi_0cd0() __asm__("__ZN23IO80211SkywalkInterface8findPee
     virtual void * getWorkerMatchingDict(OSString*);
     virtual bool init(IOService*, ether_addr*);
     virtual bool isInterfaceEnabled();
-    virtual ether_addr * getSelfMacAddr();
+    virtual ether_addr getSelfMacAddr(); // native returns the address value in RAX
     virtual void * getPacketPool(OSString*);
     virtual CCLogStream * getLogger() const;
     virtual IOReturn handleSIOCSIFADDR();

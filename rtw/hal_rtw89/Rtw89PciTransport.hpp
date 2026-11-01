@@ -13,6 +13,13 @@
 struct pci_dev;
 struct device;
 
+// Intrusive ownership transfer; no allocation is needed during error teardown.
+// Producer is the serialized native owner; callback runs after compat shutdown.
+struct Rtw89DeferredRelease {
+    Rtw89DeferredRelease *next;
+    void (*release)(Rtw89DeferredRelease *);
+};
+
 /*
  * IOKit transport used by the Linux-derived rtw89 PCI core.  The driver is
  * single-device, like the existing Intel HALs, so the C compatibility hooks
@@ -58,9 +65,14 @@ public:
     void enableInterrupts();
     void disableInterrupts();
     void drainPendingFree();
+    void deferRelease(Rtw89DeferredRelease *entry) {
+        entry->next = deferredReleases;
+        deferredReleases = entry;
+    }
     UInt64 getInterruptCount() const { return interruptCount; }
 
 private:
+    Rtw89DeferredRelease *deferredReleases {nullptr};
     struct DMAEntry {
         IOBufferMemoryDescriptor *descriptor;
         void *virtualAddress;

@@ -581,6 +581,9 @@ void rtw89_cam_deinit_addr_cam(struct rtw89_dev *rtwdev,
 {
 	struct rtw89_cam_info *cam_info = &rtwdev->cam_info;
 
+	/* Failed/partial peer setup may not own an entry (default index is 0). */
+	if (!addr_cam->valid)
+		return;
 	addr_cam->valid = false;
 	clear_bit(addr_cam->addr_cam_idx, cam_info->addr_cam_map);
 }
@@ -590,6 +593,8 @@ void rtw89_cam_deinit_bssid_cam(struct rtw89_dev *rtwdev,
 {
 	struct rtw89_cam_info *cam_info = &rtwdev->cam_info;
 
+	if (!bssid_cam->valid)
+		return;
 	bssid_cam->valid = false;
 	clear_bit(bssid_cam->bssid_cam_idx, cam_info->bssid_cam_map);
 }

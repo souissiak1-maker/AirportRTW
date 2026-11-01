@@ -109,18 +109,14 @@ int fls(unsigned int x)
     return x ? (32 - __builtin_clz(x)) : 0;
 }
 
-/* thread_call_cancel_wait is declared in kern/thread_call.h but is NOT
- * exported as a kext KPI — the linker cannot resolve it externally.
- * Provide a local definition so the symbol resolves at link time.
- * We cancel any pending invocation and busy-wait briefly for any in-flight
- * execution: timer callbacks are short-lived so a small IODelay suffices. */
-boolean_t thread_call_cancel_wait(thread_call_t call)
-{
-    if (!call) return false;
-    thread_call_cancel(call);
-    IODelay(500);   /* 500 µs: enough for a running callback to exit */
-    return thread_call_cancel(call);
-}
+/* Managed callbacks use only public Mach KPIs. No fixed-delay cancellation. */
+#include "RTWManagedCall.h"
+#define thread_call_allocate(f,p) rtw_managed_allocate((f),(p))
+#define thread_call_enter(c) rtw_managed_enter((c),0,false)
+#define thread_call_enter_delayed(c,d) rtw_managed_enter((c),(d),true)
+#define thread_call_cancel(c) rtw_managed_cancel((c),false,false)
+#define thread_call_cancel_wait(c) rtw_managed_cancel((c),true,false)
+#define thread_call_free(c) rtw_managed_free((c))
 
 /* ------------------------------------------------------------------ */
 /*  Global DMA / PCI / USB ops pointers                                 */
@@ -155,11 +151,16 @@ static void wq_thread_fn(void *arg, wait_result_t wr)
         }
         struct work_struct *work = container_of(wq->queue.next,
                                                 struct work_struct, entry);
-        list_del(&work->entry);
+        list_del_init(&work->entry);
         work->pending = 0;
+        wq->current_work = work;
         IOLockUnlock(wq->lock);
         if (work->func) work->func(work);
         IOLockLock(wq->lock);
+        /* The callback may free its enclosing object. Do not dereference
+         * work after it returns; execution state belongs to the queue. */
+        wq->current_work = NULL;
+        IOLockWakeup(wq->lock, &wq->queue, false);
     }
 
     wq->done = 1;
@@ -215,10 +216,12 @@ bool queue_work(struct workqueue_struct *wq, struct work_struct *work)
 {
     if (!wq || !work) return false;
     IOLockLock(wq->lock);
-    if (work->pending) {
+    if (!wq->running || work->pending ||
+        __sync_fetch_and_add(&work->canceling, 0)) {
         IOLockUnlock(wq->lock);
         return false;
     }
+    __atomic_store_n(&work->owner, wq, __ATOMIC_RELEASE);
     work->pending = 1;
     list_add_tail(&work->entry, &wq->queue);
     IOLockWakeup(wq->lock, &wq->queue, false);
@@ -235,16 +238,21 @@ bool schedule_work(struct work_struct *work)
 static void delayed_work_timer_fn(struct timer_list *t)
 {
     struct delayed_work *dwork = from_timer(dwork, t, timer);
-    queue_work(system_wq, &dwork->work);
+    queue_work(dwork->target_queue, &dwork->work);
 }
 
 bool queue_delayed_work(struct workqueue_struct *wq,
                          struct delayed_work *dwork, unsigned long delay)
 {
-    if (!wq || !dwork) return false;
+    if (!wq || !dwork || __sync_fetch_and_add(&dwork->work.canceling, 0))
+        return false;
+    dwork->target_queue = wq;
     if (delay == 0)
         return queue_work(wq, &dwork->work);
-    timer_setup(&dwork->timer, delayed_work_timer_fn, 0);
+    if (!dwork->timer_initialized) {
+        timer_setup(&dwork->timer, delayed_work_timer_fn, 0);
+        dwork->timer_initialized = true;
+    }
     mod_timer(&dwork->timer, jiffies + delay);
     return true;
 }
@@ -254,41 +262,78 @@ bool schedule_delayed_work(struct delayed_work *dwork, unsigned long delay)
     return queue_delayed_work(system_wq, dwork, delay);
 }
 
+/* Producers must be stopped before draining/destroying a queue. As with
+ * Linux workqueues, a synchronous waiter must not hold a callback's lock.
+ * Work is owned by one queue while queued/running; callers must serialize
+ * migration to another queue and keep the owner alive through cancellation. */
 void flush_workqueue(struct workqueue_struct *wq)
 {
-    if (!wq) return;
-    for (int i = 0; i < 1000; i++) {
+    if (!wq || current_thread() == wq->thread) return;
+    IOLockLock(wq->lock);
+    while (!list_empty(&wq->queue) || wq->current_work)
+        IOLockSleep(wq->lock, &wq->queue, THREAD_UNINT);
+    IOLockUnlock(wq->lock);
+}
+
+static bool cancel_work_pending(struct work_struct *work, bool wait)
+{
+    if (!work) return false;
+    __sync_fetch_and_add(&work->canceling, 1);
+    struct workqueue_struct *wq = __atomic_load_n(&work->owner, __ATOMIC_ACQUIRE);
+    bool removed = false;
+    if (wq) {
         IOLockLock(wq->lock);
-        int empty = list_empty(&wq->queue);
+        if (work->pending) {
+            list_del_init(&work->entry);
+            work->pending = 0;
+            removed = true;
+            IOLockWakeup(wq->lock, &wq->queue, false);
+        }
+        while (wait && wq->current_work == work &&
+               current_thread() != wq->thread)
+            IOLockSleep(wq->lock, &wq->queue, THREAD_UNINT);
         IOLockUnlock(wq->lock);
-        if (empty) break;
-        IOSleep(5);
     }
+    __sync_fetch_and_sub(&work->canceling, 1);
+    return removed;
 }
 
 bool cancel_work_sync(struct work_struct *work)
 {
-    work->pending = 0;
-    return true;
+    return cancel_work_pending(work, true);
 }
 
 bool cancel_delayed_work_sync(struct delayed_work *dwork)
 {
-    del_timer_sync(&dwork->timer);
-    return cancel_work_sync(&dwork->work);
+    if (!dwork) return false;
+    /* Keep the cancellation gate raised through timer cancellation too. */
+    __sync_fetch_and_add(&dwork->work.canceling, 1);
+    bool timer_pending = dwork->timer_initialized && del_timer_sync(&dwork->timer);
+    bool work_pending = cancel_work_pending(&dwork->work, true);
+    __sync_fetch_and_sub(&dwork->work.canceling, 1);
+    return timer_pending || work_pending;
 }
 
 bool cancel_delayed_work(struct delayed_work *dwork)
 {
-    del_timer(&dwork->timer);
-    dwork->work.pending = 0;
-    return true;
+    if (!dwork) return false;
+    __sync_fetch_and_add(&dwork->work.canceling, 1);
+    bool timer_pending = dwork->timer_initialized && del_timer(&dwork->timer);
+    bool work_pending = cancel_work_pending(&dwork->work, false);
+    __sync_fetch_and_sub(&dwork->work.canceling, 1);
+    return timer_pending || work_pending;
 }
 
 void flush_work(struct work_struct *work)
 {
-    for (int i = 0; i < 200 && work->pending; i++)
-        IOSleep(5);
+    if (!work) return;
+    struct workqueue_struct *wq = __atomic_load_n(&work->owner, __ATOMIC_ACQUIRE);
+    if (!wq) return;
+    if (current_thread() == wq->thread) return;
+    IOLockLock(wq->lock);
+    while (work->pending || wq->current_work == work)
+        IOLockSleep(wq->lock, &wq->queue, THREAD_UNINT);
+    IOLockUnlock(wq->lock);
 }
 
 void flush_scheduled_work(void)
@@ -380,22 +425,7 @@ irq_handler_t g_irq_thread_fn = NULL;
 void *g_irq_dev_id = NULL;
 thread_call_t g_irq_thread_call = NULL;
 
-/* Single active VIF — registered by the kext after add_interface so that
- * ieee80211_iterate_active_interfaces_atomic can deliver the iterator to
- * rtw88's internal callbacks (e.g. rtw_build_rsvd_page_iter). */
-static struct ieee80211_vif *g_rtw88_vif = NULL;
-static struct ieee80211_sta *g_rtw88_sta = NULL;
-static IORecursiveLock *g_station_lock;
-
-void rtw88_register_vif(struct ieee80211_vif *vif)   { g_rtw88_vif = vif; }
-void rtw88_unregister_vif(void)                       { g_rtw88_vif = NULL; }
-void rtw88_register_sta(struct ieee80211_sta *sta)
-{
-    IORecursiveLockLock(g_station_lock);
-    g_rtw88_sta = sta;
-    IORecursiveLockUnlock(g_station_lock);
-}
-void rtw88_unregister_sta(void) { rtw88_register_sta(NULL); }
+#include "../../../include/AWDL/RTWMac80211Registry.h"
 
 /* Kext-registered hook fired after the IRQ bottom-half (tx_isr) has run and
  * freed TX descriptors.  Runs on the thread_call thread with no rtw88 locks
@@ -609,36 +639,6 @@ void ieee80211_beacon_loss(struct ieee80211_vif *vif) {}
 void ieee80211_cqm_rssi_notify(struct ieee80211_vif *vif,
                                 int event, s32 rssi_level, gfp_t gfp) {}
 
-void ieee80211_iterate_active_interfaces_atomic(
-    struct ieee80211_hw *hw, unsigned int iter_flags,
-    void (*iterator)(void *data, u8 *mac, struct ieee80211_vif *vif),
-    void *data)
-{
-    if (g_rtw88_vif && iterator)
-        iterator(data, g_rtw88_vif->addr, g_rtw88_vif);
-}
-
-void ieee80211_iterate_active_interfaces(
-    struct ieee80211_hw *hw, unsigned int iter_flags,
-    void (*iterator)(void *data, u8 *mac, struct ieee80211_vif *vif),
-    void *data)
-{
-    if (g_rtw88_vif && iterator)
-        iterator(data, g_rtw88_vif->addr, g_rtw88_vif);
-}
-
-void ieee80211_iterate_stations_atomic(
-    struct ieee80211_hw *hw,
-    void (*iterator)(void *data, struct ieee80211_sta *sta),
-    void *data)
-{
-    if (!g_station_lock || hw != g_rtw88_hw || !iterator) return;
-    // Unregister waits for in-flight iterators before the bridge frees sta.
-    IORecursiveLockLock(g_station_lock);
-    if (g_rtw88_sta) iterator(data, g_rtw88_sta);
-    IORecursiveLockUnlock(g_station_lock);
-}
-
 void ieee80211_iter_keys(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
     void (*iter)(struct ieee80211_hw *, struct ieee80211_vif *,
                  struct ieee80211_sta *, struct ieee80211_key_conf *, void *),
@@ -806,30 +806,6 @@ void ieee80211_queue_delayed_work(struct ieee80211_hw *hw,
 /* ------------------------------------------------------------------ */
 /*  mac80211 stubs                                                      */
 /* ------------------------------------------------------------------ */
-
-/* Single-STA setup: the kext registers the peer via rtw88_register_sta()
- * after association.  rtw89's assoc path resolves the peer with
- * ieee80211_find_sta(vif, vif->cfg.ap_addr). */
-struct ieee80211_sta *ieee80211_find_sta(struct ieee80211_vif *vif,
-                                          const u8 *addr)
-{
-    (void)vif;
-    if (g_rtw88_sta && addr &&
-        memcmp(g_rtw88_sta->addr, addr, ETH_ALEN) == 0)
-        return g_rtw88_sta;
-    return NULL;
-}
-
-struct ieee80211_sta *ieee80211_find_sta_by_ifaddr(struct ieee80211_hw *hw,
-                                                    const u8 *addr,
-                                                    const u8 *localaddr)
-{
-    (void)hw; (void)localaddr;
-    if (g_rtw88_sta && addr &&
-        memcmp(g_rtw88_sta->addr, addr, ETH_ALEN) == 0)
-        return g_rtw88_sta;
-    return NULL;
-}
 
 struct sk_buff *ieee80211_proberesp_get(struct ieee80211_hw *hw,
                                          struct ieee80211_vif *vif)
@@ -1018,14 +994,14 @@ void rtw88_compat_exit(void)
     destroy_workqueue(system_wq);
     destroy_workqueue(system_long_wq);
     system_wq = system_long_wq = NULL;
+    rtw_managed_cleanup();
     g_irq_handler   = NULL;
     g_irq_thread_fn = NULL;
     g_irq_dev_id    = NULL;
     g_tx_resume_cb  = NULL;
     g_hw_cbs        = NULL;
     g_kext_hw       = NULL;
-    g_rtw88_vif     = NULL;
-    g_rtw88_sta     = NULL;
+    rtw_registry_reset();
     if (g_station_lock) {
         IORecursiveLockFree(g_station_lock);
         g_station_lock = NULL;

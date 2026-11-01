@@ -1,0 +1,77 @@
+AirportRTW Tahoe AWDL lifecycle probe v4
+
+This is a local experimental diagnostic kext, not working AirDrop. It uses
+Release optimization with general verbose diagnostics disabled and a bounded
+AWDL lifecycle probe enabled. Bundle/firmware version remains 2.3.0 /
+AirportRTW2.3.0. BUILD-IDENTITY.json identifies this particular executable.
+
+Test on the RTW89 Tahoe machine only. The combined kext still contains RTW88,
+but its AWDL radio backend is not ready and this probe will report Unavailable.
+Do not use this package to test AirDrop transfers, sleep, or RTW88 behavior.
+
+1. Keep your current working AirportRTW.kext as a rollback copy.
+2. Replace only AirportRTW.kext in EFI/OC/Kexts. Keep its existing Kernel/Add
+   entry enabled. Do not change other kexts, root patches, or boot arguments.
+3. Reboot and join your usual Wi-Fi network. There is no startup deadline: the
+   probe waits passively until association and security authorization finish.
+   Keep Wi-Fi connected for at least 15 seconds afterward.
+4. Run collect-awdl.command from this extracted folder. If macOS refuses to
+   launch it, open Terminal and type /bin/zsh followed by a space, drag the
+   command file into Terminal, and press Return. Python 3 must be installed.
+5. Send the ZIP that the collector writes to your Desktop. It records numeric
+   diagnostics, macOS version and the loaded driver UUID; it excludes SSID,
+   BSSID/MAC, IP addresses, passwords, keys and packet contents. This can still
+   contain hardware model/family and regulatory country information.
+
+The probe creates a real quiet secondary hardware VIF, binds its RX callback,
+queries the radio state, listens on the existing channel for ten seconds, then
+unbinds RX and requests checked VIF/peer-pool cleanup. It does not retune, send
+frames, install peers, create awdl0, or advertise AirDrop capabilities. Therefore
+zero received AWDL frames is not a failure: a nearby peer may use another channel.
+The native IO80211AWDLProtocol interface is not exercised by this first probe.
+
+RTWAwdlProbeStage values:
+ 0 Idle                 1 Waiting for primary Wi-Fi
+ 2 Opening VIF          3 Binding RX
+ 4 Listening            5 Complete
+ 6 Unavailable          7 Open failed
+ 8 RX bind failed       9 Radio not ready / primary connection changed
+10 Cleanup failed      11 Cancelled by disable/stop
+12 Reserved (old v1 timeout; no longer emitted)
+RTWAwdlProbeResult retains the original result when cleanup fails.
+A completed test has Stage=5, Listens=10, CleanupSucceeded=true.
+This does not establish firmware/RF correctness or working AirDrop.
+
+The hardware test runs once per controller lifetime. Wi-Fi off/on before its
+first attempt resumes waiting. After an actual attempt, reboot to repeat.
+If startup or ordinary Wi-Fi regresses, restore your previous kext. If there is a panic, keep its report and stop using this diagnostic build.
+
+Revisions 3 and later retain a radio snapshot from the last readiness check BEFORE cleanup.
+RTWAwdlProbeRadioSampled indicates whether that check ran. When sampled, inspect
+RadioReady, RadioRecoveryRequired, RadioFrequency, RadioChecks and RadioBlockers.
+RadioBlockers is a bitmask; several decimal values can be added together:
+      1 HAL/hardware unavailable
+      2 hardware not started
+      4 primary hardware interface not added
+      8 scanning active
+     16 recovery required
+     32 secondary VIF missing
+     64 secondary VIF not added to hardware
+    128 secondary VIF not registered with the compatibility bridge
+    256 primary HAL station not yet authorized
+    512 primary transmit gate paused
+   1024 current channel unavailable (see additional channel-specific bits)
+   2048 secondary ROC active but not a native manual visit
+   4096 secondary ROC active without confirmed on-channel state
+   8192 another VIF has an active ROC
+  16384 home channel definition missing
+  32768 invalid secondary VIF type/configuration
+These are observations, not a relaxation of the readiness checks. Channel details
+are queried only when the bridge is otherwise ready, under the same HAL lock.
+
+Revision 4 mirrors the already-completed net80211 controlled-port authorization
+into the RTW89 primary station's ASSOC -> AUTHORIZED lifecycle transition before
+opening the probe VIF. It validates the current peer, association and transition
+result. It does not bypass WPA authorization or change credentials/ciphers.
+The AWDL reservation entry point also rechecks and mirrors port revocation;
+readiness reports reject a RUN-state RSN connection whose port is not valid.

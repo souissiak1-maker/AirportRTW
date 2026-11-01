@@ -23,6 +23,8 @@
 #include "pci.h"
 #include "ps.h"
 #include "txrx.h"
+#include "util.h"
+#include "../../../include/HAL/RTWAwdlRadioStatus.h"
 
 /* The kext-facing API (declared in rtw88_compat.h, force-included) passes
  * an opaque "struct rtw_dev *"; here it is really a struct rtw89_dev. */
@@ -771,6 +773,175 @@ void rtw89_macos_get_tx_rate(struct ieee80211_hw *hw, struct RTWTxRate *out)
     if (!out) return;
     memset(out, 0, sizeof(*out));
     if (hw) ieee80211_iterate_stations_atomic(hw, rtw89_copy_tx_rate, out);
+}
+
+/* Bound the software pool by the chip's MAC-ID namespace, including the
+ * same MLO partition used by rtw89_acquire_mac_id(). Reserve the primary and
+ * secondary VIF IDs; allocation can still fail if other users consume IDs. */
+unsigned int rtw89_macos_awdl_peer_capacity(struct ieee80211_hw *hw)
+{
+    struct rtw89_dev *rtwdev;
+    unsigned int ids;
+
+    if (!hw || !hw->priv)
+        return 0;
+    rtwdev = to_rtw89(hw->priv);
+    if (!rtwdev->chip)
+        return 0;
+    ids = rtwdev->chip->support_macid_num;
+    if (rtwdev->support_mlo) {
+        if (!rtwdev->chip->support_link_num)
+            return 0;
+        ids /= rtwdev->chip->support_link_num;
+    }
+    if (ids <= 2)
+        return 0;
+    return ids - 2 > 16 ? 16 : ids - 2;
+}
+
+/* Called under WiphyGuard after a quiet-ADHOC sta_state add failure.
+ * true requires the native allocator to retain sta and its VIF, and retry
+ * NONE -> NOTEXIST cleanup (or fence/reset the device) before freeing either.
+ * This is firmware command ownership, not a positive firmware/RF ACK. */
+bool rtw89_macos_awdl_peer_retained(struct ieee80211_vif *vif,
+                                   struct ieee80211_sta *sta)
+{
+    struct rtw89_sta *rtwsta;
+    unsigned int i;
+
+    if (!vif || !sta || vif->type != NL80211_IFTYPE_ADHOC || !vif->no_beacon || sta->tdls)
+        return false;
+    rtwsta = sta_to_rtwsta(sta);
+    for (i = 0; i < IEEE80211_MLD_MAX_NUM_LINKS; ++i)
+        if (rtwsta->links[i])
+            return true;
+    return false;
+}
+
+/* Native AWDL calls are serialized by the bridge's WiphyGuard. The native
+ * owner supplies the timer and must release the visit before tearing down VIFs.
+ */
+/* The bridge has paused/drained primary software producers before taking
+ * this manual lease; AWDL submissions share its native workloop/Wiphy lock.
+ * DMA completion alone is insufficient: packets may still be in MAC queues.
+ * Use the generation-specific AX/BE MAC query, never the AX-only void flush.
+ * Failure retains the off-channel lease and its producer gate for recovery.
+ */
+int rtw89_macos_awdl_tx_drain(struct ieee80211_hw *hw)
+{
+    struct rtw89_dev *dev;
+    const struct rtw89_mac_gen_def *mac;
+    unsigned int attempt;
+    int ret;
+
+    if (!hw || !hw->priv)
+        return -EINVAL;
+    dev = to_rtw89(hw->priv);
+    mac = dev->chip->mac_def;
+    if (!mac->is_txq_empty)
+        return -EOPNOTSUPP;
+    ret = rtw89_pci_awdl_tx_drain(dev);
+    if (ret)
+        return ret;
+    for (attempt = 0; attempt < 20; ++attempt) {
+        if (!test_bit(RTW89_FLAG_POWERON, dev->flags) ||
+            !test_bit(RTW89_FLAG_RUNNING, dev->flags))
+            return -ENODEV;
+        if (mac->is_txq_empty(dev))
+            return rtw89_pci_awdl_tx_drain(dev);
+        udelay(50);
+    }
+    return -ETIMEDOUT;
+}
+
+int rtw89_macos_awdl_reserve(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
+                            const struct ieee80211_channel *channel,
+                            unsigned int duration_ms)
+{
+    if (!hw || !hw->priv || !vif)
+        return -EINVAL;
+    return rtw89_awdl_roc_start(to_rtw89(hw->priv), vif_to_rtwvif(vif),
+                               channel, duration_ms);
+}
+
+int rtw89_macos_awdl_restore(struct ieee80211_hw *hw, struct ieee80211_vif *vif)
+{
+    struct rtw89_vif *rtwvif;
+
+    if (!hw || !hw->priv || !vif || vif->type != NL80211_IFTYPE_ADHOC || !vif->no_beacon)
+        return -EINVAL;
+    rtwvif = vif_to_rtwvif(vif);
+    if (rtwvif->roc.state == RTW89_ROC_IDLE)
+        return 0;
+    if (!rtwvif->roc.manual)
+        return -EBUSY;
+    if (rtwvif->roc.on_channel) {
+        int ret = rtw89_macos_awdl_tx_drain(hw);
+
+        if (ret)
+            return ret;
+    }
+    return rtw89_roc_end(to_rtw89(hw->priv), rtwvif);
+}
+
+bool rtw89_macos_awdl_needs_restore(struct ieee80211_hw *hw, struct ieee80211_vif *vif)
+{
+    struct rtw89_vif *rtwvif;
+
+    if (!hw || !hw->priv || !vif)
+        return false;
+    rtwvif = vif_to_rtwvif(vif);
+    return rtwvif->roc.manual && rtwvif->roc.state != RTW89_ROC_IDLE;
+}
+
+struct ieee80211_channel *
+rtw89_macos_awdl_current_channel(struct ieee80211_hw *hw, struct ieee80211_vif *vif)
+{
+    struct rtw89_dev *dev;
+    struct rtw89_vif *rtwvif, *other;
+
+    if (!hw || !hw->priv || !vif || vif->type != NL80211_IFTYPE_ADHOC || !vif->no_beacon)
+        return NULL;
+    dev = to_rtw89(hw->priv);
+    rtwvif = vif_to_rtwvif(vif);
+    if (rtwvif->roc.state != RTW89_ROC_IDLE)
+        return rtwvif->roc.manual && rtwvif->roc.on_channel ? &rtwvif->roc.chan : NULL;
+    rtw89_for_each_rtwvif(dev, other)
+        if (other != rtwvif && other->roc.state != RTW89_ROC_IDLE)
+            return NULL;
+    return hw->conf.chandef.chan;
+}
+
+/* RAM-only explanation of current_channel's refusal. Called with the same
+ * WiphyGuard as the channel query, before the probe tears the VIF down.
+ * No state changes, register accesses or additional firmware commands.
+ */
+unsigned int rtw89_macos_awdl_channel_blockers(struct ieee80211_hw *hw,
+                                              struct ieee80211_vif *vif)
+{
+    struct rtw89_dev *dev;
+    struct rtw89_vif *rtwvif, *other;
+    unsigned int blockers = 0;
+
+    if (!hw || !hw->priv)
+        return RTW_AWDL_RADIO_UNAVAILABLE;
+    if (!vif || vif->type != NL80211_IFTYPE_ADHOC || !vif->no_beacon)
+        return RTW_AWDL_RADIO_SECONDARY_INVALID;
+    dev = to_rtw89(hw->priv);
+    rtwvif = vif_to_rtwvif(vif);
+    if (rtwvif->roc.state != RTW89_ROC_IDLE) {
+        if (!rtwvif->roc.manual)
+            blockers |= RTW_AWDL_RADIO_SECONDARY_ROC_NOT_MANUAL;
+        if (!rtwvif->roc.on_channel)
+            blockers |= RTW_AWDL_RADIO_SECONDARY_ROC_NOT_ON_CHANNEL;
+        return blockers;
+    }
+    rtw89_for_each_rtwvif(dev, other)
+        if (other != rtwvif && other->roc.state != RTW89_ROC_IDLE)
+            return RTW_AWDL_RADIO_OTHER_ROC_ACTIVE;
+    if (!hw->conf.chandef.chan)
+        blockers |= RTW_AWDL_RADIO_HOME_CHANNEL_MISSING;
+    return blockers;
 }
 
 #endif /* RTW89_MACOS */

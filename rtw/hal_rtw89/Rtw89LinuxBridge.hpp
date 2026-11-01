@@ -4,8 +4,14 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include "../../include/HAL/RTWAwdlReceive.hpp"
+#include "../../include/HAL/RTWAwdlRadio.hpp"
+#include "../../include/HAL/RTWAwdlPeer.hpp"
+#include "../../include/HAL/RTWAwdlInterfaceState.hpp"
+#include "../../include/AWDL/RTWAwdlTxGate.hpp"
 bool rtw89LinuxSetCountry(struct Rtw89LinuxContext *, const char cc[2]);
 unsigned int rtw89LinuxGetLocale(struct Rtw89LinuxContext *);
+void rtw89LinuxSetAwdlDiscovery(struct Rtw89LinuxContext *, bool);
 void rtw89LinuxGetCountry(struct Rtw89LinuxContext *, char out[3]);
 #include "../../include/HAL/RTWTxRate.h"
 
@@ -38,13 +44,19 @@ struct Rtw89NativePeer {
     uint16_t heBasicMCS;
 };
 
+struct Rtw89AwdlPeerPool;
 struct Rtw89LinuxContext {
     typedef void (*ReceiveCallback)(void *, const uint8_t *, size_t,
-                                    int32_t, uint16_t, bool, bool);
+                                    int32_t, uint16_t, bool, bool, uint32_t, bool);
     typedef void (*TxResumeCallback)(void *);
     void *hardware;
     void *device;
     void *vif;
+    RTWAwdl::InterfaceState awdlInterface;
+    Rtw89AwdlPeerPool *awdlPeers;
+    bool awdlRecovery;
+    RTWAwdl::TxGate awdlTxGate;
+    RTWAwdl::ReceiveRegistration *awdlReceive;
     void *station;
     size_t vifAllocationSize;
     size_t stationAllocationSize;
@@ -58,6 +70,8 @@ struct Rtw89LinuxContext {
     bool started;
     bool interfaceAdded;
     bool allMulticast;
+    bool awdlDiscovery;
+    bool awdlDiscoveryApplied;
     bool scanning;
     uint16_t txAmpduMask;
     volatile uint64_t ampduTxStartCount;
@@ -134,10 +148,31 @@ void rtw89LinuxDetach(Rtw89PciTransport *transport,
 bool rtw89LinuxPowerUp(Rtw89LinuxContext *context);
 bool rtw89LinuxSetMacAddress(Rtw89LinuxContext *context, const uint8_t address[6]);
 void rtw89LinuxPowerDown(Rtw89LinuxContext *context);
+// Serialized hardware lifecycle only; protocol provider must quiesce producers.
+// Native scheduler owns a bounded timer before reserve and must restore on
+// every completion/error path. These synchronous calls do not schedule expiry.
+RTWAwdl::RadioState rtw89LinuxAwdlRadioState(const Rtw89LinuxContext *);
+bool rtw89LinuxAwdlChannelAllowed(const Rtw89LinuxContext *, uint16_t);
+RTWAwdl::RadioReservation rtw89LinuxAwdlReserveRadio(Rtw89LinuxContext *, uint16_t, uint32_t);
+int rtw89LinuxAwdlReserve(Rtw89LinuxContext *, uint16_t frequency, unsigned durationMs);
+int rtw89LinuxAwdlRestore(Rtw89LinuxContext *);
+uint32_t rtw89LinuxAwdlPeerCapacity(const Rtw89LinuxContext *);
+RTWAwdl::PeerResult rtw89LinuxAwdlSetPeer(Rtw89LinuxContext *, const uint8_t[6], bool);
+bool rtw89LinuxAwdlQuiesce(Rtw89LinuxContext *);
+bool rtw89LinuxAwdlAddInterface(Rtw89LinuxContext *, const uint8_t mac[6]);
+void rtw89LinuxAwdlRemoveInterface(Rtw89LinuxContext *);
+bool rtw89LinuxAwdlSetReceiver(Rtw89LinuxContext *, OSObject *, RTWAwdl::ReceiveHandler);
+// true transfers a copied frame to the driver; it does not report an RF ACK.
+bool rtw89LinuxAwdlTransmitAction(Rtw89LinuxContext *, const uint8_t *,
+                                       size_t, uint16_t expectedFrequency);
+bool rtw89LinuxAwdlTransmitData(Rtw89LinuxContext *, const uint8_t *, size_t, uint16_t, uint64_t);
+
+
 
 bool rtw89LinuxSetChannel(Rtw89LinuxContext *context, uint16_t channel);
 bool rtw89LinuxPrepareConnection(Rtw89LinuxContext *context,
                                  const uint8_t bssid[6], uint16_t channel);
+bool rtw89LinuxSetStationAuthorized(Rtw89LinuxContext *, const uint8_t peer[6], bool);
 void rtw89LinuxScanBegin(Rtw89LinuxContext *context);
 void rtw89LinuxScanEnd(Rtw89LinuxContext *context);
 bool rtw89LinuxIsScanning(Rtw89LinuxContext *context);

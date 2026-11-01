@@ -12,6 +12,8 @@
 #include "rtw89_compat.h"
 #include <linux/usb.h>
 #include <net/mac80211.h>
+#include "RTWWiphyWork.c.inc"
+#include "RTWReaderGrace.c.inc"
 
 /* Defined in net/wireless/util.c on Linux; rtw89's fw.c uses it to build
  * the ARP-offload LLC header. */
