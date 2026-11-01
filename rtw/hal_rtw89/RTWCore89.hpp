@@ -44,6 +44,11 @@ public:
     bool setCountryCode(const char cc[2]) override;
     uint32_t getTxQueueSize() override;
 
+    uint32_t awdlHardwareSupport() const override {
+        // QuiescentRemoval stays off until compat worker cancellation and
+        // secondary-VIF lifetime serialization have a complete barrier.
+        return RTWAwdl::FrameTransport|RTWAwdl::ManualVisits|RTWAwdl::PeerStations;
+    }
     RTWAwdl::RadioState awdlRadioState() const override;
     bool awdlChannelAllowed(uint16_t) const override;
     RTWAwdl::RadioReservation reserveAwdlRadio(uint16_t, uint32_t) override;

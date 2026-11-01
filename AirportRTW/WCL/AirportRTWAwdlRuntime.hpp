@@ -26,6 +26,7 @@ struct Settings {
     apple80211_awdl_sync_state parent {};
     apple80211_awdl_sync_channel_sequence channels {};
     apple80211_awdl_election_rssi_thresholds thresholds {};
+    apple80211_awdl_extension_state_machine_parameter extension {};
     uint32_t presence {0}, electionId {0}, metric {0};
     uint32_t actionMode {0};
     bool synchronize {false};
@@ -48,7 +49,8 @@ public:
         const IOReturn result=peers_ ? peers_->enable(enabled) : kIOReturnSuccess;
         dataEnabled_=enabled && result==kIOReturnSuccess;return result;
     }
-    void revokePeers() {dataEnabled_=false;if (peers_) peers_->revoke();}
+    virtual void revokeTraffic() {}
+    void revokePeers() {dataEnabled_=false;revokeTraffic();if (peers_) peers_->revoke();}
     void updateReceiveAddress(const uint8_t address[6]) {memcpy(dataAddress_,address,6);receive_.reset();}
     void abandonPeers() {
         dataEnabled_=false;dataInterface_=nullptr;memset(dataAddress_,0,6);receive_.reset();
@@ -86,6 +88,7 @@ public:
         return peers_ ? peers_->traffic(d) : kIOReturnUnsupported;
     }
     virtual uint32_t peerCapacity() const { return peers_ ? peers_->capacity() : 0; }
+    virtual IOReturn nativeRequest(Request,bool,void *) {return kIOReturnUnsupported;}
     virtual void observeRadioAction(const uint8_t *,size_t,const uint8_t *,size_t) {}
     bool receiveRadioData(const uint8_t *frame,size_t length,const uint8_t *metadata,size_t size) {
         if (!dataEnabled_ || !dataInterface_ || !peers_ || !frame || length<24 ||
@@ -196,6 +199,10 @@ public:
         Call call(*this);
         if (!backend_.configuration(settings_)) return kIOReturnNotReady;
         if (!set) return get(request,payload);
+        // This native transaction is a 44-byte advertiser selection, whose
+        // first fields are counter/countdown rather than a version prefix.
+        if(request==Request::AWDL_AWDL_ADVERTISERS)
+            return backend_.nativeRequest(request,true,payload);
         uint32_t version=0; memcpy(&version,payload,sizeof(version));
         if (version>APPLE80211_VERSION) return kIOReturnBadArgument;
         Settings next=settings_;
@@ -243,6 +250,11 @@ public:
             if (mode!=0 && mode!=3) return kIOReturnUnsupported;
             next.actionMode=mode; break;
         }
+        case Request::AWDL_EXTENSION_STATE_MACHINE_PARAMETERS: {
+            const auto d=*static_cast<apple80211_awdl_extension_state_machine_parameter *>(payload);
+            if(d.unk1>255 || d.unk2>255 || d.unk3>255 || d.unk4>255)return kIOReturnBadArgument;
+            next.extension=d;break;
+        }
         case Request::AWDL_ELECTION_RSSI_THRESHOLDS:
             next.thresholds=*static_cast<apple80211_awdl_election_rssi_thresholds *>(payload);
             if (next.thresholds.peer_rssi_threshold < -127 || next.thresholds.peer_rssi_threshold > -1)
@@ -276,7 +288,7 @@ public:
             pendingTemplate_.clear();
             return result;
         }
-        default: return kIOReturnUnsupported;
+        default: return backend_.nativeRequest(request,true,payload);
         }
         const IOReturn result=backend_.configure(next);
         if (result==kIOReturnSuccess) settings_=next;
@@ -348,6 +360,8 @@ private:
             *static_cast<apple80211_awdl_sync_state *>(payload)=settings_.parent; break;
         case Request::AWDL_SYNCHRONIZATION_CHANNEL_SEQUENCE:
             *static_cast<apple80211_awdl_sync_channel_sequence *>(payload)=settings_.channels; break;
+        case Request::AWDL_EXTENSION_STATE_MACHINE_PARAMETERS:
+            *static_cast<apple80211_awdl_extension_state_machine_parameter *>(payload)=settings_.extension;break;
         case Request::AWDL_ELECTION_RSSI_THRESHOLDS:
             *static_cast<apple80211_awdl_election_rssi_thresholds *>(payload)=settings_.thresholds; break;
         case Request::AWDL_SYNC_ENABLED: {
@@ -370,7 +384,7 @@ private:
             auto &d=*static_cast<apple80211_awdl_af_tx_mode *>(payload);
             d={}; d.version=APPLE80211_VERSION; d.mode=settings_.actionMode; break;
         }
-        default: return kIOReturnUnsupported;
+        default: return backend_.nativeRequest(request,false,payload);
         }
         uint32_t version=APPLE80211_VERSION; memcpy(payload,&version,sizeof(version));
         return kIOReturnSuccess;

@@ -10,7 +10,7 @@ ioctl=(ROOT/'include/Airport/apple80211_ioctl.h').read_text()
 names=['ssid_data','state_data','channel_data','awdl_sync_params','awdl_sync_state',
        'awdl_sync_channel_sequence','awdl_election_rssi_thresholds','awdl_sync_enabled',
        'awdl_presence_mode','awdl_election_id','awdl_election_metric','awdl_af_tx_mode',
-       'awdl_sync_frame_template','awdl_peer_traffic_registration','peer_cache_maximum_size']
+       'awdl_sync_frame_template','awdl_peer_traffic_registration','peer_cache_maximum_size','awdl_extension_state_machine_parameter']
 structs=[]
 for suffix in names:
     match=re.search(r'\bstruct apple80211_'+suffix+r'\s*\{.*?\}\s*(?:__attribute__\(\(packed\)\))?;',ioctl,re.S)

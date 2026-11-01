@@ -94,7 +94,7 @@ def main():
     with tempfile.TemporaryDirectory(prefix='rtw-awdl-abi-') as directory:
         source = Path(directory) / 'probe.cpp'
         source.write_text('#include "'+str(ROOT/'AirportRTW/WCL/AirportRTWAwdlRuntime.hpp')+'"\n'
-                          '#include "'+str(ROOT/'AirportRTW/WCL/AirportRTWAwdlPeers.hpp')+'"\n'
+                          '#include "'+str(ROOT/'AirportRTW/WCL/AirportRTWAwdlBackend.hpp')+'"\n'
                           '#include <Airport/apple80211_var.h>\n'
                           '#include <Airport/apple80211_ioctl.h>\n'
                           'static_assert(APPLE80211_M_AWDL_AVAILABILITY_WINDOW_START==41, "native start event");\n'

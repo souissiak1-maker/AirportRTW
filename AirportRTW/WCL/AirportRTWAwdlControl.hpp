@@ -71,7 +71,7 @@ public:
     virtual ~Control() = default;
     virtual uint32_t capabilities() const = 0;
     virtual bool ready() const = 0;
-    // Prepare runs before native base start: do not access its workqueue yet.
+    // Prepare runs before native virtual base initialization: do not access its workqueue yet.
     // It may bind the interface but must not invoke callbacks until enable.
     // shutdown must handle partial prepare and synchronously quiesce producers.
     virtual IOReturn prepare(IO80211VirtualInterface *, const uint8_t mac[6]) = 0;

@@ -1085,6 +1085,26 @@ struct apple80211_awdl_sync_params {
 #endif
 } __attribute__((packed));
 
+#if __IO80211_TARGET == __MAC_26_0
+/* Native election fields: Darwin 25.5 boot-KC initFWElectionParams and
+ * get/setAwdlElectionParams; payload length 0x38. Device-limit layout also
+ * follows the native MtkWireless Wi-Fi reference (20 bytes).
+ */
+struct apple80211_awdl_device_capabilities {
+    uint32_t version, reserved, max_hops, max_peers, max_channel_sequence;
+} __attribute__((packed));
+struct apple80211_awdl_election_params {
+    uint32_t version;
+    uint8_t reserved[12], flags, pad;
+    uint16_t election_id;
+    uint8_t distance, pad2, master[6];
+    uint32_t master_metric, self_metric;
+    uint8_t reserved2[20];
+} __attribute__((packed));
+static_assert(sizeof(apple80211_awdl_device_capabilities)==20,"native AWDL limits");
+static_assert(sizeof(apple80211_awdl_election_params)==56,"native AWDL election");
+#endif
+
 struct apple80211_awdl_cap {
     uint32_t    version;
     uint8_t     cap;

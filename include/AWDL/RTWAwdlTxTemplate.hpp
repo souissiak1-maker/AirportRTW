@@ -46,6 +46,8 @@ public:
         used = 0;
     }
     size_t size() const { return used; }
+    const uint8_t *tlvs() const {return used>=16 ? bytes+16 : nullptr;}
+    size_t tlvSize() const {return used>=16 ? used-16 : 0;}
     // No FCS: hardware owns it. Caller supplies AWDL destination/BSSID/source,
     // never the infrastructure station's address by implicit fallback.
     bool build(uint8_t *out, size_t available, const uint8_t destination[6],

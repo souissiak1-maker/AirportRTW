@@ -6,6 +6,7 @@
 #include <HAL/RTWAwdlReceive.hpp>
 #include <HAL/RTWAwdlRadio.hpp>
 #include <HAL/RTWAwdlPeer.hpp>
+#include <HAL/RTWAwdlHardwareSupport.hpp>
 #include <HAL/ItlDriverInfo.hpp>
 #include <HAL/ItlDriverController.hpp>
 
@@ -29,6 +30,7 @@ public:
     UInt32 supportedFeatures() override;
     // Native protocol code uses this hardware-independent contract. Control
     // operations run on the controller workloop; RX callbacks only copy/enqueue.
+    virtual uint32_t awdlHardwareSupport() const {return 0;}
     virtual bool addAwdlInterface(const uint8_t mac[6]) = 0;
     virtual void removeAwdlInterface() = 0;
     // Peer operations run on the owner workloop after stopping peer TX. A

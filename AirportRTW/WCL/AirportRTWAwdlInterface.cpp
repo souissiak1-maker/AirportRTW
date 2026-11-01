@@ -6,7 +6,7 @@
 #include "AirportRTWAwdlInterface.hpp"
 #include "AirportRTWAwdlActionInput.hpp"
 #include "AirportRTWAwdlRuntime.hpp"
-#include "AirportRTWAwdlPeers.hpp"
+#include "AirportRTWAwdlBackend.hpp"
 #include <net/ethernet.h>
 #include <Airport/apple80211_var.h>
 #include <AWDL/RTWAwdlNativeRxMetadata.hpp>
@@ -62,6 +62,11 @@ bool AirportRTWAwdlInterface::initialize(IO80211Controller *controller,
     if (!IO80211SkywalkInterface::init()) return false;
     controlLock_=IORecursiveLockAlloc();
     if (!controlLock_) return false;
+    // Native base initialization can query AWDL limits and election state.
+    // Bind validated state before that call; prepare must not use its workqueue.
+    prepareAttempted_ = true;
+    if (control_->prepare(this,mac_) != kIOReturnSuccess) return false;
+    prepared_ = true;
     ether_addr address; memcpy(address.octet,mac_,6);
     virtualInitAttempted_ = true;
     if (!IO80211VirtualInterface::init(controller,&address,6,"awdl")) return false;
@@ -72,10 +77,7 @@ bool AirportRTWAwdlInterface::initialize(IO80211Controller *controller,
 
 bool AirportRTWAwdlInterface::start(IOService *provider)
 {
-    if (stopping_ || baseStarted_ || prepareAttempted_ || !control_) return false;
-    prepareAttempted_ = true;
-    if (control_->prepare(this,mac_) != kIOReturnSuccess) return false;
-    prepared_ = true;
+    if (stopping_ || baseStarted_ || !prepared_ || !control_) return false;
     if (!IO80211VirtualInterface::start(provider)) return false;
     baseStarted_ = true;
     loop_ = rtw_awdl_interface_workloop(this);

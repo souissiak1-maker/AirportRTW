@@ -102,9 +102,10 @@ struct IO80211SkywalkInterface:IOService{
     bool initRegistrationInfo(IOSkywalkEthernetInterface::RegistrationInfo*p,unsigned version,size_t n){assert(version==1&&n==0x130);memset(p,0,n);return failAt!=8;}
     void setInterfaceId(unsigned id){assert(id==2);}
 };
+static void(*virtualInitHook)(OSObject*)=nullptr;
 struct IO80211VirtualInterface:IO80211SkywalkInterface{
     using IO80211SkywalkInterface::init;
-    bool init(IO80211Controller*,ether_addr*,unsigned role,const char*name){assert(role==6&&!strcmp(name,"awdl"));return failAt!=2;}
+    bool init(IO80211Controller*,ether_addr*,unsigned role,const char*name){assert(role==6&&!strcmp(name,"awdl"));if(virtualInitHook)virtualInitHook(this);return failAt!=2;}
     bool start(IOService*)override{++baseStarts;assert(isChipInterfaceReady());return failAt!=5;}
     void stop(IOService*)override{++baseStops;if(baseLoop){baseLoop->release();baseLoop=nullptr;}}
     void free()override{IO80211SkywalkInterface::free();}
