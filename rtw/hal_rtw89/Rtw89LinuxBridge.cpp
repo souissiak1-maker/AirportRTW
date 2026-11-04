@@ -407,7 +407,8 @@ bool rtw89LinuxAttach(Rtw89PciTransport *transport,
     rtw88_set_hw_callbacks(&hardwareCallbacks, context);
     activeContext = context;
     rtw88_set_tx_resume_cb(resumeTransmit);
-    rtw88_force_wifi_only();
+    // RTW89 tracks Bluetooth through firmware scoreboard/C2H events.
+    // Do not override its automatic coexistence policy from the frontend.
     memcpy(context->macAddress, hw->wiphy->perm_addr,
            sizeof(context->macAddress));
 
@@ -1755,4 +1756,16 @@ extern "C" void rtw89_macos_poll_failure(unsigned int reg, unsigned int value,
                                         unsigned int mask, unsigned int expected)
 {
     Rtw89PciTransport::recordPollFailure(reg, value, mask, expected);
+}
+
+// Called from the serialized BTC engine; never call IOKit under its locks.
+extern "C" void rtw89_macos_coex_observe(unsigned int mode, unsigned int flags,
+    unsigned int info, unsigned int scoreboard, unsigned int failures,
+    unsigned int reason, unsigned int action)
+{
+    auto *context=activeContext;
+    if(!context)return;
+    const uint32_t values[7]={mode,flags,info,scoreboard,failures,reason,action};
+    for(unsigned i=0;i<7;++i)__atomic_store_n(&context->coexState[i],values[i],__ATOMIC_RELAXED);
+    __sync_fetch_and_add(&context->coexObservations,1);
 }

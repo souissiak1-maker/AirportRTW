@@ -105,6 +105,7 @@ private:
     Rtw89LinuxContext linuxContext {};
     volatile UInt64 scanChannelCount {0};
     RTWAwdl::Observer awdlObserver;
+    UInt64 publishedCoexObservations {0};
     volatile UInt64 rawReceiveCount {0};
     volatile UInt64 acceptedReceiveCount {0};
     volatile UInt64 beaconProbeCount {0};

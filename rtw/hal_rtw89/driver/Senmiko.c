@@ -376,36 +376,6 @@ void rtw88_sw_scan_complete(struct ieee80211_hw *hw, struct ieee80211_vif *vif)
 /*  Coex / connect helpers                                             */
 /* ------------------------------------------------------------------ */
 
-/* rtw88 semantics: stop the WiFi/BT coexistence engine from throttling
- * WiFi on machines with no functional BT controller.  rtw89 has no
- * efuse.btcoex flag; the equivalent is BTC manual control, which stops
- * the periodic coex algorithm from reacting to (never-arriving) BT
- * firmware replies.  Same mechanism as debugfs' btc_manual node. */
-static bool airportrtw_wifi_only;
-
-/* core.c boots BTC in BTC_MODE_WL (wifi-only policy) at every
- * ops->start while this reads true. */
-bool rtw88_btc_wifi_only(void)
-{
-	return airportrtw_wifi_only;
-}
-
-void rtw88_force_wifi_only(void)
-{
-	struct ieee80211_hw *hw = rtw88_get_hw();
-
-	/* Sticky: the kext may call this before rtw_pci_probe registers the
-	 * hw; record the request first, rtw89_core_start applies it via
-	 * rtw89_btc_ntfy_init(BTC_MODE_WL). */
-	airportrtw_wifi_only = true;
-
-	if (hw && hw->priv &&
-	    test_bit(RTW89_FLAG_RUNNING, to_rtw89(hw->priv)->flags))
-		rtw89_btc_ntfy_init(to_rtw89(hw->priv), BTC_MODE_WL);
-
-	pr_info("rtw89: forcing wifi-only (BTC_MODE_WL)\n");
-}
-
 /* Single STA chanctx emulating mac80211's add/assign flow (the kext
  * never calls the chanctx ops itself). */
 static struct ieee80211_chanctx_conf *airportrtw_chanctx;

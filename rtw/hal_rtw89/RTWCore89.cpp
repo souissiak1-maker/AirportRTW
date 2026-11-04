@@ -603,6 +603,19 @@ void RTWCore89::watchdog(struct _ifnet *ifp)
     if (!sc)
         return;
     auto *owner = container_of(sc, RTWCore89, sc);
+    const UInt64 coexCount=__atomic_load_n(&owner->linuxContext.coexObservations,__ATOMIC_ACQUIRE);
+    if(coexCount && coexCount!=owner->publishedCoexObservations) {
+        auto *coexController=owner->getController();
+        if(coexController) {
+            static const char *keys[7]={"RTW89CoexMode","RTW89CoexFlags",
+                "RTW89CoexBTInfoUpdates","RTW89CoexBTScoreboardUpdates",
+                "RTW89CoexH2CFailures","RTW89CoexReason","RTW89CoexAction"};
+            for(unsigned i=0;i<7;++i)coexController->setProperty(keys[i],uint64_t(
+                __atomic_load_n(&owner->linuxContext.coexState[i],__ATOMIC_RELAXED)),32);
+            coexController->setProperty("RTW89CoexObservations",coexCount,64);
+            owner->publishedCoexObservations=coexCount;
+        }
+    }
     if (sc->sc_ic.ic_state == IEEE80211_S_RUN) {
         if (owner->associationRunWatchdogTicks < 5)
             ++owner->associationRunWatchdogTicks;

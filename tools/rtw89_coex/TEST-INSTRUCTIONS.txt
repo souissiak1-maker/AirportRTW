@@ -1,0 +1,30 @@
+RTW89 automatic Bluetooth coexistence test — 2.3.0 / AirportRTW2.3.0
+
+Replace the existing EFI kext with the matching macOS package and reboot.
+No coexistence boot argument or binary patch is required. Keep the original
+kext for rollback. This package does not install Bluetooth firmware or drivers.
+Use your already-working Bluetooth firmware/driver setup.
+
+Run collect-coex.command. During its three-minute capture:
+- Keep Wi-Fi connected; run Bluetooth discovery and pair a nearby device.
+- Turn Bluetooth off/on while Wi-Fi stays connected; repeat discovery.
+- Toggle Wi-Fi off/on; verify Bluetooth discovery and Wi-Fi still work.
+Repeat on 2.4 GHz and 5 GHz where available. Confirm simultaneous Wi-Fi traffic
+and Bluetooth use; record any scan, pairing, audio or Wi-Fi failures separately.
+Send the Desktop AirportRTW-coex-*.json and observed results.
+
+Without a Bluetooth driver, verify Wi-Fi still joins and transfers normally.
+Do not infer Bluetooth firmware readiness merely from USB device presence.
+
+Mode 0 is normal/automatic. Flags: 1 BT enabled, 2 firmware patch running,
+4 mailbox available, 8 manual control, 16 forced Wi-Fi only, 32 BT only,
+64 Wi-Fi RF off, 128 coexistence initialized. Mode/flags are copied host-engine
+observations, not direct firmware-register readback; related fields can update
+between samples. The firmware-event and H2C-failure counters provide context.
+The last observation may remain after Wi-Fi stops until the next engine run.
+
+The collector requires python3. The kext does not require Python or a helper
+app. The collector saves only numeric coexistence fields, timestamps and loaded
+kext identity; it excludes SSIDs, BSSIDs, addresses, device names and payloads.
+RTW88 coexistence policy is unchanged by this RTW89-only fix. Experimental AWDL
+is not enabled in these packages. Main/README and published releases are unchanged.

@@ -6144,16 +6144,9 @@ int rtw89_core_start(struct rtw89_dev *rtwdev)
 	rtw89_chip_bb_postinit(rtwdev);
 	rtw89_phy_init_rf_reg(rtwdev, false);
 
-	/* AirportRTW: no macOS driver feeds the BT half.  BTC_MODE_WL runs the
-	 * coex engine in its designed wifi-only policy — antenna/GNT granted
-	 * to WLAN, no TDMA slot cycling against a silent BT firmware (which
-	 * previously wedged the register-H2C pipe). */
-	{
-		bool rtw88_btc_wifi_only(void); /* Senmiko.c */
-
-		rtw89_btc_ntfy_init(rtwdev, rtw88_btc_wifi_only() ?
-					    BTC_MODE_WL : BTC_MODE_NORMAL);
-	}
+	/* The normal engine handles BT absent/off and late BT initialization
+	 * through the chip scoreboard and firmware events on every start. */
+	rtw89_btc_ntfy_init(rtwdev, BTC_MODE_NORMAL);
 
 	rtw89_phy_dm_init(rtwdev);
 

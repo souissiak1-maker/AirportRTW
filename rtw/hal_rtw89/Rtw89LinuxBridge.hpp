@@ -49,6 +49,8 @@ struct Rtw89LinuxContext {
     typedef void (*ReceiveCallback)(void *, const uint8_t *, size_t,
                                     int32_t, uint16_t, bool, bool, uint32_t, bool);
     typedef void (*TxResumeCallback)(void *);
+    volatile uint32_t coexState[7] {};
+    volatile uint64_t coexObservations {0};
     void *hardware;
     void *device;
     void *vif;

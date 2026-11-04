@@ -296,7 +296,7 @@ bool rtw88_get_sta_context_snapshot(struct rtw_dev *rtwdev,
 
 /* Force-disable BT coexistence by clearing efuse.btcoex. Must be called
  * between rtw_pci_probe and the chip's start() op. See rtw88_compat.c. */
-void rtw88_force_wifi_only(void);
+/* RTW89 coexistence is owned by the chip engine, not a frontend override. */
 
 /* TX flow control. rtw88_be_tx_avail() returns the BE ring's free-slot count
  * so the output path can stall (backpressure) instead of dropping when full.

@@ -1223,29 +1223,6 @@ void rtw88_handshake_rx_filter(struct ieee80211_hw *hw, bool open)
 }
 
 /*
- * Force-disable Bluetooth coexistence by clearing efuse.btcoex.
- *
- * rtw_power_on (called from rtw_core_start) reads efuse.btcoex to decide
- * wifi_only.  When wifi_only=false the coex driver runs periodic H2C
- * queries asking the firmware to track BT activity; on a hackintosh with
- * no functional BT controller the firmware never gets a clean "BT idle"
- * reply and can leave the WiFi TX engine starved — chip stops fetching
- * BE descriptors silently, no IMR bit set, no TXPAUSE.
- *
- * Must be called AFTER rtw_pci_probe (which runs rtw_core_init to fill
- * the efuse struct) and BEFORE rtw_core_start.
- */
-void rtw88_force_wifi_only(void)
-{
-    if (!g_rtw88_hw || !g_rtw88_hw->priv) return;
-    struct rtw_dev *rtwdev = (struct rtw_dev *)g_rtw88_hw->priv;
-    if (rtwdev->efuse.btcoex) {
-        RTW_LOG("AirportRTW: forcing wifi_only (was efuse.btcoex=1)\n");
-        rtwdev->efuse.btcoex = 0;
-    }
-}
-
-/*
  * rtw88_connect_hw_setup — set channel + BSSID for the connect flow.
  *
  * Called from doAuthenticate() INSTEAD of ops->config + ops->bss_info_changed.

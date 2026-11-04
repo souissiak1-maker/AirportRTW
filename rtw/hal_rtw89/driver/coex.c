@@ -7388,6 +7388,31 @@ void rtw89_coex_rfk_chk_work(struct wiphy *wiphy, struct wiphy_work *work)
 	}
 }
 
+#ifdef RTW89_MACOS
+extern void rtw89_macos_coex_observe(unsigned int, unsigned int, unsigned int,
+                                    unsigned int, unsigned int, unsigned int,
+                                    unsigned int);
+static void airportrtw_btc_observe(struct rtw89_dev *rtwdev)
+{
+    struct rtw89_btc *btc = &rtwdev->btc;
+    struct rtw89_btc_bt_info *bt = &btc->cx.bt;
+    u32 flags = 0;
+    if (bt->enable.now) flags |= BIT(0);
+    if (bt->run_patch_code) flags |= BIT(1);
+    if (bt->mbx_avl) flags |= BIT(2);
+    if (btc->manual_ctrl) flags |= BIT(3);
+    if (btc->dm.wl_only) flags |= BIT(4);
+    if (btc->dm.bt_only) flags |= BIT(5);
+    if (btc->cx.wl.status.map.rf_off) flags |= BIT(6);
+    if (btc->cx.wl.status.map.init_ok) flags |= BIT(7);
+    rtw89_macos_coex_observe(btc->cx.wl.coex_mode, flags,
+        btc->cx.cnt_bt[BTC_BCNT_INFOUPDATE], btc->cx.cnt_bt[BTC_BCNT_SCBDUPDATE],
+        btc->fwinfo.cnt_h2c_fail, btc->dm.run_reason, btc->dm.run_action);
+}
+#else
+static inline void airportrtw_btc_observe(struct rtw89_dev *rtwdev) {}
+#endif
+
 static void _update_bt_scbd(struct rtw89_dev *rtwdev, bool only_update)
 {
 	const struct rtw89_chip_info *chip = rtwdev->chip;
@@ -7694,6 +7719,7 @@ exit:
 	else
 		btc->ctrl.ctrl.igno_bt = igno_bt;
 	_action_common(rtwdev);
+	airportrtw_btc_observe(rtwdev);
 }
 
 void rtw89_btc_ntfy_poweron(struct rtw89_dev *rtwdev)
@@ -7804,6 +7830,7 @@ void rtw89_btc_ntfy_init(struct rtw89_dev *rtwdev, u8 mode)
 	_fw_set_drv_info(rtwdev, CXDRVINFO_CTRL);
 
 	_run_coex(rtwdev, BTC_RSN_NTFY_INIT);
+	airportrtw_btc_observe(rtwdev);
 }
 
 void rtw89_btc_ntfy_scan_start(struct rtw89_dev *rtwdev, u8 phy_idx, u8 band)
