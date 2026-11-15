@@ -91,6 +91,7 @@ jobs:
           python3 tests/rtw_awdl_window_driver_test.py
           python3 tests/rtw_backend_build_failure_test.py
           python3 tests/rtw_completion_timeout_test.py
+          python3 tests/rtw88_bluetooth_coex_test.py
           xcrun clang++ -std=c++14 -Wall -Wextra -Werror -fsanitize=address,undefined -Iinclude tests/rtw_awdl_tx_gate_test.cpp -o /tmp/rtw_awdl_tx_gate_test
           /tmp/rtw_awdl_tx_gate_test
           xcrun clang++ -std=c++14 -Wall -Wextra -Werror -fsanitize=address,undefined -Iinclude tests/rtw_awdl_election_test.cpp -o /tmp/rtw_awdl_election_test

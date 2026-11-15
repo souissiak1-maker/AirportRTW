@@ -173,7 +173,6 @@
 #define rtw88_disable_watchdog_work airportrtw88_rtw88_disable_watchdog_work
 #define rtw88_dma_ops airportrtw88_rtw88_dma_ops
 #define rtw88_find_fw_dir airportrtw88_rtw88_find_fw_dir
-#define rtw88_force_wifi_only airportrtw88_rtw88_force_wifi_only
 #define rtw88_fw_blobs airportrtw88_rtw88_fw_blobs
 #define rtw88_get_be_bd airportrtw88_rtw88_get_be_bd
 #define rtw88_get_be_ring_state airportrtw88_rtw88_get_be_ring_state

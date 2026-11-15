@@ -15,6 +15,7 @@ void rtw88LinuxGetCountry(struct Rtw88LinuxContext *, char out[3]);
 class Rtw88PciTransport;
 
 unsigned rtw88LinuxGetNSS(struct Rtw88LinuxContext *context);
+bool rtw88LinuxGetCoexSnapshot(struct Rtw88LinuxContext *context, uint32_t state[10]);
 void rtw88LinuxGetTxRate(struct Rtw88LinuxContext *context, RTWTxRate &rate);
 
 struct Rtw88NativeCapabilities {

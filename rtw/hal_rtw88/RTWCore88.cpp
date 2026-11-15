@@ -476,6 +476,18 @@ void RTWCore88::watchdog(struct _ifnet *ifp)
     if (!sc)
         return;
     auto *owner = container_of(sc, RTWCore88, sc);
+    uint32_t coex[10];
+    if (rtw88LinuxGetCoexSnapshot(&owner->linuxContext, coex)) {
+        auto *controller = owner->getController();
+        if (controller) {
+            static const char *keys[10] = {"RTW88CoexCapable", "RTW88CoexStopped",
+                "RTW88CoexBTDisabled", "RTW88CoexPolicyRuns", "RTW88CoexBTReplies",
+                "RTW88CoexBTActivityReports", "RTW88CoexMode", "RTW88CoexBTStatus",
+                "RTW88CoexRunning", "RTW88CoexUnder5GHz"};
+            for (unsigned i = 0; i < 10; ++i)
+                controller->setProperty(keys[i], uint64_t(coex[i]), 32);
+        }
+    }
     if (sc->sc_ic.ic_state == IEEE80211_S_RUN) {
         if (owner->associationRunWatchdogTicks < 5)
             ++owner->associationRunWatchdogTicks;
