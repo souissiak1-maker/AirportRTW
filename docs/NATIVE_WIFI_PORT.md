@@ -208,21 +208,6 @@ pending. DHCP-specific TX counters currently classify plaintext frames at the
 Linux bridge and therefore do not count software-encrypted DHCP frames; total
 TX/data counters and actual lease/traffic checks must be used for this mode.
 
-## RTW89-only CCMP receive normalization
-
-Comparison with the local Airport_RTW89 data path confirmed that hardware RX
-retains the CCMP IV and MIC. net80211's hardware-decrypt path removes the IV and
-validates PN, but requires its caller to remove the MIC. The RTW89 Linux bridge
-now strips the MIC only for a hardware-decrypted data frame with an installed
-CCMP key and intact IV/MIC flags. It retains the IV for net80211 replay checks,
-rejects truncated or invalid CCMP layouts, and never strips ciphertext from a
-frame not marked decrypted. A portable layout check covers normal, QoS, four-
-address/HT-control, multicast key IDs and malformed/truncated frames. CCMP has
-returned to hardware CAM, while TKIP retains HAL-selected software crypto.
-Native Apple frontend and shared net80211 crypto code are unchanged by this
-step. Hardware validation remains pending. New HAL counters distinguish
-hardware-decrypted RX, protected RX needing software, and stripped CCMP MICs.
-
 ## Connection-specific RX diagnostics
 
 The hardware test confirmed MIC normalization is running (103 stripped MICs),
