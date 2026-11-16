@@ -11,10 +11,7 @@ remain pending. See `rtw/hal_rtw88/README.md` for build and installation details
 - Local reference: `/Users/senmiko/Desktop/Github/Airport_RTW88` (source archive,
   without Git metadata). Its README marks the project archived; its build
   workflow identifies the separate Linux driver dependency below.
-- Driver dependency: `https://github.com/thegwchr/rtw88-stable.git`, inspected at
-  `d029a677c49266fad86750714eb5612becd134d3`. The relevant source directory is
-  `drivers/net/wireless/realtek/rtw88`. Pin this revision rather than silently
-  following the dependency's moving branch.
+
 - Reference firmware: `firmware/rtw8822c_fw.bin`. Retain the firmware's license
   and the original notices on imported C sources and compatibility files.
 
