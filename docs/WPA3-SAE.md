@@ -26,8 +26,7 @@ CI repeats these tests. A successful build and host tests do not establish devic
 interoperability: the Galaxy hotspot still needs an actual join, DHCP/data, reconnect,
 sleep/wake and wrong-password test with the new native kext.
 
-Crypto is adapted from the local Airport_RTW89 reference. Exact vendor revisions,
-licenses and SHA-256 hashes are recorded in `rtw80211/sae/UPSTREAM.json` and the
+Exact vendor revisions,licenses and SHA-256 hashes are recorded in `rtw80211/sae/UPSTREAM.json` and the
 vendor `UPSTREAM.md` files. Hostap SAE and Mbed TLS sources remain unmodified.
 The Mbed TLS adapter uses a temporary for modular exponentiation because hostap
 can alias its exponent with the output, which Mbed TLS does not preserve.
