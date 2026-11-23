@@ -7405,6 +7405,10 @@ static void airportrtw_btc_observe(struct rtw89_dev *rtwdev)
     if (btc->dm.bt_only) flags |= BIT(5);
     if (btc->cx.wl.status.map.rf_off) flags |= BIT(6);
     if (btc->cx.wl.status.map.init_ok) flags |= BIT(7);
+    if (btc->cx.wl.status.map.busy) flags |= BIT(8);
+    if (bt->link_info.a2dp_desc.exist) flags |= BIT(9);
+    if (btc->cx.wl.status.map.busy &&
+        (btc->cx.wl.status.map.traffic_dir & BIT(RTW89_TFC_DL))) flags |= BIT(10);
     rtw89_macos_coex_observe(btc->cx.wl.coex_mode, flags,
         btc->cx.cnt_bt[BTC_BCNT_INFOUPDATE], btc->cx.cnt_bt[BTC_BCNT_SCBDUPDATE],
         btc->fwinfo.cnt_h2c_fail, btc->dm.run_reason, btc->dm.run_action);
@@ -7419,6 +7423,7 @@ static void _update_bt_scbd(struct rtw89_dev *rtwdev, bool only_update)
 	struct rtw89_btc *btc = &rtwdev->btc;
 	struct rtw89_btc_cx *cx = &btc->cx;
 	struct rtw89_btc_bt_info *bt = &btc->cx.bt;
+	bool a2dp_active;
 	u32 val;
 	bool status_change = false;
 
@@ -7459,7 +7464,10 @@ static void _update_bt_scbd(struct rtw89_dev *rtwdev, bool only_update)
 
 	bt->whql_test = !!(val & BTC_BSCB_WHQL);
 	bt->btg_type = val & BTC_BSCB_BT_S1 ? BTC_BT_BTG : BTC_BT_ALONE;
-	bt->link_info.a2dp_desc.exist = !!(val & BTC_BSCB_A2DP_ACT);
+	a2dp_active = !!(val & BTC_BSCB_A2DP_ACT);
+	if (bt->link_info.a2dp_desc.exist != a2dp_active)
+		status_change = true;
+	bt->link_info.a2dp_desc.exist = a2dp_active;
 
 	bt->lna_constrain = !!(val & BTC_BSCB_BT_LNAB0) +
 			    !!(val & BTC_BSCB_BT_LNAB1) * 2 + 4;
@@ -8667,12 +8675,13 @@ static void rtw89_btc_ntfy_wl_sta_iter(void *data, struct ieee80211_sta *sta)
 
 #define BTC_NHM_CHK_INTVL 20
 
-void rtw89_btc_ntfy_wl_sta(struct rtw89_dev *rtwdev)
+static void _ntfy_wl_sta(struct rtw89_dev *rtwdev, bool report_role)
 {
 	struct rtw89_btc *btc = &rtwdev->btc;
 	struct rtw89_btc_dm *dm = &btc->dm;
 	struct rtw89_btc_wl_info *wl = &btc->cx.wl;
 	struct rtw89_btc_wl_sta_iter_data data = {.rtwdev = rtwdev};
+	bool traffic_changed;
 	u8 i;
 
 	ieee80211_iterate_stations_atomic(rtwdev->hw,
@@ -8692,16 +8701,20 @@ void rtw89_btc_ntfy_wl_sta(struct rtw89_dev *rtwdev)
 	if (dm->trx_info.wl_rssi != wl->rssi_level)
 		dm->trx_info.wl_rssi = wl->rssi_level;
 
+	if (report_role && data.is_traffic_change)
+		_fw_set_drv_info(rtwdev, CXDRVINFO_ROLE);
+
+	traffic_changed = wl->status.map.busy != data.busy_all ||
+			  wl->status.map.traffic_dir != data.dir_all;
+	wl->status.map.busy = data.busy_all;
+	wl->status.map.traffic_dir = data.dir_all;
+
 	rtw89_debug(rtwdev, RTW89_DBG_BTC, "[BTC], %s(): busy=%d\n",
 		    __func__, !!wl->status.map.busy);
 
-	_write_scbd(rtwdev, BTC_WSCB_WLBUSY, (!!wl->status.map.busy));
-
-	if (data.is_traffic_change)
-		_fw_set_drv_info(rtwdev, CXDRVINFO_ROLE);
-	if (data.is_sta_change) {
-		wl->status.map.busy = data.busy_all;
-		wl->status.map.traffic_dir = data.dir_all;
+	/* The policy run flushes this bit to the hardware scoreboard. */
+	_write_scbd(rtwdev, BTC_WSCB_WLBUSY, !!wl->status.map.busy);
+	if (traffic_changed || (report_role && data.is_sta_change)) {
 		_run_coex(rtwdev, BTC_RSN_NTFY_WL_STA);
 	} else if (btc->dm.cnt_notify[BTC_NCNT_WL_STA] >=
 		   btc->dm.cnt_dm[BTC_DCNT_WL_STA_LAST] + BTC_NHM_CHK_INTVL) {
@@ -8712,6 +8725,29 @@ void rtw89_btc_ntfy_wl_sta(struct rtw89_dev *rtwdev)
 		btc->dm.cnt_dm[BTC_DCNT_WL_STA_LAST] =
 		btc->dm.cnt_notify[BTC_NCNT_WL_STA];
 	}
+}
+
+void rtw89_btc_ntfy_wl_sta(struct rtw89_dev *rtwdev)
+{
+	_ntfy_wl_sta(rtwdev, true);
+}
+
+void rtw89_btc_ntfy_wl_traffic(struct rtw89_dev *rtwdev)
+{
+	struct rtw89_btc *btc = &rtwdev->btc;
+	struct rtw89_btc_wl_info *wl = &btc->cx.wl;
+
+	if (!wl->status.map.init_ok || wl->status.map.rf_off ||
+	    wl->status.map.lps != BTC_LPS_OFF || wl->status.map.connecting ||
+	    wl->status.map._4way || wl->rfk_info.state != BTC_WRFK_STOP)
+		return;
+
+	if ((!btc->cx.bt.enable.now || !rtwdev->total_sta_assoc) &&
+	    !wl->status.map.busy)
+		return;
+
+	/* Re-evaluate busy/direction edges without a periodic role report. */
+	_ntfy_wl_sta(rtwdev, false);
 }
 
 static u8 rtw89_btc_c2h_get_index_by_ver(struct rtw89_dev *rtwdev, u8 func)

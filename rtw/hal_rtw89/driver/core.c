@@ -4828,7 +4828,7 @@ static bool rtw89_traffic_stats_calc(struct rtw89_dev *rtwdev,
 	return false;
 }
 
-static bool rtw89_traffic_stats_track(struct rtw89_dev *rtwdev)
+static bool rtw89_traffic_stats_track(struct rtw89_dev *rtwdev, bool tp_offload)
 {
 	struct rtw89_vif_link *rtwvif_link;
 	struct rtw89_vif *rtwvif;
@@ -4841,6 +4841,9 @@ static bool rtw89_traffic_stats_track(struct rtw89_dev *rtwdev)
 	rtw89_for_each_rtwvif(rtwdev, rtwvif) {
 		rtw89_traffic_stats_calc(rtwdev, &rtwvif->stats,
 					 RTW89_TFC_INTERVAL_2SEC);
+
+		if (!tp_offload)
+			continue;
 
 		rtw89_vif_for_each_link(rtwvif, rtwvif_link, link_id)
 			rtw89_fw_h2c_tp_offload(rtwdev, rtwvif_link);
@@ -5054,11 +5057,17 @@ static void rtw89_track_work(struct wiphy *wiphy, struct wiphy_work *work)
 	wiphy_delayed_work_queue(wiphy, &rtwdev->track_work,
 				 RTW89_TRACK_WORK_PERIOD);
 
-	/* Diagnostic: skip all RF-dynamic work + coex queries. */
-	if (rtw89_disable_track_work)
+	if (rtw89_disable_track_work) {
+		if (rtwdev->chip->chip_id == RTL8852C) {
+			/* Sample host counters without periodic firmware offload. */
+			rtw89_traffic_stats_track(rtwdev, false);
+			if (!rtwdev->scanning)
+				rtw89_btc_ntfy_wl_traffic(rtwdev);
+		}
 		return;
+	}
 
-	tfc_changed = rtw89_traffic_stats_track(rtwdev);
+	tfc_changed = rtw89_traffic_stats_track(rtwdev, true);
 	if (rtwdev->scanning)
 		return;
 
