@@ -14,6 +14,9 @@
  * C files see this struct. The kext sets up the sk_buff from mbuf data before
  * calling driver TX functions, and converts back on RX.
  */
+/* TX tag assigned by the macOS bridge before adding a hardware cipher IV. */
+#define RTW89_MACOS_TX_DHCP 0xD0
+
 struct sk_buff {
     u8       *head;     /* allocation base */
     u8       *data;     /* data pointer */

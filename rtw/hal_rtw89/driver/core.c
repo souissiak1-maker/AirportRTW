@@ -65,7 +65,7 @@ static const char *rtw89_macos_tx_diag_tag(struct sk_buff *skb)
 	/* 0.2.32 DHCP/ARP descriptor comparison tags.  pkt_type is assigned
 	 * by the native wrapper immediately before ops->tx(), so this remains a
 	 * passive label and does not parse or modify the payload here. */
-	if (skb->pkt_type == 0xD0)
+	if (skb->pkt_type == RTW89_MACOS_TX_DHCP)
 		return "DHCP";
 	if (skb->pkt_type == 0xA0)
 		return "ARP";
@@ -1317,7 +1317,9 @@ rtw89_core_tx_btc_spec_pkt_notify(struct rtw89_dev *rtwdev,
 {
 	struct wiphy *wiphy = rtwdev->hw->wiphy;
 	struct sk_buff *skb = tx_req->skb;
+#ifndef RTW89_MACOS
 	struct udphdr *udphdr;
+#endif
 
 	if (IEEE80211_SKB_CB(skb)->control.flags & IEEE80211_TX_CTRL_PORT_CTRL_PROTO) {
 		wiphy_work_queue(wiphy, &rtwdev->btc.eapol_notify_work);
@@ -1329,6 +1331,14 @@ rtw89_core_tx_btc_spec_pkt_notify(struct rtw89_dev *rtwdev,
 		return PACKET_ARP;
 	}
 
+#ifdef RTW89_MACOS
+	/* skb->data starts at the 802.11 header here. Use the bridge's tag
+	 * from the validated IPv4/UDP header before cipher IV insertion. */
+	if (skb->protocol == htons(ETH_P_IP) && skb->pkt_type == RTW89_MACOS_TX_DHCP) {
+		wiphy_work_queue(wiphy, &rtwdev->btc.dhcp_notify_work);
+		return PACKET_DHCP;
+	}
+#else
 	if (skb->protocol == htons(ETH_P_IP) &&
 	    ip_hdr(skb)->protocol == IPPROTO_UDP) {
 		udphdr = udp_hdr(skb);
@@ -1345,6 +1355,7 @@ rtw89_core_tx_btc_spec_pkt_notify(struct rtw89_dev *rtwdev,
 		wiphy_work_queue(wiphy, &rtwdev->btc.icmp_notify_work);
 		return PACKET_ICMP;
 	}
+#endif
 
 	return PACKET_MAX;
 }

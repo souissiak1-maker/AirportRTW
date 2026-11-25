@@ -5,7 +5,7 @@ OSDefineMetaClassAndAbstractStructors(RTWCore, ItlHalService)
 
 const char *RTWCore::getFirmwareVersion()
 {
-    return "AirportRTW2.3.3";
+    return "AirportRTW2.3.1";
 }
 
 int16_t RTWCore::getBSSNoise()

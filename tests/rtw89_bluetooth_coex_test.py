@@ -7,7 +7,8 @@ def function(signature):
  a=coex.index(signature);return coex[a:coex.index('\n}',a)+3]
 init=function('void rtw89_btc_ntfy_init(struct')
 run=function('void _run_coex(struct rtw89_dev *rtwdev, enum btc_reason_and_action reason)\n{')
-score=function('static void _update_bt_scbd(struct rtw89_dev *rtwdev, bool only_update)\n{')
+score=(function('static bool _update_a2dp_profile(')+
+       function('static void _update_bt_scbd(struct rtw89_dev *rtwdev, bool only_update)\n{'))
 off=function('static void _action_bt_off(struct')
 observe=function('static void airportrtw_btc_observe(struct')
 sta_only=function('void rtw89_btc_ntfy_wl_sta(struct')
@@ -62,9 +63,16 @@ struct rtw89_btc_wl_info{u8 coex_mode,rssi_level;struct wl_status status;
  struct rtw89_btc_wl_role_info_v7 role_info_v7;
  struct rtw89_btc_wl_role_info_v8 role_info_v8;
 };
+struct rtw89_btc_bt_a2dp_desc{bool exist,active,reported_profile;};
+struct rtw89_btc_bt_link_info{
+ struct rtw89_btc_bt_a2dp_desc a2dp_desc;
+ struct{bool exist;}hfp_desc,hid_desc,pan_desc;
+ struct{unsigned now;}profile_cnt;
+ struct{struct{bool connect;}map;}status;
+};
 struct rtw89_btc_bt_info{struct{bool now,last;}enable;bool mbx_avl,whql_test,hi_lna_rx,run_patch_code,scan_rx_low_pri;
  u32 scbd;unsigned btg_type,lna_constrain;
- struct{struct{bool exist;}a2dp_desc;struct{struct{bool connect;}map;}status;}link_info;
+ struct rtw89_btc_bt_link_info link_info;
  struct{struct{bool run,req;}map;}rfk_info;
 };
 struct rtw89_btc_cx{struct rtw89_btc_wl_info wl;struct rtw89_btc_bt_info bt;struct{unsigned type;}other;unsigned cnt_bt[512];};
@@ -173,6 +181,16 @@ int main(void){
  // Update-only callers can refresh the cached profile without re-entering coex.
  dispatched=0;scoreboard|=BTC_BSCB_A2DP_ACT;_update_bt_scbd(&d,true);
  assert(d.btc.cx.bt.link_info.a2dp_desc.exist&&dispatched==0);
+ struct rtw89_btc_bt_link_info *link=&d.btc.cx.bt.link_info;
+ assert(link->profile_cnt.now==1);
+ link->a2dp_desc.reported_profile=true;
+ scoreboard&=~BTC_BSCB_A2DP_ACT;_update_bt_scbd(&d,false);
+ assert(link->a2dp_desc.exist&&link->profile_cnt.now==1&&dispatched==0);
+ link->a2dp_desc.reported_profile=false;
+ link->a2dp_desc.active=true;
+ assert(!_update_a2dp_profile(&d.btc.cx.bt)&&link->profile_cnt.now==1);
+ link->a2dp_desc.active=false;
+ assert(_update_a2dp_profile(&d.btc.cx.bt)&&link->profile_cnt.now==0);
  // New firmware control/layout version follows the same automatic lifecycle.
  ver.fcxctrl=7;ver.fwlrole=7;scoreboard=BTC_BSCB_ON|BTC_BSCB_PATCH_CODE|BTC_BSCB_ACT;
  rtw89_btc_ntfy_init(&d,BTC_MODE_NORMAL);assert(!d.btc.ctrl.ctrl_v7.igno_bt&&!d.btc.dm.wl_only);
