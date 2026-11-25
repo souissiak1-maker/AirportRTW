@@ -191,13 +191,6 @@ void Rtw89PciTransport::free()
 
 void Rtw89PciTransport::teardown()
 {
-    if (pollTimer) {
-        pollTimer->cancelTimeout();
-        if (workLoop)
-            workLoop->removeEventSource(pollTimer);
-        pollTimer->release();
-        pollTimer = nullptr;
-    }
     if (interruptSource) {
         disableInterrupts();
         if (workLoop)
@@ -223,6 +216,13 @@ void Rtw89PciTransport::teardown()
     }
 
     drainPendingFree();
+    if (pollTimer) {
+        pollTimer->cancelTimeout();
+        if (workLoop)
+            workLoop->removeEventSource(pollTimer);
+        pollTimer->release();
+        pollTimer = nullptr;
+    }
     while (dmaEntries) {
         DMAEntry *entry = dmaEntries;
         dmaEntries = entry->next;
