@@ -7405,6 +7405,15 @@ static void airportrtw_btc_observe(struct rtw89_dev *rtwdev)
     if (btc->dm.bt_only) flags |= BIT(5);
     if (btc->cx.wl.status.map.rf_off) flags |= BIT(6);
     if (btc->cx.wl.status.map.init_ok) flags |= BIT(7);
+    if (btc->cx.wl.status.map.busy) flags |= BIT(8);
+    if (bt->link_info.a2dp_desc.exist) flags |= BIT(9);
+    if (btc->cx.wl.status.map.busy &&
+        (btc->cx.wl.status.map.traffic_dir & BIT(RTW89_TFC_DL))) flags |= BIT(10);
+    if (btc->cx.wl.status.map.connecting) flags |= BIT(11);
+    if (btc->cx.wl.status.map._4way) flags |= BIT(12);
+    if (bt->link_info.a2dp_desc.active) flags |= BIT(13);
+    if (bt->scbd & BTC_BSCB_A2DP_ACT) flags |= BIT(14);
+    if (bt->link_info.a2dp_desc.reported_profile) flags |= BIT(15);
     rtw89_macos_coex_observe(btc->cx.wl.coex_mode, flags,
         btc->cx.cnt_bt[BTC_BCNT_INFOUPDATE], btc->cx.cnt_bt[BTC_BCNT_SCBDUPDATE],
         btc->fwinfo.cnt_h2c_fail, btc->dm.run_reason, btc->dm.run_action);
@@ -7412,6 +7421,22 @@ static void airportrtw_btc_observe(struct rtw89_dev *rtwdev)
 #else
 static inline void airportrtw_btc_observe(struct rtw89_dev *rtwdev) {}
 #endif
+
+/* The scoreboard reports activity, while BT_INFO describes the profile.
+ * A clear activity bit must not erase a connected profile during audio gaps. */
+static bool _update_a2dp_profile(struct rtw89_btc_bt_info *bt)
+{
+	struct rtw89_btc_bt_link_info *link = &bt->link_info;
+	struct rtw89_btc_bt_a2dp_desc *a2dp = &link->a2dp_desc;
+	bool present = a2dp->reported_profile || a2dp->active ||
+		       (bt->enable.now && (bt->scbd & BTC_BSCB_A2DP_ACT));
+	bool changed = a2dp->exist != present;
+
+	a2dp->exist = present;
+	link->profile_cnt.now = link->hfp_desc.exist + link->hid_desc.exist +
+				link->pan_desc.exist + present;
+	return changed;
+}
 
 static void _update_bt_scbd(struct rtw89_dev *rtwdev, bool only_update)
 {
@@ -7459,7 +7484,12 @@ static void _update_bt_scbd(struct rtw89_dev *rtwdev, bool only_update)
 
 	bt->whql_test = !!(val & BTC_BSCB_WHQL);
 	bt->btg_type = val & BTC_BSCB_BT_S1 ? BTC_BT_BTG : BTC_BT_ALONE;
-	bt->link_info.a2dp_desc.exist = !!(val & BTC_BSCB_A2DP_ACT);
+	if (!bt->enable.now) {
+		bt->link_info.a2dp_desc.reported_profile = false;
+		bt->link_info.a2dp_desc.active = false;
+	}
+	if (_update_a2dp_profile(bt))
+		status_change = true;
 
 	bt->lna_constrain = !!(val & BTC_BSCB_BT_LNAB0) +
 			    !!(val & BTC_BSCB_BT_LNAB1) * 2 + 4;
@@ -7941,7 +7971,10 @@ void rtw89_btc_ntfy_specific_packet(struct rtw89_dev *rtwdev,
 			    "[BTC], %s(): EAPOL_End cnt=%d\n",
 			    __func__, cnt);
 		wl->status.map._4way = false;
-		wiphy_delayed_work_cancel(rtwdev->hw->wiphy, &rtwdev->coex_act1_work);
+		/* DHCP also uses this timer to clear connecting. A key install
+		 * must not strand the coexistence policy in its link setup state. */
+		if (!wl->status.map.connecting)
+			wiphy_delayed_work_cancel(rtwdev->hw->wiphy, &rtwdev->coex_act1_work);
 		break;
 	case PACKET_ARP:
 		cnt = ++cx->cnt_wl[BTC_WCNT_ARP];
@@ -8092,7 +8125,6 @@ static void _update_bt_info(struct rtw89_dev *rtwdev, u8 *buf, u32 len)
 		    __func__, bt->raw_info[2]);
 
 	b->profile_cnt.last = b->profile_cnt.now;
-	b->profile_cnt.now = 0;
 	hid->type = 0;
 
 	/* parse raw info low-Byte2 */
@@ -8105,13 +8137,9 @@ static void _update_bt_info(struct rtw89_dev *rtwdev, u8 *buf, u32 len)
 	cx->cnt_bt[BTC_BCNT_INQPAG] += !!(bt->inq_pag.now && !bt->inq_pag.last);
 
 	hfp->exist = btinfo.lb2.hfp;
-	b->profile_cnt.now += (u8)hfp->exist;
 	hid->exist = btinfo.lb2.hid;
-	b->profile_cnt.now += (u8)hid->exist;
-	a2dp->exist = btinfo.lb2.a2dp;
-	b->profile_cnt.now += (u8)a2dp->exist;
+	a2dp->reported_profile = btinfo.lb2.a2dp;
 	pan->exist = btinfo.lb2.pan;
-	b->profile_cnt.now += (u8)pan->exist;
 	btc->dm.trx_info.bt_profile = u32_get_bits(btinfo.val, BT_PROFILE_PROTOCOL_MASK);
 
 	/* parse raw info low-Byte3 */
@@ -8168,6 +8196,7 @@ static void _update_bt_info(struct rtw89_dev *rtwdev, u8 *buf, u32 len)
 	cx->cnt_bt[BTC_BCNT_AFH] += !!(btinfo.hb2.afh_update && !b->afh_update);
 	b->afh_update = btinfo.hb2.afh_update;
 	a2dp->active = btinfo.hb2.a2dp_active;
+	_update_a2dp_profile(bt);
 	b->slave_role = btinfo.hb2.slave;
 	hid->slot_info = btinfo.hb2.hid_slot;
 	hid->pair_cnt = btinfo.hb2.hid_cnt;
@@ -8667,12 +8696,13 @@ static void rtw89_btc_ntfy_wl_sta_iter(void *data, struct ieee80211_sta *sta)
 
 #define BTC_NHM_CHK_INTVL 20
 
-void rtw89_btc_ntfy_wl_sta(struct rtw89_dev *rtwdev)
+static void _ntfy_wl_sta(struct rtw89_dev *rtwdev, bool report_role)
 {
 	struct rtw89_btc *btc = &rtwdev->btc;
 	struct rtw89_btc_dm *dm = &btc->dm;
 	struct rtw89_btc_wl_info *wl = &btc->cx.wl;
 	struct rtw89_btc_wl_sta_iter_data data = {.rtwdev = rtwdev};
+	bool traffic_changed;
 	u8 i;
 
 	ieee80211_iterate_stations_atomic(rtwdev->hw,
@@ -8692,16 +8722,20 @@ void rtw89_btc_ntfy_wl_sta(struct rtw89_dev *rtwdev)
 	if (dm->trx_info.wl_rssi != wl->rssi_level)
 		dm->trx_info.wl_rssi = wl->rssi_level;
 
+	if (report_role && data.is_traffic_change)
+		_fw_set_drv_info(rtwdev, CXDRVINFO_ROLE);
+
+	traffic_changed = wl->status.map.busy != data.busy_all ||
+			  wl->status.map.traffic_dir != data.dir_all;
+	wl->status.map.busy = data.busy_all;
+	wl->status.map.traffic_dir = data.dir_all;
+
 	rtw89_debug(rtwdev, RTW89_DBG_BTC, "[BTC], %s(): busy=%d\n",
 		    __func__, !!wl->status.map.busy);
 
-	_write_scbd(rtwdev, BTC_WSCB_WLBUSY, (!!wl->status.map.busy));
-
-	if (data.is_traffic_change)
-		_fw_set_drv_info(rtwdev, CXDRVINFO_ROLE);
-	if (data.is_sta_change) {
-		wl->status.map.busy = data.busy_all;
-		wl->status.map.traffic_dir = data.dir_all;
+	/* The policy run flushes this bit to the hardware scoreboard. */
+	_write_scbd(rtwdev, BTC_WSCB_WLBUSY, !!wl->status.map.busy);
+	if (traffic_changed || (report_role && data.is_sta_change)) {
 		_run_coex(rtwdev, BTC_RSN_NTFY_WL_STA);
 	} else if (btc->dm.cnt_notify[BTC_NCNT_WL_STA] >=
 		   btc->dm.cnt_dm[BTC_DCNT_WL_STA_LAST] + BTC_NHM_CHK_INTVL) {
@@ -8712,6 +8746,29 @@ void rtw89_btc_ntfy_wl_sta(struct rtw89_dev *rtwdev)
 		btc->dm.cnt_dm[BTC_DCNT_WL_STA_LAST] =
 		btc->dm.cnt_notify[BTC_NCNT_WL_STA];
 	}
+}
+
+void rtw89_btc_ntfy_wl_sta(struct rtw89_dev *rtwdev)
+{
+	_ntfy_wl_sta(rtwdev, true);
+}
+
+void rtw89_btc_ntfy_wl_traffic(struct rtw89_dev *rtwdev)
+{
+	struct rtw89_btc *btc = &rtwdev->btc;
+	struct rtw89_btc_wl_info *wl = &btc->cx.wl;
+
+	if (!wl->status.map.init_ok || wl->status.map.rf_off ||
+	    wl->status.map.lps != BTC_LPS_OFF || wl->status.map.connecting ||
+	    wl->status.map._4way || wl->rfk_info.state != BTC_WRFK_STOP)
+		return;
+
+	if ((!btc->cx.bt.enable.now || !rtwdev->total_sta_assoc) &&
+	    !wl->status.map.busy)
+		return;
+
+	/* Re-evaluate busy/direction edges without a periodic role report. */
+	_ntfy_wl_sta(rtwdev, false);
 }
 
 static u8 rtw89_btc_c2h_get_index_by_ver(struct rtw89_dev *rtwdev, u8 func)

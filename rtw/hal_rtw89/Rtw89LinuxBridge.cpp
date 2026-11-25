@@ -250,7 +250,7 @@ static void completeTransmit(void *opaque, struct sk_buff *skb)
             (IEEE80211_SKB_CB(skb)->flags & IEEE80211_TX_STAT_ACK) != 0;
         if (skb->protocol == cpu_to_be16(ETH_P_PAE) && acked)
             __sync_fetch_and_add(&context->eapolTxAcked, 1);
-        if (skb->pkt_type == 0xD0 && acked)
+        if (skb->pkt_type == RTW89_MACOS_TX_DHCP && acked)
             __sync_fetch_and_add(&context->dhcpTxAckCount, 1);
         else if (skb->pkt_type == 0xA0 && acked)
             __sync_fetch_and_add(&context->arpTxAckCount, 1);
@@ -961,19 +961,21 @@ bool rtw89LinuxTransmit(Rtw89LinuxContext *context, const uint8_t *frame,
     }
     const bool arp = etherType == ETH_P_ARP;
     bool dhcp = false;
-    if (etherType == ETH_P_IP && length >= headerLength + 8 + 20) {
+    if (!softwareEncrypted && etherType == ETH_P_IP && length >= headerLength + 8 + 20) {
         const size_t ipOffset = headerLength + 8;
         const size_t ipHeaderLength = (frame[ipOffset] & 0x0fU) * 4U;
         const size_t udpOffset = ipOffset + ipHeaderLength;
-        if (ipHeaderLength >= 20 && frame[ipOffset + 9] == 17 &&
+        const uint16_t fragment = (uint16_t)((frame[ipOffset + 6] << 8) | frame[ipOffset + 7]);
+        if ((frame[ipOffset] >> 4) == 4 && ipHeaderLength >= 20 &&
+            !(fragment & 0x1fff) && frame[ipOffset + 9] == 17 &&
             length >= udpOffset + 8) {
             const uint16_t sourcePort =
                 (uint16_t)((frame[udpOffset] << 8) | frame[udpOffset + 1]);
             const uint16_t destinationPort =
                 (uint16_t)((frame[udpOffset + 2] << 8) |
                            frame[udpOffset + 3]);
-            dhcp = (sourcePort == 67 || sourcePort == 68) &&
-                   (destinationPort == 67 || destinationPort == 68);
+            dhcp = (sourcePort == 67 && destinationPort == 68) ||
+                   (sourcePort == 68 && destinationPort == 67);
         }
     }
 
@@ -1042,7 +1044,7 @@ bool rtw89LinuxTransmit(Rtw89LinuxContext *context, const uint8_t *frame,
     info->band = hw->conf.chandef.chan ? hw->conf.chandef.chan->band : 0;
     skb->protocol = cpu_to_be16(etherType);
     if (dhcp) {
-        skb->pkt_type = 0xD0;
+        skb->pkt_type = RTW89_MACOS_TX_DHCP;
         info->flags |= IEEE80211_TX_CTL_REQ_TX_STATUS;
         __sync_fetch_and_add(&context->dhcpTxCount, 1);
     } else if (arp) {

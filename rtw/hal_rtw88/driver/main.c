@@ -221,9 +221,36 @@ static void rtw_sw_beacon_loss_check(struct rtw_dev *rtwdev,
 /* process TX/RX statistics periodically for hardware,
  * the information helps hardware to enhance performance
  */
-/* macOS: full dynamic processing requires station iteration. While that
- * compatibility layer is incomplete, keep only chip-local thermal tracking. */
+/* macOS: retain coexistence maintenance without the full RF/station watchdog. */
 extern bool rtw88_disable_watchdog_work;
+
+/* Coexistence needs fresh BT activity and WLAN traffic even when the full
+ * mac80211 watchdog is disabled. Reuse its work item and cancellation path,
+ * but never invoke RF calibration, DIG/RA, station iteration or runtime LPS. */
+static void rtw_macos_coex_watchdog(struct rtw_dev *rtwdev)
+{
+	struct rtw_traffic_stats *stats = &rtwdev->stats;
+
+	if (!rtwdev->efuse.btcoex)
+		return;
+	ieee80211_queue_delayed_work(rtwdev->hw, &rtwdev->watch_dog_work,
+				     RTW_WATCH_DOG_DELAY_TIME);
+	if (test_bit(RTW_FLAG_SCANNING, rtwdev->flags))
+		return;
+
+	if (stats->tx_cnt > 100 || stats->rx_cnt > 100)
+		set_bit(RTW_FLAG_BUSY_TRAFFIC, rtwdev->flags);
+	else
+		clear_bit(RTW_FLAG_BUSY_TRAFFIC, rtwdev->flags);
+	stats->tx_throughput = stats->tx_unicast >> RTW_TP_SHIFT;
+	stats->rx_throughput = stats->rx_unicast >> RTW_TP_SHIFT;
+	stats->tx_cnt = stats->rx_cnt = 0;
+	stats->tx_unicast = stats->rx_unicast = 0;
+
+	rtw_coex_wl_status_check(rtwdev);
+	rtw_coex_query_bt_info(rtwdev);
+	rtw_coex_wl_status_change_notify(rtwdev, 0);
+}
 
 static void rtw_watch_dog_work(struct work_struct *work)
 {
@@ -241,11 +268,11 @@ static void rtw_watch_dog_work(struct work_struct *work)
 	if (!test_bit(RTW_FLAG_RUNNING, rtwdev->flags))
 		goto unlock;
 
-	/* macOS has no complete mac80211 station iterator yet. Do not even re-arm
-	 * the periodic watchdog in this mode: besides pwr_track, the Linux watchdog
-	 * owns DIG/RA/LPS/coex transitions which assume full mac80211 state. */
-	if (rtw88_disable_watchdog_work)
+	/* Keep only automatic coexistence alive in macOS compatibility mode. */
+	if (rtw88_disable_watchdog_work) {
+		rtw_macos_coex_watchdog(rtwdev);
 		goto unlock;
+	}
 
 	ieee80211_queue_delayed_work(rtwdev->hw, &rtwdev->watch_dog_work,
 				     RTW_WATCH_DOG_DELAY_TIME);
@@ -1550,7 +1577,7 @@ int rtw_core_start(struct rtw_dev *rtwdev)
 	rtwdev->ps_enabled = false;
 	clear_bit(RTW_FLAG_LEISURE_PS, rtwdev->flags);
 	clear_bit(RTW_FLAG_LEISURE_PS_DEEP, rtwdev->flags);
-	if (!rtw88_disable_watchdog_work)
+	if (!rtw88_disable_watchdog_work || rtwdev->efuse.btcoex)
 		ieee80211_queue_delayed_work(rtwdev->hw, &rtwdev->watch_dog_work,
 					     RTW_WATCH_DOG_DELAY_TIME);
 

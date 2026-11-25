@@ -1575,7 +1575,8 @@ struct rtw89_btc_bt_a2dp_desc {
 	u32 devinfo_query: 1;
 	u32 no_empty_streak_2s: 8;
 	u32 no_empty_streak_max: 8;
-	u32 rsvd: 6;
+	u32 reported_profile: 1;
+	u32 rsvd: 5;
 
 	u8 bitpool;
 	u16 vendor_id;

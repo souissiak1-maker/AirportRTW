@@ -117,10 +117,8 @@ struct rtw88_dma_alloc_ops *rtw88_dma_ops      = NULL;
 struct pci_ops_rtw88       *rtw88_pci_io_ops   = NULL;
 struct rtw88_usb_ops       *rtw88_usb_io_ops   = NULL;
 
-/* Diagnostic flag consumed by rtw_watch_dog_work() in main.c.  Default true:
- * the watchdog keeps rescheduling but performs no RF-dynamic work, to test
- * whether DPK/power-tracking is wedging BE TX.  Flip to false to restore
- * normal watchdog behaviour. */
+/* Keep the full mac80211/RF watchdog disabled. Combo cards still run the
+ * coexistence-only maintenance path, without thermal tracking or runtime LPS. */
 bool rtw88_disable_watchdog_work = true;
 
 /* ------------------------------------------------------------------ */
@@ -1214,27 +1212,25 @@ void rtw88_handshake_rx_filter(struct ieee80211_hw *hw, bool open)
     (void)open;
 }
 
-/*
- * Force-disable Bluetooth coexistence by clearing efuse.btcoex.
- *
- * rtw_power_on (called from rtw_core_start) reads efuse.btcoex to decide
- * wifi_only.  When wifi_only=false the coex driver runs periodic H2C
- * queries asking the firmware to track BT activity; on a hackintosh with
- * no functional BT controller the firmware never gets a clean "BT idle"
- * reply and can leave the WiFi TX engine starved — chip stops fetching
- * BE descriptors silently, no IMR bit set, no TXPAUSE.
- *
- * Must be called AFTER rtw_pci_probe (which runs rtw_core_init to fill
- * the efuse struct) and BEFORE rtw_core_start.
- */
-void rtw88_force_wifi_only(void)
+/* Read cached policy state only. Never wait behind a firmware operation just
+ * to publish diagnostics, and never read/write device registers here. */
+bool airportrtw88_get_coex_snapshot(struct ieee80211_hw *hw, uint32_t state[10])
 {
-    if (!g_rtw88_hw || !g_rtw88_hw->priv) return;
-    struct rtw_dev *rtwdev = (struct rtw_dev *)g_rtw88_hw->priv;
-    if (rtwdev->efuse.btcoex) {
-        RTW_LOG("AirportRTW: forcing wifi_only (was efuse.btcoex=1)\n");
-        rtwdev->efuse.btcoex = 0;
-    }
+    if (!hw || !hw->priv || !state) return false;
+    struct rtw_dev *rtwdev = hw->priv;
+    if (!mutex_trylock(&rtwdev->mutex)) return false;
+    state[0] = rtwdev->efuse.btcoex;
+    state[1] = rtwdev->coex.stop_dm;
+    state[2] = rtwdev->coex.stat.bt_disabled;
+    state[3] = rtwdev->coex.stat.cnt_wl[COEX_CNT_WL_COEXRUN];
+    state[4] = rtwdev->coex.stat.cnt_bt_info_c2h[COEX_BTINFO_SRC_BT_RSP];
+    state[5] = rtwdev->coex.stat.cnt_bt_info_c2h[COEX_BTINFO_SRC_BT_ACT];
+    state[6] = rtwdev->coex.stat.wl_coex_mode;
+    state[7] = rtwdev->coex.dm.bt_status;
+    state[8] = test_bit(RTW_FLAG_RUNNING, rtwdev->flags);
+    state[9] = rtwdev->coex.under_5g;
+    mutex_unlock(&rtwdev->mutex);
+    return true;
 }
 
 /*
