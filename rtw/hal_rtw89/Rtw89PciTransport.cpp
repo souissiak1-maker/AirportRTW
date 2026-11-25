@@ -203,10 +203,8 @@ void Rtw89PciTransport::disableInterrupts()
             // for a poll tick that is already running before teardown goes on.
             pollTimer->disable();
             pollTimer->cancelTimeout();
-            if (workLoop && !workLoop->inGate()) {
-                workLoop->closeGate();
-                workLoop->openGate();
-            }
+            if (workLoop)
+                workLoop->runAction(&Rtw89PciTransport::gateSync, this);
         } else
             interruptSource->disable();
         RTW_LOG("AirportRTW-RTW89: interrupt source disabled\n");
@@ -298,6 +296,11 @@ void Rtw89PciTransport::interruptOccurred(OSObject *owner,
         rtw88_trigger_interrupt();
         transport->drainPendingFree();
     }
+}
+
+IOReturn Rtw89PciTransport::gateSync(OSObject *, void *, void *, void *, void *)
+{
+    return kIOReturnSuccess;   // runs under the workloop gate: waits for a running poll tick
 }
 
 void Rtw89PciTransport::pollFired(OSObject *owner, IOTimerEventSource *sender)

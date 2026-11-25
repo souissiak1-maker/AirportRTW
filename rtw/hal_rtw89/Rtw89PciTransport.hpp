@@ -132,6 +132,7 @@ private:
     bool pollMode {false};
     int interruptIndex {0};
     static void pollFired(OSObject *owner, IOTimerEventSource *sender);
+    static IOReturn gateSync(OSObject *, void *, void *, void *, void *);
     bool interruptsEnabled {false};
     volatile UInt64 interruptCount {0};
     struct pci_dev *compatDevice {nullptr};
