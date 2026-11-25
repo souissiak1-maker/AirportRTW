@@ -117,13 +117,13 @@ bool Rtw89PciTransport::initWithDevice(IOPCIDevice *device, IOWorkLoop *loop)
     //   -rtwintx   old behaviour (legacy INTx, index 0)
     //   -rtwpoll   no interrupt at all, poll the ISR every 2 ms
     {
-        char flag[8];
+        int flag = 0;
         UInt32 forced = 0;
-        pollMode = PE_parse_boot_argn("-rtwpoll", flag, sizeof(flag));
+        pollMode = PE_parse_boot_argn("-rtwpoll", &flag, sizeof(flag));
         interruptIndex = -1;
         if (PE_parse_boot_argn("rtwirq", &forced, sizeof(forced)))
             interruptIndex = static_cast<int>(forced);
-        else if (!PE_parse_boot_argn("-rtwintx", flag, sizeof(flag))) {
+        else if (!PE_parse_boot_argn("-rtwintx", &flag, sizeof(flag))) {
             for (int i = 0; i < 8; i++) {
                 int type = 0;
                 if (pciDevice->getInterruptType(i, &type) != kIOReturnSuccess)
@@ -142,12 +142,35 @@ bool Rtw89PciTransport::initWithDevice(IOPCIDevice *device, IOWorkLoop *loop)
                                static_cast<unsigned long long>(interruptIndex), 32);
         pciDevice->setProperty("RTWPollMode", pollMode);
     }
-    interruptSource = IOInterruptEventSource::interruptEventSource(
-        this, &Rtw89PciTransport::interruptOccurred, pciDevice, interruptIndex);
-    if (!interruptSource || workLoop->addEventSource(interruptSource) !=
-                                kIOReturnSuccess)
+    // Try the selected index first; if it cannot be registered fall back to
+    // legacy INTx (index 0) like the RTW88 transport does.
+    for (int attempt = 0; attempt < 2 && !interruptSource; ++attempt) {
+        const int index = attempt == 0 ? interruptIndex : 0;
+        if (attempt == 1 && interruptIndex == 0)
+            break;
+        auto *candidate = IOInterruptEventSource::interruptEventSource(
+            this, &Rtw89PciTransport::interruptOccurred, pciDevice, index);
+        if (!candidate) {
+            IOLog("AirportRTW-RTW89: interrupt index %d unusable\n", index);
+            continue;
+        }
+        if (workLoop->addEventSource(candidate) != kIOReturnSuccess) {
+            IOLog("AirportRTW-RTW89: interrupt index %d registration failed\n", index);
+            candidate->release();
+            continue;
+        }
+        interruptSource = candidate;
+        interruptIndex = index;
+    }
+    if (!interruptSource)
         return false;
+    pciDevice->setProperty("RTWInterruptIndex",
+                           static_cast<unsigned long long>(interruptIndex), 32);
     if (pollMode) {
+        // The IRQ source is never enabled in poll mode: mask legacy INTx at
+        // the PCI function so an unhandled level interrupt cannot storm.
+        pciDevice->configWrite16(kIOPCIConfigCommand,
+            pciDevice->configRead16(kIOPCIConfigCommand) | 0x0400);
         pollTimer = IOTimerEventSource::timerEventSource(
             this, &Rtw89PciTransport::pollFired);
         if (!pollTimer || workLoop->addEventSource(pollTimer) != kIOReturnSuccess)
@@ -161,11 +184,12 @@ bool Rtw89PciTransport::initWithDevice(IOPCIDevice *device, IOWorkLoop *loop)
 void Rtw89PciTransport::enableInterrupts()
 {
     if (interruptSource && !interruptsEnabled) {
-        if (pollMode && pollTimer)
-            pollTimer->setTimeoutMS(2);
-        else
-            interruptSource->enable();
         interruptsEnabled = true;
+        if (pollMode && pollTimer) {
+            pollTimer->enable();
+            pollTimer->setTimeoutMS(2);
+        } else
+            interruptSource->enable();
         RTW_LOG("AirportRTW-RTW89: interrupt source enabled\n");
     }
 }
@@ -173,11 +197,18 @@ void Rtw89PciTransport::enableInterrupts()
 void Rtw89PciTransport::disableInterrupts()
 {
     if (interruptSource && interruptsEnabled) {
-        if (pollMode && pollTimer)
-            pollTimer->cancelTimeout();
-        else
-            interruptSource->disable();
         interruptsEnabled = false;
+        if (pollMode && pollTimer) {
+            // disable() makes pending callouts no-ops; cycling the gate waits
+            // for a poll tick that is already running before teardown goes on.
+            pollTimer->disable();
+            pollTimer->cancelTimeout();
+            if (workLoop && !workLoop->inGate()) {
+                workLoop->closeGate();
+                workLoop->openGate();
+            }
+        } else
+            interruptSource->disable();
         RTW_LOG("AirportRTW-RTW89: interrupt source disabled\n");
     }
 }
