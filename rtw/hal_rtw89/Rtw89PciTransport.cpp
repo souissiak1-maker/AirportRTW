@@ -3,6 +3,7 @@
 
 #include <IOKit/IOLib.h>
 #include <kern/sched_prim.h>
+#include <pexpert/pexpert.h>
 
 extern "C" {
 #include "compat/rtw88_compat.h"
@@ -109,11 +110,50 @@ bool Rtw89PciTransport::initWithDevice(IOPCIDevice *device, IOWorkLoop *loop)
         return false;
 
     recordAttachStage("interrupt source creation/registration");
+    // Interrupt selection (Zen 4 / AMD fix): the legacy INTx pin (index 0)
+    // can be misrouted on AMD platforms and freeze the machine as soon as
+    // the chip powers up. Prefer the first MSI index; boot-args:
+    //   rtwirq=N   force interrupt index N
+    //   -rtwintx   old behaviour (legacy INTx, index 0)
+    //   -rtwpoll   no interrupt at all, poll the ISR every 2 ms
+    {
+        char flag[8];
+        UInt32 forced = 0;
+        pollMode = PE_parse_boot_argn("-rtwpoll", flag, sizeof(flag));
+        interruptIndex = -1;
+        if (PE_parse_boot_argn("rtwirq", &forced, sizeof(forced)))
+            interruptIndex = static_cast<int>(forced);
+        else if (!PE_parse_boot_argn("-rtwintx", flag, sizeof(flag))) {
+            for (int i = 0; i < 8; i++) {
+                int type = 0;
+                if (pciDevice->getInterruptType(i, &type) != kIOReturnSuccess)
+                    break;
+                if (type & kIOInterruptTypePCIMessaged) {
+                    interruptIndex = i;
+                    break;
+                }
+            }
+        }
+        if (interruptIndex < 0)
+            interruptIndex = 0;
+        IOLog("AirportRTW-RTW89: interrupt index %d%s
+", interruptIndex,
+              pollMode ? " (poll mode, IRQ unused)" : "");
+        pciDevice->setProperty("RTWInterruptIndex",
+                               static_cast<unsigned long long>(interruptIndex), 32);
+        pciDevice->setProperty("RTWPollMode", pollMode);
+    }
     interruptSource = IOInterruptEventSource::interruptEventSource(
-        this, &Rtw89PciTransport::interruptOccurred, pciDevice, 0);
+        this, &Rtw89PciTransport::interruptOccurred, pciDevice, interruptIndex);
     if (!interruptSource || workLoop->addEventSource(interruptSource) !=
                                 kIOReturnSuccess)
         return false;
+    if (pollMode) {
+        pollTimer = IOTimerEventSource::timerEventSource(
+            this, &Rtw89PciTransport::pollFired);
+        if (!pollTimer || workLoop->addEventSource(pollTimer) != kIOReturnSuccess)
+            return false;
+    }
     RTW_LOG("AirportRTW-RTW89: transport ready; interrupt source held disabled\n");
     recordAttachStage("transport ready");
     return true;
@@ -122,7 +162,10 @@ bool Rtw89PciTransport::initWithDevice(IOPCIDevice *device, IOWorkLoop *loop)
 void Rtw89PciTransport::enableInterrupts()
 {
     if (interruptSource && !interruptsEnabled) {
-        interruptSource->enable();
+        if (pollMode && pollTimer)
+            pollTimer->setTimeoutMS(2);
+        else
+            interruptSource->enable();
         interruptsEnabled = true;
         RTW_LOG("AirportRTW-RTW89: interrupt source enabled\n");
     }
@@ -131,7 +174,10 @@ void Rtw89PciTransport::enableInterrupts()
 void Rtw89PciTransport::disableInterrupts()
 {
     if (interruptSource && interruptsEnabled) {
-        interruptSource->disable();
+        if (pollMode && pollTimer)
+            pollTimer->cancelTimeout();
+        else
+            interruptSource->disable();
         interruptsEnabled = false;
         RTW_LOG("AirportRTW-RTW89: interrupt source disabled\n");
     }
@@ -145,6 +191,13 @@ void Rtw89PciTransport::free()
 
 void Rtw89PciTransport::teardown()
 {
+    if (pollTimer) {
+        pollTimer->cancelTimeout();
+        if (workLoop)
+            workLoop->removeEventSource(pollTimer);
+        pollTimer->release();
+        pollTimer = nullptr;
+    }
     if (interruptSource) {
         disableInterrupts();
         if (workLoop)
@@ -215,6 +268,18 @@ void Rtw89PciTransport::interruptOccurred(OSObject *owner,
         rtw88_trigger_interrupt();
         transport->drainPendingFree();
     }
+}
+
+void Rtw89PciTransport::pollFired(OSObject *owner, IOTimerEventSource *sender)
+{
+    auto *transport = OSDynamicCast(Rtw89PciTransport, owner);
+    if (!transport || !transport->interruptsEnabled)
+        return;
+    __sync_fetch_and_add(&transport->interruptCount, 1);
+    rtw88_trigger_interrupt();
+    transport->drainPendingFree();
+    if (transport->interruptsEnabled)
+        sender->setTimeoutMS(2);
 }
 
 void *Rtw89PciTransport::allocateDMA(size_t size,
