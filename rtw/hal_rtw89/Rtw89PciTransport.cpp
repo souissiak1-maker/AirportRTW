@@ -136,8 +136,7 @@ bool Rtw89PciTransport::initWithDevice(IOPCIDevice *device, IOWorkLoop *loop)
         }
         if (interruptIndex < 0)
             interruptIndex = 0;
-        IOLog("AirportRTW-RTW89: interrupt index %d%s
-", interruptIndex,
+        IOLog("AirportRTW-RTW89: interrupt index %d%s\n", interruptIndex,
               pollMode ? " (poll mode, IRQ unused)" : "");
         pciDevice->setProperty("RTWInterruptIndex",
                                static_cast<unsigned long long>(interruptIndex), 32);
