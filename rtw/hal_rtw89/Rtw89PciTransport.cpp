@@ -20,7 +20,7 @@ namespace {
 // Clear ASPM L0s/L1 + CLKREQ (Link Control) and the L1 PM substates of one PCIe function.
 void disableLinkPowerSaving(IOPCIDevice *dev)
 {
-    UInt32 pcie = 0;
+    UInt8 pcie = 0;
     if (dev->findPCICapability(kIOPCICapabilityIDPCIExpress, &pcie) && pcie) {
         const UInt16 lnkctl = dev->configRead16(pcie + 0x10);
         dev->configWrite16(pcie + 0x10, lnkctl & ~static_cast<UInt16>(0x0103));
