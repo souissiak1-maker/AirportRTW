@@ -284,10 +284,6 @@ bool rtw88_get_sta_context_snapshot(struct rtw_dev *rtwdev,
                                     struct ieee80211_sta *sta,
                                     struct rtw88_sta_context_snapshot *snapshot);
 
-/* Force-disable BT coexistence by clearing efuse.btcoex. Must be called
- * between rtw_pci_probe and the chip's start() op. See rtw88_compat.c. */
-void rtw88_force_wifi_only(void);
-
 /* TX flow control. rtw88_be_tx_avail() returns the BE ring's free-slot count
  * so the output path can stall (backpressure) instead of dropping when full.
  * rtw88_set_tx_resume_cb() registers a hook fired after each IRQ bottom-half
@@ -302,6 +298,7 @@ struct ieee80211_vif;
  * Used by the kext to wait for post-scan MMIO cleanup before connecting. */
 bool rtw88_is_scanning(void);
 bool rtw88_hw_scan_supported(struct ieee80211_hw *hw);
+bool airportrtw88_get_coex_snapshot(struct ieee80211_hw *hw, uint32_t state[10]);
 void rtw88_sw_scan_start(struct ieee80211_hw *hw, struct ieee80211_vif *vif);
 void rtw88_sw_scan_switch_channel(struct ieee80211_hw *hw);
 void rtw88_sw_scan_complete(struct ieee80211_hw *hw, struct ieee80211_vif *vif);

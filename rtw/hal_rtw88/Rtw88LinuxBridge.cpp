@@ -357,7 +357,8 @@ bool rtw88LinuxAttach(Rtw88PciTransport *transport,
     rtw88_set_hw_callbacks(&hardwareCallbacks, context);
     activeContext = context;
     rtw88_set_tx_resume_cb(resumeTransmit);
-    rtw88_force_wifi_only();
+    // Preserve the card's efuse coexistence/antenna configuration. The RTW88
+    // engine selects WLAN-only policy automatically when Bluetooth is off.
     memcpy(context->macAddress, hw->wiphy->perm_addr,
            sizeof(context->macAddress));
 
@@ -929,6 +930,12 @@ unsigned rtw88LinuxGetNSS(Rtw88LinuxContext *context)
 {
     auto *hw = context ? static_cast<ieee80211_hw *>(context->hardware) : nullptr;
     return rtw88_hw_get_nss(hw);
+}
+
+bool rtw88LinuxGetCoexSnapshot(Rtw88LinuxContext *context, uint32_t state[10])
+{
+    return context && context->started && airportrtw88_get_coex_snapshot(
+        static_cast<ieee80211_hw *>(context->hardware), state);
 }
 
 bool rtw88LinuxSetCountry(Rtw88LinuxContext *context, const char cc[2])

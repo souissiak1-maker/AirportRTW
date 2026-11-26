@@ -4,6 +4,7 @@
 
 #include <IOKit/IOBufferMemoryDescriptor.h>
 #include <IOKit/IOInterruptEventSource.h>
+#include <IOKit/IOTimerEventSource.h>
 #include <IOKit/IOLocks.h>
 #include <IOKit/IOMemoryDescriptor.h>
 #include <IOKit/IOWorkLoop.h>
@@ -127,6 +128,11 @@ private:
     IOMemoryMap *mmioMap {nullptr};
     volatile void *mmioBaseAddress {nullptr};
     IOInterruptEventSource *interruptSource {nullptr};
+    IOTimerEventSource *pollTimer {nullptr};   // -rtwpoll: service the chip from a timer instead of an IRQ
+    bool pollMode {false};
+    int interruptIndex {0};
+    static void pollFired(OSObject *owner, IOTimerEventSource *sender);
+    static IOReturn gateSync(OSObject *, void *, void *, void *, void *);
     bool interruptsEnabled {false};
     volatile UInt64 interruptCount {0};
     struct pci_dev *compatDevice {nullptr};

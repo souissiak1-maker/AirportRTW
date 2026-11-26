@@ -63,7 +63,9 @@ static inline unsigned long wait_for_completion_timeout(struct completion *c,
     IOLockLock(c->lock);
     while (!c->done) {
         IOLockUnlock(c->lock);
-        if (time_after_eq(jiffies, deadline)) { IOLockLock(c->lock); return 0; }
+        /* The lock is already released. Leave it released on timeout too:
+         * complete() and the next reinit_completion() must remain callable. */
+        if (time_after_eq(jiffies, deadline)) return 0;
         IOSleep(1);
         IOLockLock(c->lock);
     }
