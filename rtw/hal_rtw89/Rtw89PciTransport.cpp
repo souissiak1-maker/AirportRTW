@@ -17,6 +17,31 @@ OSDefineMetaClassAndStructors(Rtw89PciTransport, OSObject)
 Rtw89PciTransport *Rtw89PciTransport::active = nullptr;
 
 namespace {
+// Clear ASPM L0s/L1 + CLKREQ (Link Control) and the L1 PM substates of one PCIe function.
+void disableLinkPowerSaving(IOPCIDevice *dev)
+{
+    UInt32 pcie = 0;
+    if (dev->findPCICapability(kIOPCICapabilityIDPCIExpress, &pcie) && pcie) {
+        const UInt16 lnkctl = dev->configRead16(pcie + 0x10);
+        dev->configWrite16(pcie + 0x10, lnkctl & ~static_cast<UInt16>(0x0103));
+    }
+    // L1 PM Substates extended capability (ID 0x1E): clear PCI-PM/ASPM L1.1/L1.2 enables
+    UInt32 off = 0x100;
+    for (int guard = 0; off >= 0x100 && off < 0x1000 && guard < 64; guard++) {
+        const UInt32 hdr = dev->configRead32(off);
+        if (hdr == 0 || hdr == 0xffffffff)
+            break;
+        if ((hdr & 0xffff) == 0x1e) {
+            const UInt32 ctl1 = dev->configRead32(off + 0x08);
+            dev->configWrite32(off + 0x08, ctl1 & ~static_cast<UInt32>(0xf));
+            break;
+        }
+        off = (hdr >> 20) & 0xffc;
+    }
+}
+}
+
+namespace {
 struct pci_ops_rtw88 pciOperations = {
     Rtw89PciTransport::readConfigByte,
     Rtw89PciTransport::readConfigWord,
@@ -73,6 +98,19 @@ bool Rtw89PciTransport::initWithDevice(IOPCIDevice *device, IOWorkLoop *loop)
 
     pciDevice->setBusMasterEnable(true);
     pciDevice->setMemoryEnable(true);
+    // AMD Zen 4 fix: the PCIe link power states froze the machine when the
+    // first scan started. Keep the link in L0 unless -rtwaspm is given.
+    {
+        int keep = 0;
+        if (!PE_parse_boot_argn("-rtwaspm", &keep, sizeof(keep))) {
+            disableLinkPowerSaving(pciDevice);
+            auto *bridge = OSDynamicCast(IOPCIDevice, pciDevice->getParentEntry(gIOServicePlane));
+            if (bridge)
+                disableLinkPowerSaving(bridge);
+            IOLog("AirportRTW-RTW89: PCIe ASPM/L1SS/CLKREQ disabled (device%s)\n",
+                  bridge ? " + root port" : "");
+        }
+    }
 
     recordAttachStage("BAR2 memory mapping");
     mmioMap = pciDevice->mapDeviceMemoryWithRegister(kIOPCIConfigBaseAddress2);
